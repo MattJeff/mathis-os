@@ -1,0 +1,670 @@
+; ═══════════════════════════════════════════════════════════════════════════
+; LLML-MATHIS: TCP/IP Stack
+; ═══════════════════════════════════════════════════════════════════════════
+;
+; AGI-Oriented Networking:
+; - Basic TCP/IP implementation
+; - AI can communicate with external services
+; - Socket abstraction
+; - Future: Distributed AGI communication
+;
+; ═══════════════════════════════════════════════════════════════════════════
+
+; --- Network Constants ---
+
+const ETH_HEADER_SIZE: u32 = 14
+const IP_HEADER_SIZE: u32 = 20
+const TCP_HEADER_SIZE: u32 = 20
+const UDP_HEADER_SIZE: u32 = 8
+
+const PROTO_ICMP: u8 = 1
+const PROTO_TCP: u8 = 6
+const PROTO_UDP: u8 = 17
+
+const TCP_FIN: u8 = 0x01
+const TCP_SYN: u8 = 0x02
+const TCP_RST: u8 = 0x04
+const TCP_PSH: u8 = 0x08
+const TCP_ACK: u8 = 0x10
+const TCP_URG: u8 = 0x20
+
+; --- IP Address ---
+
+struct IPv4 {
+    bytes: [u8; 4]
+}
+
+fn ipv4(a: u8, b: u8, c: u8, d: u8) -> IPv4 {
+    return IPv4 { bytes: [a, b, c, d] }
+}
+
+fn ipv4_from_u32(addr: u32) -> IPv4 {
+    return IPv4 {
+        bytes: [
+            ((addr >> 24) & 0xFF) as u8,
+            ((addr >> 16) & 0xFF) as u8,
+            ((addr >> 8) & 0xFF) as u8,
+            (addr & 0xFF) as u8
+        ]
+    }
+}
+
+fn ipv4_to_u32(ip: IPv4) -> u32 {
+    return (ip.bytes[0] as u32 << 24) |
+           (ip.bytes[1] as u32 << 16) |
+           (ip.bytes[2] as u32 << 8) |
+           (ip.bytes[3] as u32)
+}
+
+fn ipv4_equals(a: IPv4, b: IPv4) -> bool {
+    return a.bytes[0] == b.bytes[0] and
+           a.bytes[1] == b.bytes[1] and
+           a.bytes[2] == b.bytes[2] and
+           a.bytes[3] == b.bytes[3]
+}
+
+fn ipv4_to_string(ip: IPv4) -> ptr(String) {
+    ; Format: "192.168.1.1"
+    return string_concat(
+        int_to_string(ip.bytes[0] as u32),
+        string_concat(string_from_cstr("."),
+        string_concat(int_to_string(ip.bytes[1] as u32),
+        string_concat(string_from_cstr("."),
+        string_concat(int_to_string(ip.bytes[2] as u32),
+        string_concat(string_from_cstr("."),
+        int_to_string(ip.bytes[3] as u32))))))
+    )
+}
+
+; Common addresses
+fn ip_localhost() -> IPv4 { return ipv4(127, 0, 0, 1) }
+fn ip_any() -> IPv4 { return ipv4(0, 0, 0, 0) }
+fn ip_broadcast() -> IPv4 { return ipv4(255, 255, 255, 255) }
+
+; --- MAC Address ---
+
+struct MAC {
+    bytes: [u8; 6]
+}
+
+fn mac_broadcast() -> MAC {
+    return MAC { bytes: [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF] }
+}
+
+; --- Socket Address ---
+
+struct SocketAddr {
+    ip: IPv4,
+    port: u16
+}
+
+fn socket_addr(ip: IPv4, port: u16) -> SocketAddr {
+    return SocketAddr { ip: ip, port: port }
+}
+
+; --- Packet Headers ---
+
+struct EthernetHeader {
+    dest_mac: MAC,
+    src_mac: MAC,
+    ethertype: u16
+}
+
+struct IPHeader {
+    version_ihl: u8,
+    tos: u8,
+    total_length: u16,
+    identification: u16,
+    flags_fragment: u16,
+    ttl: u8,
+    protocol: u8,
+    checksum: u16,
+    src_ip: IPv4,
+    dest_ip: IPv4
+}
+
+struct TCPHeader {
+    src_port: u16,
+    dest_port: u16,
+    seq_num: u32,
+    ack_num: u32,
+    data_offset_flags: u16,
+    window: u16,
+    checksum: u16,
+    urgent_ptr: u16
+}
+
+struct UDPHeader {
+    src_port: u16,
+    dest_port: u16,
+    length: u16,
+    checksum: u16
+}
+
+; --- TCP Connection State ---
+
+enum TCPState {
+    CLOSED,
+    LISTEN,
+    SYN_SENT,
+    SYN_RECEIVED,
+    ESTABLISHED,
+    FIN_WAIT_1,
+    FIN_WAIT_2,
+    CLOSE_WAIT,
+    CLOSING,
+    LAST_ACK,
+    TIME_WAIT
+}
+
+struct TCPConnection {
+    local_addr: SocketAddr,
+    remote_addr: SocketAddr,
+    state: TCPState,
+    
+    ; Sequence numbers
+    send_seq: u32,
+    send_ack: u32,
+    recv_seq: u32,
+    recv_ack: u32,
+    
+    ; Windows
+    send_window: u16,
+    recv_window: u16,
+    
+    ; Buffers
+    send_buffer: [u8; 8192],
+    send_len: u32,
+    recv_buffer: [u8; 8192],
+    recv_len: u32,
+    
+    ; Timing
+    last_activity: u64,
+    retransmit_count: u8
+}
+
+; --- Socket API ---
+
+struct Socket {
+    id: u32,
+    type: SocketType,
+    state: SocketState,
+    local: SocketAddr,
+    remote: SocketAddr,
+    connection: ptr(TCPConnection),
+    
+    ; Buffers
+    recv_queue: [u8; 16384],
+    recv_queue_len: u32,
+    send_queue: [u8; 16384],
+    send_queue_len: u32,
+    
+    ; Options
+    blocking: bool,
+    timeout_ms: u32,
+    reuse_addr: bool
+}
+
+enum SocketType {
+    STREAM,     ; TCP
+    DGRAM,      ; UDP
+    RAW
+}
+
+enum SocketState {
+    UNBOUND,
+    BOUND,
+    LISTENING,
+    CONNECTING,
+    CONNECTED,
+    DISCONNECTING,
+    ERROR
+}
+
+; --- Global State ---
+
+const MAX_SOCKETS: u32 = 64
+var sockets: [Socket; MAX_SOCKETS]
+var socket_count: u32 = 0
+var next_socket_id: u32 = 1
+
+var local_ip: IPv4
+var local_mac: MAC
+var gateway_ip: IPv4
+var subnet_mask: IPv4
+
+; --- Initialization ---
+
+fn net_init() {
+    socket_count = 0
+    next_socket_id = 1
+    
+    ; Default configuration
+    local_ip = ipv4(192, 168, 1, 100)
+    gateway_ip = ipv4(192, 168, 1, 1)
+    subnet_mask = ipv4(255, 255, 255, 0)
+    
+    ; Generate random MAC (for emulation)
+    local_mac = MAC { bytes: [0x52, 0x54, 0x00, 0x12, 0x34, 0x56] }
+}
+
+fn net_configure(ip: IPv4, gateway: IPv4, mask: IPv4) {
+    local_ip = ip
+    gateway_ip = gateway
+    subnet_mask = mask
+}
+
+; --- Socket Operations ---
+
+fn socket_create(type: SocketType) -> ptr(Socket) {
+    if socket_count >= MAX_SOCKETS {
+        return null
+    }
+    
+    let sock = &sockets[socket_count]
+    sock.id = next_socket_id
+    next_socket_id = next_socket_id + 1
+    sock.type = type
+    sock.state = SocketState::UNBOUND
+    sock.recv_queue_len = 0
+    sock.send_queue_len = 0
+    sock.blocking = true
+    sock.timeout_ms = 30000
+    sock.reuse_addr = false
+    
+    socket_count = socket_count + 1
+    return sock
+}
+
+fn socket_bind(sock: ptr(Socket), addr: SocketAddr) -> i32 {
+    if sock.state != SocketState::UNBOUND {
+        return -1
+    }
+    
+    sock.local = addr
+    sock.state = SocketState::BOUND
+    return 0
+}
+
+fn socket_listen(sock: ptr(Socket), backlog: u32) -> i32 {
+    if sock.type != SocketType::STREAM {
+        return -1
+    }
+    if sock.state != SocketState::BOUND {
+        return -1
+    }
+    
+    sock.state = SocketState::LISTENING
+    return 0
+}
+
+fn socket_accept(sock: ptr(Socket)) -> ptr(Socket) {
+    if sock.state != SocketState::LISTENING {
+        return null
+    }
+    
+    ; Wait for incoming connection (simplified)
+    ; In real implementation, would check connection queue
+    
+    let client = socket_create(SocketType::STREAM)
+    if client == null {
+        return null
+    }
+    
+    client.state = SocketState::CONNECTED
+    return client
+}
+
+fn socket_connect(sock: ptr(Socket), addr: SocketAddr) -> i32 {
+    if sock.type != SocketType::STREAM {
+        return -1
+    }
+    
+    sock.remote = addr
+    sock.state = SocketState::CONNECTING
+    
+    ; Initiate TCP handshake
+    let conn = tcp_connect(sock.local, addr)
+    if conn == null {
+        sock.state = SocketState::ERROR
+        return -1
+    }
+    
+    sock.connection = conn
+    sock.state = SocketState::CONNECTED
+    return 0
+}
+
+fn socket_send(sock: ptr(Socket), data: ptr, len: u32) -> i32 {
+    if sock.state != SocketState::CONNECTED {
+        return -1
+    }
+    
+    ; Add to send queue
+    let space = 16384 - sock.send_queue_len
+    let to_send = if len < space { len } else { space }
+    
+    memcpy(&sock.send_queue + sock.send_queue_len, data, to_send)
+    sock.send_queue_len = sock.send_queue_len + to_send
+    
+    ; Trigger send
+    tcp_send(sock.connection, &sock.send_queue, sock.send_queue_len)
+    sock.send_queue_len = 0
+    
+    return to_send as i32
+}
+
+fn socket_recv(sock: ptr(Socket), buffer: ptr, max_len: u32) -> i32 {
+    if sock.state != SocketState::CONNECTED {
+        return -1
+    }
+    
+    ; Check receive queue
+    if sock.recv_queue_len == 0 {
+        if sock.blocking {
+            ; Wait for data (simplified)
+            tcp_poll(sock.connection)
+        } else {
+            return 0
+        }
+    }
+    
+    let to_recv = if sock.recv_queue_len < max_len { sock.recv_queue_len } else { max_len }
+    memcpy(buffer, &sock.recv_queue, to_recv)
+    
+    ; Shift remaining data
+    let remaining = sock.recv_queue_len - to_recv
+    if remaining > 0 {
+        memmove(&sock.recv_queue, &sock.recv_queue + to_recv, remaining)
+    }
+    sock.recv_queue_len = remaining
+    
+    return to_recv as i32
+}
+
+fn socket_close(sock: ptr(Socket)) -> i32 {
+    if sock.connection != null {
+        tcp_close(sock.connection)
+    }
+    
+    sock.state = SocketState::UNBOUND
+    return 0
+}
+
+; --- TCP Protocol ---
+
+fn tcp_connect(local: SocketAddr, remote: SocketAddr) -> ptr(TCPConnection) {
+    let conn = gc_alloc(sizeof(TCPConnection)) as ptr(TCPConnection)
+    
+    conn.local_addr = local
+    conn.remote_addr = remote
+    conn.state = TCPState::CLOSED
+    conn.send_seq = random() as u32
+    conn.recv_seq = 0
+    conn.send_window = 65535
+    conn.recv_window = 65535
+    conn.send_len = 0
+    conn.recv_len = 0
+    
+    ; Send SYN
+    tcp_send_syn(conn)
+    conn.state = TCPState::SYN_SENT
+    
+    ; Wait for SYN-ACK (simplified)
+    let timeout = get_timestamp() + 5000
+    while conn.state == TCPState::SYN_SENT and get_timestamp() < timeout {
+        tcp_poll(conn)
+    }
+    
+    if conn.state != TCPState::ESTABLISHED {
+        gc_free(conn as ptr)
+        return null
+    }
+    
+    return conn
+}
+
+fn tcp_send(conn: ptr(TCPConnection), data: ptr, len: u32) {
+    if conn.state != TCPState::ESTABLISHED {
+        return
+    }
+    
+    ; Copy to send buffer
+    let space = 8192 - conn.send_len
+    let to_copy = if len < space { len } else { space }
+    memcpy(&conn.send_buffer + conn.send_len, data, to_copy)
+    conn.send_len = conn.send_len + to_copy
+    
+    ; Send data packet
+    tcp_send_data(conn)
+}
+
+fn tcp_send_syn(conn: ptr(TCPConnection)) {
+    var packet: [u8; 64]
+    
+    ; Build TCP header
+    let tcp = &packet as ptr(TCPHeader)
+    tcp.src_port = htons(conn.local_addr.port)
+    tcp.dest_port = htons(conn.remote_addr.port)
+    tcp.seq_num = htonl(conn.send_seq)
+    tcp.ack_num = 0
+    tcp.data_offset_flags = htons((5 << 12) | TCP_SYN as u16)
+    tcp.window = htons(conn.recv_window)
+    tcp.checksum = 0
+    tcp.urgent_ptr = 0
+    
+    ; Calculate checksum
+    tcp.checksum = tcp_checksum(conn.local_addr.ip, conn.remote_addr.ip, &packet, TCP_HEADER_SIZE)
+    
+    ; Send via IP
+    ip_send(conn.remote_addr.ip, PROTO_TCP, &packet, TCP_HEADER_SIZE)
+    
+    conn.send_seq = conn.send_seq + 1
+}
+
+fn tcp_send_data(conn: ptr(TCPConnection)) {
+    if conn.send_len == 0 {
+        return
+    }
+    
+    var packet: [u8; 1500]
+    
+    ; Build TCP header
+    let tcp = &packet as ptr(TCPHeader)
+    tcp.src_port = htons(conn.local_addr.port)
+    tcp.dest_port = htons(conn.remote_addr.port)
+    tcp.seq_num = htonl(conn.send_seq)
+    tcp.ack_num = htonl(conn.recv_seq)
+    tcp.data_offset_flags = htons((5 << 12) | TCP_ACK as u16 | TCP_PSH as u16)
+    tcp.window = htons(conn.recv_window)
+    tcp.checksum = 0
+    tcp.urgent_ptr = 0
+    
+    ; Copy data
+    let data_len = if conn.send_len > 1460 { 1460 } else { conn.send_len }
+    memcpy(&packet + TCP_HEADER_SIZE, &conn.send_buffer, data_len)
+    
+    ; Calculate checksum
+    tcp.checksum = tcp_checksum(conn.local_addr.ip, conn.remote_addr.ip, &packet, TCP_HEADER_SIZE + data_len)
+    
+    ; Send
+    ip_send(conn.remote_addr.ip, PROTO_TCP, &packet, TCP_HEADER_SIZE + data_len)
+    
+    conn.send_seq = conn.send_seq + data_len
+    
+    ; Remove sent data from buffer
+    let remaining = conn.send_len - data_len
+    if remaining > 0 {
+        memmove(&conn.send_buffer, &conn.send_buffer + data_len, remaining)
+    }
+    conn.send_len = remaining
+}
+
+fn tcp_poll(conn: ptr(TCPConnection)) {
+    ; Check for incoming packets (simplified)
+    ; In real implementation, would read from NIC
+}
+
+fn tcp_close(conn: ptr(TCPConnection)) {
+    if conn.state == TCPState::ESTABLISHED {
+        ; Send FIN
+        tcp_send_fin(conn)
+        conn.state = TCPState::FIN_WAIT_1
+    }
+}
+
+fn tcp_send_fin(conn: ptr(TCPConnection)) {
+    var packet: [u8; 64]
+    
+    let tcp = &packet as ptr(TCPHeader)
+    tcp.src_port = htons(conn.local_addr.port)
+    tcp.dest_port = htons(conn.remote_addr.port)
+    tcp.seq_num = htonl(conn.send_seq)
+    tcp.ack_num = htonl(conn.recv_seq)
+    tcp.data_offset_flags = htons((5 << 12) | TCP_FIN as u16 | TCP_ACK as u16)
+    tcp.window = htons(conn.recv_window)
+    tcp.checksum = 0
+    
+    tcp.checksum = tcp_checksum(conn.local_addr.ip, conn.remote_addr.ip, &packet, TCP_HEADER_SIZE)
+    
+    ip_send(conn.remote_addr.ip, PROTO_TCP, &packet, TCP_HEADER_SIZE)
+}
+
+; --- IP Protocol ---
+
+fn ip_send(dest: IPv4, protocol: u8, data: ptr, len: u32) {
+    var packet: [u8; 1520]
+    
+    ; Build IP header
+    let ip = &packet as ptr(IPHeader)
+    ip.version_ihl = 0x45  ; IPv4, 20 byte header
+    ip.tos = 0
+    ip.total_length = htons((IP_HEADER_SIZE + len) as u16)
+    ip.identification = htons(random() as u16)
+    ip.flags_fragment = 0
+    ip.ttl = 64
+    ip.protocol = protocol
+    ip.checksum = 0
+    ip.src_ip = local_ip
+    ip.dest_ip = dest
+    
+    ; Calculate header checksum
+    ip.checksum = ip_checksum(&packet, IP_HEADER_SIZE)
+    
+    ; Copy data
+    memcpy(&packet + IP_HEADER_SIZE, data, len)
+    
+    ; Send via ethernet
+    eth_send(dest, 0x0800, &packet, IP_HEADER_SIZE + len)
+}
+
+fn eth_send(dest_ip: IPv4, ethertype: u16, data: ptr, len: u32) {
+    var frame: [u8; 1536]
+    
+    ; Build ethernet header
+    let eth = &frame as ptr(EthernetHeader)
+    eth.dest_mac = arp_resolve(dest_ip)
+    eth.src_mac = local_mac
+    eth.ethertype = htons(ethertype)
+    
+    ; Copy data
+    memcpy(&frame + ETH_HEADER_SIZE, data, len)
+    
+    ; Send to NIC (simplified)
+    nic_send(&frame, ETH_HEADER_SIZE + len)
+}
+
+fn nic_send(data: ptr, len: u32) {
+    ; Placeholder - would send to actual NIC
+    ; For emulation, could use serial port
+}
+
+; --- ARP ---
+
+struct ARPEntry {
+    ip: IPv4,
+    mac: MAC,
+    timestamp: u64
+}
+
+var arp_cache: [ARPEntry; 64]
+var arp_cache_count: u32 = 0
+
+fn arp_resolve(ip: IPv4) -> MAC {
+    ; Check cache
+    for i in 0..arp_cache_count {
+        if ipv4_equals(arp_cache[i].ip, ip) {
+            return arp_cache[i].mac
+        }
+    }
+    
+    ; Send ARP request (simplified)
+    ; For now, return broadcast
+    return mac_broadcast()
+}
+
+; --- Checksums ---
+
+fn ip_checksum(data: ptr, len: u32) -> u16 {
+    var sum: u32 = 0
+    var i: u32 = 0
+    
+    while i < len {
+        let word = (load_byte(data + i) as u32 << 8) | load_byte(data + i + 1) as u32
+        sum = sum + word
+        i = i + 2
+    }
+    
+    while (sum >> 16) != 0 {
+        sum = (sum & 0xFFFF) + (sum >> 16)
+    }
+    
+    return (~sum & 0xFFFF) as u16
+}
+
+fn tcp_checksum(src_ip: IPv4, dest_ip: IPv4, data: ptr, len: u32) -> u16 {
+    var sum: u32 = 0
+    
+    ; Pseudo header
+    sum = sum + (src_ip.bytes[0] as u32 << 8) + src_ip.bytes[1] as u32
+    sum = sum + (src_ip.bytes[2] as u32 << 8) + src_ip.bytes[3] as u32
+    sum = sum + (dest_ip.bytes[0] as u32 << 8) + dest_ip.bytes[1] as u32
+    sum = sum + (dest_ip.bytes[2] as u32 << 8) + dest_ip.bytes[3] as u32
+    sum = sum + PROTO_TCP as u32
+    sum = sum + len
+    
+    ; Data
+    var i: u32 = 0
+    while i < len {
+        let word = (load_byte(data + i) as u32 << 8) | 
+                   (if i + 1 < len { load_byte(data + i + 1) } else { 0 }) as u32
+        sum = sum + word
+        i = i + 2
+    }
+    
+    while (sum >> 16) != 0 {
+        sum = (sum & 0xFFFF) + (sum >> 16)
+    }
+    
+    return (~sum & 0xFFFF) as u16
+}
+
+; --- Byte Order ---
+
+fn htons(x: u16) -> u16 {
+    return ((x & 0xFF) << 8) | ((x >> 8) & 0xFF)
+}
+
+fn htonl(x: u32) -> u32 {
+    return ((x & 0xFF) << 24) |
+           ((x & 0xFF00) << 8) |
+           ((x & 0xFF0000) >> 8) |
+           ((x >> 24) & 0xFF)
+}
+
+fn ntohs(x: u16) -> u16 { return htons(x) }
+fn ntohl(x: u32) -> u32 { return htonl(x) }
+
+; ═══════════════════════════════════════════════════════════════════════════
+; END OF MODULE
+; ═══════════════════════════════════════════════════════════════════════════

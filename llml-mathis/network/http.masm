@@ -1,0 +1,617 @@
+; ═══════════════════════════════════════════════════════════════════════════
+; LLML-MATHIS: HTTP Client/Server
+; ═══════════════════════════════════════════════════════════════════════════
+;
+; AGI-Oriented HTTP:
+; - HTTP/1.1 client and server
+; - AI can fetch data from web
+; - REST API for external AI services
+; - JSON request/response support
+;
+; ═══════════════════════════════════════════════════════════════════════════
+
+; --- HTTP Methods ---
+
+enum HTTPMethod {
+    GET,
+    POST,
+    PUT,
+    DELETE,
+    PATCH,
+    HEAD,
+    OPTIONS
+}
+
+fn method_to_string(method: HTTPMethod) -> ptr(String) {
+    match method {
+        HTTPMethod::GET => string_from_cstr("GET"),
+        HTTPMethod::POST => string_from_cstr("POST"),
+        HTTPMethod::PUT => string_from_cstr("PUT"),
+        HTTPMethod::DELETE => string_from_cstr("DELETE"),
+        HTTPMethod::PATCH => string_from_cstr("PATCH"),
+        HTTPMethod::HEAD => string_from_cstr("HEAD"),
+        HTTPMethod::OPTIONS => string_from_cstr("OPTIONS"),
+        _ => string_from_cstr("GET")
+    }
+}
+
+fn string_to_method(s: ptr(String)) -> HTTPMethod {
+    if string_equals(s, string_from_cstr("GET")) { return HTTPMethod::GET }
+    if string_equals(s, string_from_cstr("POST")) { return HTTPMethod::POST }
+    if string_equals(s, string_from_cstr("PUT")) { return HTTPMethod::PUT }
+    if string_equals(s, string_from_cstr("DELETE")) { return HTTPMethod::DELETE }
+    if string_equals(s, string_from_cstr("PATCH")) { return HTTPMethod::PATCH }
+    if string_equals(s, string_from_cstr("HEAD")) { return HTTPMethod::HEAD }
+    if string_equals(s, string_from_cstr("OPTIONS")) { return HTTPMethod::OPTIONS }
+    return HTTPMethod::GET
+}
+
+; --- HTTP Request ---
+
+struct HTTPRequest {
+    method: HTTPMethod,
+    path: ptr(String),
+    version: ptr(String),
+    headers: ptr(Map),
+    body: ptr(String),
+    
+    ; Parsed URL
+    host: ptr(String),
+    port: u16,
+    query: ptr(String)
+}
+
+fn http_request_new(method: HTTPMethod, url: ptr(String)) -> ptr(HTTPRequest) {
+    let req = gc_alloc(sizeof(HTTPRequest)) as ptr(HTTPRequest)
+    req.method = method
+    req.headers = map_new()
+    req.version = string_from_cstr("HTTP/1.1")
+    
+    ; Parse URL
+    parse_url(req, url)
+    
+    ; Set default headers
+    http_set_header(req, "Host", req.host)
+    http_set_header(req, "User-Agent", "MATHIS-AGI/1.0")
+    http_set_header(req, "Accept", "*/*")
+    http_set_header(req, "Connection", "close")
+    
+    return req
+}
+
+fn parse_url(req: ptr(HTTPRequest), url: ptr(String)) {
+    ; Simple URL parsing: http://host:port/path?query
+    var start: u32 = 0
+    
+    ; Skip protocol
+    if string_starts_with(url, string_from_cstr("http://")) {
+        start = 7
+        req.port = 80
+    } else if string_starts_with(url, string_from_cstr("https://")) {
+        start = 8
+        req.port = 443
+    } else {
+        req.port = 80
+    }
+    
+    ; Find host end
+    var host_end = start
+    while host_end < url.length {
+        let c = url.data[host_end]
+        if c == ':' or c == '/' or c == '?' {
+            break
+        }
+        host_end = host_end + 1
+    }
+    
+    req.host = string_substring(url, start, host_end)
+    
+    ; Check for port
+    if host_end < url.length and url.data[host_end] == ':' {
+        var port_end = host_end + 1
+        var port: u16 = 0
+        while port_end < url.length and is_digit(url.data[port_end]) {
+            port = port * 10 + (url.data[port_end] - '0') as u16
+            port_end = port_end + 1
+        }
+        req.port = port
+        host_end = port_end
+    }
+    
+    ; Path
+    if host_end < url.length and url.data[host_end] == '/' {
+        var path_end = host_end
+        while path_end < url.length and url.data[path_end] != '?' {
+            path_end = path_end + 1
+        }
+        req.path = string_substring(url, host_end, path_end)
+        
+        ; Query
+        if path_end < url.length and url.data[path_end] == '?' {
+            req.query = string_substring(url, path_end + 1, url.length)
+        }
+    } else {
+        req.path = string_from_cstr("/")
+    }
+}
+
+fn http_set_header(req: ptr(HTTPRequest), name: string, value: ptr(String)) {
+    map_set(req.headers, string_from_cstr(name), value)
+}
+
+fn http_set_body(req: ptr(HTTPRequest), body: ptr(String)) {
+    req.body = body
+    http_set_header(req, "Content-Length", int_to_string(body.length))
+}
+
+fn http_set_json_body(req: ptr(HTTPRequest), json: ptr(String)) {
+    http_set_header(req, "Content-Type", string_from_cstr("application/json"))
+    http_set_body(req, json)
+}
+
+; --- HTTP Response ---
+
+struct HTTPResponse {
+    status_code: u16,
+    status_text: ptr(String),
+    version: ptr(String),
+    headers: ptr(Map),
+    body: ptr(String)
+}
+
+fn http_response_new() -> ptr(HTTPResponse) {
+    let resp = gc_alloc(sizeof(HTTPResponse)) as ptr(HTTPResponse)
+    resp.status_code = 0
+    resp.headers = map_new()
+    resp.body = string_new()
+    return resp
+}
+
+fn http_response_ok(body: ptr(String)) -> ptr(HTTPResponse) {
+    let resp = http_response_new()
+    resp.status_code = 200
+    resp.status_text = string_from_cstr("OK")
+    resp.version = string_from_cstr("HTTP/1.1")
+    resp.body = body
+    map_set(resp.headers, string_from_cstr("Content-Length"), int_to_string(body.length))
+    return resp
+}
+
+fn http_response_json(json: ptr(String)) -> ptr(HTTPResponse) {
+    let resp = http_response_ok(json)
+    map_set(resp.headers, string_from_cstr("Content-Type"), string_from_cstr("application/json"))
+    return resp
+}
+
+fn http_response_error(code: u16, message: ptr(String)) -> ptr(HTTPResponse) {
+    let resp = http_response_new()
+    resp.status_code = code
+    resp.status_text = message
+    resp.version = string_from_cstr("HTTP/1.1")
+    resp.body = message
+    return resp
+}
+
+; --- HTTP Client ---
+
+fn http_get(url: ptr(String)) -> ptr(HTTPResponse) {
+    let req = http_request_new(HTTPMethod::GET, url)
+    return http_send(req)
+}
+
+fn http_post(url: ptr(String), body: ptr(String)) -> ptr(HTTPResponse) {
+    let req = http_request_new(HTTPMethod::POST, url)
+    http_set_body(req, body)
+    return http_send(req)
+}
+
+fn http_post_json(url: ptr(String), json: ptr(String)) -> ptr(HTTPResponse) {
+    let req = http_request_new(HTTPMethod::POST, url)
+    http_set_json_body(req, json)
+    return http_send(req)
+}
+
+fn http_send(req: ptr(HTTPRequest)) -> ptr(HTTPResponse) {
+    ; Resolve host to IP (simplified - would need DNS)
+    let ip = resolve_host(req.host)
+    let addr = socket_addr(ip, req.port)
+    
+    ; Create socket and connect
+    let sock = socket_create(SocketType::STREAM)
+    if sock == null {
+        return http_response_error(0, string_from_cstr("Failed to create socket"))
+    }
+    
+    if socket_connect(sock, addr) < 0 {
+        socket_close(sock)
+        return http_response_error(0, string_from_cstr("Connection failed"))
+    }
+    
+    ; Build request
+    let request_text = build_request(req)
+    
+    ; Send request
+    socket_send(sock, request_text.data as ptr, request_text.length)
+    
+    ; Receive response
+    var response_buffer: [u8; 65536]
+    var total_received: u32 = 0
+    
+    loop {
+        let received = socket_recv(sock, &response_buffer + total_received, 65536 - total_received)
+        if received <= 0 {
+            break
+        }
+        total_received = total_received + received as u32
+    }
+    
+    socket_close(sock)
+    
+    ; Parse response
+    let response_text = string_from(&response_buffer, total_received)
+    return parse_response(response_text)
+}
+
+fn build_request(req: ptr(HTTPRequest)) -> ptr(String) {
+    var result = string_concat(
+        method_to_string(req.method),
+        string_concat(string_from_cstr(" "), req.path)
+    )
+    
+    if req.query != null {
+        result = string_concat(result, string_from_cstr("?"))
+        result = string_concat(result, req.query)
+    }
+    
+    result = string_concat(result, string_from_cstr(" "))
+    result = string_concat(result, req.version)
+    result = string_concat(result, string_from_cstr("\r\n"))
+    
+    ; Headers
+    let keys = map_keys(req.headers)
+    for i in 0..keys.length {
+        let key = keys[i]
+        let value = map_get(req.headers, key)
+        result = string_concat(result, key)
+        result = string_concat(result, string_from_cstr(": "))
+        result = string_concat(result, value.data as ptr(String))
+        result = string_concat(result, string_from_cstr("\r\n"))
+    }
+    
+    result = string_concat(result, string_from_cstr("\r\n"))
+    
+    ; Body
+    if req.body != null {
+        result = string_concat(result, req.body)
+    }
+    
+    return result
+}
+
+fn parse_response(text: ptr(String)) -> ptr(HTTPResponse) {
+    let resp = http_response_new()
+    let lines = string_split(text, '\n')
+    
+    if lines.length == 0 {
+        return resp
+    }
+    
+    ; Parse status line: HTTP/1.1 200 OK
+    let status_line = lines[0]
+    let parts = string_split_words(status_line)
+    
+    if parts.length >= 2 {
+        resp.version = parts[0]
+        resp.status_code = parse_status_code(parts[1])
+        if parts.length >= 3 {
+            resp.status_text = parts[2]
+        }
+    }
+    
+    ; Parse headers
+    var body_start: u32 = 1
+    for i in 1..lines.length {
+        let line = string_trim(lines[i])
+        if string_is_empty(line) {
+            body_start = i + 1
+            break
+        }
+        
+        let colon = string_find(line, string_from_cstr(":"), 0)
+        if colon > 0 {
+            let name = string_trim(string_substring(line, 0, colon as u32))
+            let value = string_trim(string_substring(line, colon as u32 + 1, line.length))
+            map_set(resp.headers, name, value)
+        }
+    }
+    
+    ; Body
+    if body_start < lines.length {
+        resp.body = string_join(lines[body_start..lines.length], string_from_cstr("\n"))
+    }
+    
+    return resp
+}
+
+fn parse_status_code(s: ptr(String)) -> u16 {
+    var code: u16 = 0
+    for i in 0..s.length {
+        let c = s.data[i]
+        if is_digit(c) {
+            code = code * 10 + (c - '0') as u16
+        }
+    }
+    return code
+}
+
+fn resolve_host(host: ptr(String)) -> IPv4 {
+    ; Simplified DNS resolution
+    ; For localhost
+    if string_equals(host, string_from_cstr("localhost")) {
+        return ip_localhost()
+    }
+    
+    ; Try to parse as IP
+    let parts = string_split(host, '.')
+    if parts.length == 4 {
+        return ipv4(
+            parse_u8(parts[0]),
+            parse_u8(parts[1]),
+            parse_u8(parts[2]),
+            parse_u8(parts[3])
+        )
+    }
+    
+    ; Default to localhost
+    return ip_localhost()
+}
+
+fn parse_u8(s: ptr(String)) -> u8 {
+    var result: u8 = 0
+    for i in 0..s.length {
+        let c = s.data[i]
+        if is_digit(c) {
+            result = result * 10 + (c - '0')
+        }
+    }
+    return result
+}
+
+; --- HTTP Server ---
+
+struct HTTPServer {
+    socket: ptr(Socket),
+    port: u16,
+    running: bool,
+    handlers: [RouteHandler; 64],
+    handler_count: u32
+}
+
+struct RouteHandler {
+    method: HTTPMethod,
+    path: ptr(String),
+    handler: fn(ptr(HTTPRequest)) -> ptr(HTTPResponse)
+}
+
+var server: HTTPServer
+
+fn http_server_new(port: u16) -> ptr(HTTPServer) {
+    server.port = port
+    server.running = false
+    server.handler_count = 0
+    
+    server.socket = socket_create(SocketType::STREAM)
+    if server.socket == null {
+        return null
+    }
+    
+    let addr = socket_addr(ip_any(), port)
+    if socket_bind(server.socket, addr) < 0 {
+        return null
+    }
+    
+    return &server
+}
+
+fn http_server_route(srv: ptr(HTTPServer), method: HTTPMethod, path: string, handler: fn(ptr(HTTPRequest)) -> ptr(HTTPResponse)) {
+    if srv.handler_count < 64 {
+        srv.handlers[srv.handler_count] = RouteHandler {
+            method: method,
+            path: string_from_cstr(path),
+            handler: handler
+        }
+        srv.handler_count = srv.handler_count + 1
+    }
+}
+
+fn http_server_get(srv: ptr(HTTPServer), path: string, handler: fn(ptr(HTTPRequest)) -> ptr(HTTPResponse)) {
+    http_server_route(srv, HTTPMethod::GET, path, handler)
+}
+
+fn http_server_post(srv: ptr(HTTPServer), path: string, handler: fn(ptr(HTTPRequest)) -> ptr(HTTPResponse)) {
+    http_server_route(srv, HTTPMethod::POST, path, handler)
+}
+
+fn http_server_start(srv: ptr(HTTPServer)) {
+    if socket_listen(srv.socket, 10) < 0 {
+        return
+    }
+    
+    srv.running = true
+    
+    while srv.running {
+        let client = socket_accept(srv.socket)
+        if client != null {
+            handle_client(srv, client)
+        }
+    }
+}
+
+fn http_server_stop(srv: ptr(HTTPServer)) {
+    srv.running = false
+    socket_close(srv.socket)
+}
+
+fn handle_client(srv: ptr(HTTPServer), client: ptr(Socket)) {
+    var buffer: [u8; 8192]
+    let received = socket_recv(client, &buffer, 8192)
+    
+    if received <= 0 {
+        socket_close(client)
+        return
+    }
+    
+    let request_text = string_from(&buffer, received as u32)
+    let req = parse_request(request_text)
+    
+    ; Find handler
+    var response: ptr(HTTPResponse) = null
+    
+    for i in 0..srv.handler_count {
+        let h = srv.handlers[i]
+        if h.method == req.method and string_equals(h.path, req.path) {
+            response = h.handler(req)
+            break
+        }
+    }
+    
+    if response == null {
+        response = http_response_error(404, string_from_cstr("Not Found"))
+    }
+    
+    ; Send response
+    let response_text = build_response(response)
+    socket_send(client, response_text.data as ptr, response_text.length)
+    
+    socket_close(client)
+}
+
+fn parse_request(text: ptr(String)) -> ptr(HTTPRequest) {
+    let req = gc_alloc(sizeof(HTTPRequest)) as ptr(HTTPRequest)
+    req.headers = map_new()
+    
+    let lines = string_split(text, '\n')
+    if lines.length == 0 {
+        return req
+    }
+    
+    ; Parse request line: GET /path HTTP/1.1
+    let request_line = lines[0]
+    let parts = string_split_words(request_line)
+    
+    if parts.length >= 3 {
+        req.method = string_to_method(parts[0])
+        req.path = parts[1]
+        req.version = string_trim(parts[2])
+    }
+    
+    ; Parse headers
+    var body_start: u32 = 1
+    for i in 1..lines.length {
+        let line = string_trim(lines[i])
+        if string_is_empty(line) {
+            body_start = i + 1
+            break
+        }
+        
+        let colon = string_find(line, string_from_cstr(":"), 0)
+        if colon > 0 {
+            let name = string_trim(string_substring(line, 0, colon as u32))
+            let value = string_trim(string_substring(line, colon as u32 + 1, line.length))
+            map_set(req.headers, name, value)
+        }
+    }
+    
+    ; Body
+    if body_start < lines.length {
+        req.body = string_join(lines[body_start..lines.length], string_from_cstr("\n"))
+    }
+    
+    return req
+}
+
+fn build_response(resp: ptr(HTTPResponse)) -> ptr(String) {
+    var result = string_concat(
+        resp.version,
+        string_concat(string_from_cstr(" "),
+        string_concat(int_to_string(resp.status_code as u32),
+        string_concat(string_from_cstr(" "), resp.status_text)))
+    )
+    result = string_concat(result, string_from_cstr("\r\n"))
+    
+    ; Headers
+    let keys = map_keys(resp.headers)
+    for i in 0..keys.length {
+        let key = keys[i]
+        let value = map_get(resp.headers, key)
+        result = string_concat(result, key)
+        result = string_concat(result, string_from_cstr(": "))
+        result = string_concat(result, value.data as ptr(String))
+        result = string_concat(result, string_from_cstr("\r\n"))
+    }
+    
+    result = string_concat(result, string_from_cstr("\r\n"))
+    
+    ; Body
+    if resp.body != null {
+        result = string_concat(result, resp.body)
+    }
+    
+    return result
+}
+
+; --- AI API Client ---
+; Helper functions for calling external AI services
+
+fn ai_api_call(endpoint: ptr(String), prompt: ptr(String)) -> ptr(String) {
+    ; Build JSON request
+    let json = string_concat(
+        string_from_cstr("{\"prompt\": \""),
+        string_concat(prompt, string_from_cstr("\"}"))
+    )
+    
+    let resp = http_post_json(endpoint, json)
+    
+    if resp.status_code == 200 {
+        return resp.body
+    }
+    
+    return string_from_cstr("[AI API Error]")
+}
+
+fn call_openai(prompt: ptr(String), api_key: ptr(String)) -> ptr(String) {
+    let req = http_request_new(HTTPMethod::POST, 
+        string_from_cstr("https://api.openai.com/v1/chat/completions"))
+    
+    http_set_header(req, "Authorization", 
+        string_concat(string_from_cstr("Bearer "), api_key))
+    
+    let json = string_concat(
+        string_from_cstr("{\"model\": \"gpt-4\", \"messages\": [{\"role\": \"user\", \"content\": \""),
+        string_concat(prompt, string_from_cstr("\"}]}"))
+    )
+    
+    http_set_json_body(req, json)
+    
+    let resp = http_send(req)
+    return resp.body
+}
+
+fn call_ollama(prompt: ptr(String)) -> ptr(String) {
+    let req = http_request_new(HTTPMethod::POST,
+        string_from_cstr("http://localhost:11434/api/generate"))
+    
+    let json = string_concat(
+        string_from_cstr("{\"model\": \"llama2\", \"prompt\": \""),
+        string_concat(prompt, string_from_cstr("\", \"stream\": false}"))
+    )
+    
+    http_set_json_body(req, json)
+    
+    let resp = http_send(req)
+    return resp.body
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; END OF MODULE
+; ═══════════════════════════════════════════════════════════════════════════

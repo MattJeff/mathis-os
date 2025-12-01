@@ -1,0 +1,559 @@
+; ═══════════════════════════════════════════════════════════════════════════
+; LLML-MATHIS: WebSocket Client/Server
+; ═══════════════════════════════════════════════════════════════════════════
+;
+; AGI-Oriented WebSocket:
+; - Real-time bidirectional communication
+; - AI streaming responses
+; - Live updates and notifications
+; - Distributed AGI coordination
+;
+; ═══════════════════════════════════════════════════════════════════════════
+
+; --- WebSocket Constants ---
+
+const WS_MAGIC: ptr(String) = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+
+; Opcodes
+const WS_OP_CONTINUATION: u8 = 0x00
+const WS_OP_TEXT: u8         = 0x01
+const WS_OP_BINARY: u8       = 0x02
+const WS_OP_CLOSE: u8        = 0x08
+const WS_OP_PING: u8         = 0x09
+const WS_OP_PONG: u8         = 0x0A
+
+; Frame flags
+const WS_FIN: u8 = 0x80
+const WS_MASK: u8 = 0x80
+
+; Close codes
+const WS_CLOSE_NORMAL: u16       = 1000
+const WS_CLOSE_GOING_AWAY: u16   = 1001
+const WS_CLOSE_PROTOCOL_ERR: u16 = 1002
+const WS_CLOSE_UNSUPPORTED: u16  = 1003
+
+; --- WebSocket State ---
+
+enum WSState {
+    CONNECTING,
+    OPEN,
+    CLOSING,
+    CLOSED
+}
+
+; --- WebSocket Frame ---
+
+struct WSFrame {
+    fin: bool,
+    opcode: u8,
+    masked: bool,
+    payload_len: u64,
+    mask_key: [u8; 4],
+    payload: ptr,
+    payload_size: u32
+}
+
+; --- WebSocket Connection ---
+
+struct WebSocket {
+    socket: ptr(Socket),
+    state: WSState,
+    url: ptr(String),
+    
+    ; Buffers
+    recv_buffer: [u8; 65536],
+    recv_len: u32,
+    send_buffer: [u8; 65536],
+    send_len: u32,
+    
+    ; Callbacks
+    on_open: fn(ptr(WebSocket)),
+    on_message: fn(ptr(WebSocket), ptr(String)),
+    on_binary: fn(ptr(WebSocket), ptr, u32),
+    on_close: fn(ptr(WebSocket), u16, ptr(String)),
+    on_error: fn(ptr(WebSocket), ptr(String)),
+    
+    ; For AI streaming
+    ai_buffer: ptr(String),
+    ai_streaming: bool
+}
+
+; --- WebSocket Client ---
+
+fn ws_connect(url: ptr(String)) -> ptr(WebSocket) {
+    let ws = gc_alloc(sizeof(WebSocket)) as ptr(WebSocket)
+    ws.state = WSState::CONNECTING
+    ws.url = url
+    ws.recv_len = 0
+    ws.send_len = 0
+    ws.ai_streaming = false
+    
+    ; Parse URL (ws://host:port/path)
+    let host = parse_ws_host(url)
+    let port = parse_ws_port(url)
+    let path = parse_ws_path(url)
+    
+    ; Resolve and connect
+    let ip = resolve_host(host)
+    let addr = socket_addr(ip, port)
+    
+    ws.socket = socket_create(SocketType::STREAM)
+    if ws.socket == null {
+        ws.state = WSState::CLOSED
+        return ws
+    }
+    
+    if socket_connect(ws.socket, addr) < 0 {
+        ws.state = WSState::CLOSED
+        return ws
+    }
+    
+    ; Perform WebSocket handshake
+    if not ws_handshake(ws, host, path) {
+        socket_close(ws.socket)
+        ws.state = WSState::CLOSED
+        return ws
+    }
+    
+    ws.state = WSState::OPEN
+    
+    ; Call on_open callback
+    if ws.on_open != null {
+        ws.on_open(ws)
+    }
+    
+    return ws
+}
+
+fn ws_handshake(ws: ptr(WebSocket), host: ptr(String), path: ptr(String)) -> bool {
+    ; Generate random key
+    let key = generate_ws_key()
+    
+    ; Build upgrade request
+    var request = string_from_cstr("GET ")
+    request = string_concat(request, path)
+    request = string_concat(request, string_from_cstr(" HTTP/1.1\r\n"))
+    request = string_concat(request, string_from_cstr("Host: "))
+    request = string_concat(request, host)
+    request = string_concat(request, string_from_cstr("\r\n"))
+    request = string_concat(request, string_from_cstr("Upgrade: websocket\r\n"))
+    request = string_concat(request, string_from_cstr("Connection: Upgrade\r\n"))
+    request = string_concat(request, string_from_cstr("Sec-WebSocket-Key: "))
+    request = string_concat(request, key)
+    request = string_concat(request, string_from_cstr("\r\n"))
+    request = string_concat(request, string_from_cstr("Sec-WebSocket-Version: 13\r\n"))
+    request = string_concat(request, string_from_cstr("\r\n"))
+    
+    ; Send request
+    socket_send(ws.socket, request.data as ptr, request.length)
+    
+    ; Receive response
+    var response: [u8; 2048]
+    let received = socket_recv(ws.socket, &response, 2048)
+    
+    if received <= 0 {
+        return false
+    }
+    
+    ; Check for 101 Switching Protocols
+    let response_str = string_from(&response, received as u32)
+    if not string_contains(response_str, string_from_cstr("101")) {
+        return false
+    }
+    
+    ; Verify Sec-WebSocket-Accept (simplified)
+    if not string_contains(response_str, string_from_cstr("Sec-WebSocket-Accept")) {
+        return false
+    }
+    
+    return true
+}
+
+fn generate_ws_key() -> ptr(String) {
+    ; Generate 16 random bytes, base64 encode
+    var key: [u8; 16]
+    for i in 0..16 {
+        key[i] = (random() & 0xFF) as u8
+    }
+    return base64_encode(&key, 16)
+}
+
+; --- Sending Messages ---
+
+fn ws_send(ws: ptr(WebSocket), message: ptr(String)) {
+    ws_send_frame(ws, WS_OP_TEXT, message.data as ptr, message.length, true)
+}
+
+fn ws_send_binary(ws: ptr(WebSocket), data: ptr, len: u32) {
+    ws_send_frame(ws, WS_OP_BINARY, data, len, true)
+}
+
+fn ws_send_frame(ws: ptr(WebSocket), opcode: u8, data: ptr, len: u32, masked: bool) {
+    if ws.state != WSState::OPEN {
+        return
+    }
+    
+    var frame: [u8; 65546]  ; Max frame size + header
+    var frame_len: u32 = 0
+    
+    ; First byte: FIN + opcode
+    frame[0] = WS_FIN | opcode
+    frame_len = 1
+    
+    ; Second byte: mask flag + payload length
+    if len < 126 {
+        frame[1] = (if masked { WS_MASK } else { 0 }) | (len as u8)
+        frame_len = 2
+    } else if len < 65536 {
+        frame[1] = (if masked { WS_MASK } else { 0 }) | 126
+        frame[2] = ((len >> 8) & 0xFF) as u8
+        frame[3] = (len & 0xFF) as u8
+        frame_len = 4
+    } else {
+        frame[1] = (if masked { WS_MASK } else { 0 }) | 127
+        ; 8-byte length (simplified, just use 4 bytes)
+        frame[2] = 0
+        frame[3] = 0
+        frame[4] = 0
+        frame[5] = 0
+        frame[6] = ((len >> 24) & 0xFF) as u8
+        frame[7] = ((len >> 16) & 0xFF) as u8
+        frame[8] = ((len >> 8) & 0xFF) as u8
+        frame[9] = (len & 0xFF) as u8
+        frame_len = 10
+    }
+    
+    ; Mask key (if masked)
+    var mask_key: [u8; 4]
+    if masked {
+        for i in 0..4 {
+            mask_key[i] = (random() & 0xFF) as u8
+            frame[frame_len] = mask_key[i]
+            frame_len = frame_len + 1
+        }
+    }
+    
+    ; Payload (masked if needed)
+    for i in 0..len {
+        let b = load_byte(data + i)
+        if masked {
+            frame[frame_len] = b ^ mask_key[i % 4]
+        } else {
+            frame[frame_len] = b
+        }
+        frame_len = frame_len + 1
+    }
+    
+    ; Send
+    socket_send(ws.socket, &frame, frame_len)
+}
+
+fn ws_ping(ws: ptr(WebSocket)) {
+    ws_send_frame(ws, WS_OP_PING, null, 0, true)
+}
+
+fn ws_pong(ws: ptr(WebSocket), data: ptr, len: u32) {
+    ws_send_frame(ws, WS_OP_PONG, data, len, true)
+}
+
+fn ws_close(ws: ptr(WebSocket), code: u16, reason: ptr(String)) {
+    if ws.state != WSState::OPEN {
+        return
+    }
+    
+    ws.state = WSState::CLOSING
+    
+    ; Send close frame with code and reason
+    var payload: [u8; 127]
+    payload[0] = ((code >> 8) & 0xFF) as u8
+    payload[1] = (code & 0xFF) as u8
+    
+    var payload_len: u32 = 2
+    if reason != null and reason.length > 0 {
+        let reason_len = if reason.length > 123 { 123 } else { reason.length }
+        memcpy(&payload + 2, reason.data as ptr, reason_len)
+        payload_len = 2 + reason_len
+    }
+    
+    ws_send_frame(ws, WS_OP_CLOSE, &payload, payload_len, true)
+    
+    socket_close(ws.socket)
+    ws.state = WSState::CLOSED
+    
+    if ws.on_close != null {
+        ws.on_close(ws, code, reason)
+    }
+}
+
+; --- Receiving Messages ---
+
+fn ws_recv(ws: ptr(WebSocket)) -> ptr(WSFrame) {
+    if ws.state != WSState::OPEN {
+        return null
+    }
+    
+    ; Read data into buffer
+    let received = socket_recv(ws.socket, &ws.recv_buffer + ws.recv_len, 65536 - ws.recv_len)
+    if received > 0 {
+        ws.recv_len = ws.recv_len + received as u32
+    }
+    
+    ; Try to parse a frame
+    return ws_parse_frame(ws)
+}
+
+fn ws_parse_frame(ws: ptr(WebSocket)) -> ptr(WSFrame) {
+    if ws.recv_len < 2 {
+        return null
+    }
+    
+    let frame = gc_alloc(sizeof(WSFrame)) as ptr(WSFrame)
+    var offset: u32 = 0
+    
+    ; First byte
+    let b0 = ws.recv_buffer[0]
+    frame.fin = (b0 & WS_FIN) != 0
+    frame.opcode = b0 & 0x0F
+    offset = 1
+    
+    ; Second byte
+    let b1 = ws.recv_buffer[1]
+    frame.masked = (b1 & WS_MASK) != 0
+    var payload_len: u64 = (b1 & 0x7F) as u64
+    offset = 2
+    
+    ; Extended length
+    if payload_len == 126 {
+        if ws.recv_len < 4 { return null }
+        payload_len = (ws.recv_buffer[2] as u64 << 8) | ws.recv_buffer[3] as u64
+        offset = 4
+    } else if payload_len == 127 {
+        if ws.recv_len < 10 { return null }
+        payload_len = 0
+        for i in 0..8 {
+            payload_len = (payload_len << 8) | ws.recv_buffer[2 + i] as u64
+        }
+        offset = 10
+    }
+    
+    frame.payload_len = payload_len
+    
+    ; Mask key
+    if frame.masked {
+        if ws.recv_len < offset + 4 { return null }
+        for i in 0..4 {
+            frame.mask_key[i] = ws.recv_buffer[offset + i]
+        }
+        offset = offset + 4
+    }
+    
+    ; Check if we have full payload
+    if ws.recv_len < offset + payload_len as u32 {
+        return null
+    }
+    
+    ; Extract and unmask payload
+    frame.payload_size = payload_len as u32
+    frame.payload = gc_alloc(frame.payload_size)
+    
+    for i in 0..frame.payload_size {
+        var b = ws.recv_buffer[offset + i]
+        if frame.masked {
+            b = b ^ frame.mask_key[i % 4]
+        }
+        store_byte(frame.payload + i, b)
+    }
+    
+    ; Remove frame from buffer
+    let frame_size = offset + frame.payload_size
+    let remaining = ws.recv_len - frame_size
+    if remaining > 0 {
+        memmove(&ws.recv_buffer, &ws.recv_buffer + frame_size, remaining)
+    }
+    ws.recv_len = remaining
+    
+    return frame
+}
+
+fn ws_poll(ws: ptr(WebSocket)) {
+    let frame = ws_recv(ws)
+    if frame == null {
+        return
+    }
+    
+    match frame.opcode {
+        WS_OP_TEXT => {
+            let message = string_from(frame.payload as ptr, frame.payload_size)
+            if ws.on_message != null {
+                ws.on_message(ws, message)
+            }
+            
+            ; Handle AI streaming
+            if ws.ai_streaming {
+                ws.ai_buffer = string_concat(ws.ai_buffer, message)
+            }
+        }
+        
+        WS_OP_BINARY => {
+            if ws.on_binary != null {
+                ws.on_binary(ws, frame.payload, frame.payload_size)
+            }
+        }
+        
+        WS_OP_PING => {
+            ; Reply with pong
+            ws_pong(ws, frame.payload, frame.payload_size)
+        }
+        
+        WS_OP_PONG => {
+            ; Ignore
+        }
+        
+        WS_OP_CLOSE => {
+            var code: u16 = WS_CLOSE_NORMAL
+            var reason: ptr(String) = null
+            
+            if frame.payload_size >= 2 {
+                code = (load_byte(frame.payload) as u16 << 8) | load_byte(frame.payload + 1) as u16
+                if frame.payload_size > 2 {
+                    reason = string_from(frame.payload + 2, frame.payload_size - 2)
+                }
+            }
+            
+            ws.state = WSState::CLOSED
+            if ws.on_close != null {
+                ws.on_close(ws, code, reason)
+            }
+        }
+        
+        _ => {}
+    }
+}
+
+; --- Event Loop ---
+
+fn ws_run(ws: ptr(WebSocket)) {
+    while ws.state == WSState::OPEN {
+        ws_poll(ws)
+        ; Small delay to prevent busy loop
+        sleep(10)
+    }
+}
+
+; --- WebSocket Server ---
+
+struct WSServer {
+    http_server: ptr(HTTPServer),
+    clients: [ptr(WebSocket); 256],
+    client_count: u32,
+    
+    on_connect: fn(ptr(WebSocket)),
+    on_disconnect: fn(ptr(WebSocket))
+}
+
+fn ws_server_new(port: u16) -> ptr(WSServer) {
+    let srv = gc_alloc(sizeof(WSServer)) as ptr(WSServer)
+    srv.http_server = http_server_new(port)
+    srv.client_count = 0
+    return srv
+}
+
+fn ws_server_broadcast(srv: ptr(WSServer), message: ptr(String)) {
+    for i in 0..srv.client_count {
+        let client = srv.clients[i]
+        if client.state == WSState::OPEN {
+            ws_send(client, message)
+        }
+    }
+}
+
+; --- AI Streaming Support ---
+
+fn ws_ai_stream_start(ws: ptr(WebSocket)) {
+    ws.ai_streaming = true
+    ws.ai_buffer = string_new()
+}
+
+fn ws_ai_stream_end(ws: ptr(WebSocket)) -> ptr(String) {
+    ws.ai_streaming = false
+    return ws.ai_buffer
+}
+
+fn ws_ai_stream_chunk(ws: ptr(WebSocket), chunk: ptr(String)) {
+    ; Send chunk to client
+    ws_send(ws, chunk)
+}
+
+; --- Helpers ---
+
+fn parse_ws_host(url: ptr(String)) -> ptr(String) {
+    var start: u32 = 0
+    if string_starts_with(url, string_from_cstr("ws://")) {
+        start = 5
+    } else if string_starts_with(url, string_from_cstr("wss://")) {
+        start = 6
+    }
+    
+    var end = start
+    while end < url.length {
+        let c = url.data[end]
+        if c == ':' or c == '/' {
+            break
+        }
+        end = end + 1
+    }
+    
+    return string_substring(url, start, end)
+}
+
+fn parse_ws_port(url: ptr(String)) -> u16 {
+    let host_end = string_find(url, string_from_cstr(":"), 5)
+    if host_end < 0 {
+        return if string_starts_with(url, string_from_cstr("wss://")) { 443 } else { 80 }
+    }
+    
+    var port: u16 = 0
+    var i = host_end as u32 + 1
+    while i < url.length and is_digit(url.data[i]) {
+        port = port * 10 + (url.data[i] - '0') as u16
+        i = i + 1
+    }
+    
+    return port
+}
+
+fn parse_ws_path(url: ptr(String)) -> ptr(String) {
+    let path_start = string_find(url, string_from_cstr("/"), 6)
+    if path_start < 0 {
+        return string_from_cstr("/")
+    }
+    return string_substring(url, path_start as u32, url.length)
+}
+
+fn base64_encode(data: ptr, len: u32) -> ptr(String) {
+    const CHARS: [u8; 64] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    
+    var result: [u8; 256]
+    var result_len: u32 = 0
+    var i: u32 = 0
+    
+    while i < len {
+        let b0 = load_byte(data + i)
+        let b1 = if i + 1 < len { load_byte(data + i + 1) } else { 0 }
+        let b2 = if i + 2 < len { load_byte(data + i + 2) } else { 0 }
+        
+        result[result_len] = CHARS[(b0 >> 2) as u32]
+        result[result_len + 1] = CHARS[(((b0 & 0x03) << 4) | (b1 >> 4)) as u32]
+        result[result_len + 2] = if i + 1 < len { CHARS[(((b1 & 0x0F) << 2) | (b2 >> 6)) as u32] } else { '=' }
+        result[result_len + 3] = if i + 2 < len { CHARS[(b2 & 0x3F) as u32] } else { '=' }
+        
+        result_len = result_len + 4
+        i = i + 3
+    }
+    
+    return string_from(&result, result_len)
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; END OF MODULE
+; ═══════════════════════════════════════════════════════════════════════════

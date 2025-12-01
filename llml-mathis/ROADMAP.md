@@ -30,10 +30,10 @@ Réécrire entièrement LLML en Mathis natif pour créer un écosystème AGI aut
 - [x] codegen.masm - Bytecode generator (650 lignes)
 - [x] optimizer.masm - Constant folding, DCE, CSE, AI-guided (550 lignes)
 
-### Phase 5: Networking (Semaine 11-12)
-- [ ] tcp.masm - TCP/IP stack
-- [ ] http.masm - HTTP client/server
-- [ ] websocket.masm - WebSocket
+### Phase 5: Networking (Semaine 11-12) ✅ COMPLETE
+- [x] tcp.masm - Full TCP/IP + sockets + ARP (650 lignes)
+- [x] http.masm - HTTP client/server + AI API calls (600 lignes)
+- [x] websocket.masm - WebSocket + AI streaming (550 lignes)
 
 ### Phase 6: Database (Semaine 13-14)
 - [ ] sql.masm - SQL parser
