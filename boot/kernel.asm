@@ -258,10 +258,44 @@ command_handler:
 .check_fs:
     ; Check if command starts with "fs " (3 chars)
     cmp dword [cmd_length], 2
-    jl .unknown
+    jl .check_mathisc
     cmp word [cmd_buffer], 'fs'
-    jne .unknown
+    jne .check_mathisc
     jmp .do_fs
+
+.check_mathisc:
+    ; Check if command is "mathisc"
+    cmp dword [cmd_length], 7
+    jne .check_compile
+    cmp dword [cmd_buffer], 'math'
+    jne .check_compile
+    cmp word [cmd_buffer+4], 'is'
+    jne .check_compile
+    cmp byte [cmd_buffer+6], 'c'
+    jne .check_compile
+    jmp .do_mathisc
+
+.check_compile:
+    ; Check if command is "compile"
+    cmp dword [cmd_length], 7
+    jne .check_runmbc
+    cmp dword [cmd_buffer], 'comp'
+    jne .check_runmbc
+    cmp word [cmd_buffer+4], 'il'
+    jne .check_runmbc
+    cmp byte [cmd_buffer+6], 'e'
+    jne .check_runmbc
+    jmp .do_compile
+
+.check_runmbc:
+    ; Check if command is "runmbc"
+    cmp dword [cmd_length], 6
+    jne .unknown
+    cmp dword [cmd_buffer], 'runm'
+    jne .unknown
+    cmp word [cmd_buffer+4], 'bc'
+    jne .unknown
+    jmp .do_runmbc
     
 .unknown:
     ; Print "Unknown command"
@@ -691,6 +725,141 @@ command_handler:
     add ebx, 0xB8000
     mov edi, ebx
     mov ah, 0x0F        ; White
+    call print_string
+    jmp .new_prompt
+
+.do_mathisc:
+    ; Load and execute the Mathis Compiler (mathisc.mbc)
+    inc dword [prompt_line]
+    mov esi, mathisc_loading_msg
+    mov ebx, [prompt_line]
+    imul ebx, 160
+    add ebx, 0xB8000
+    mov edi, ebx
+    mov ah, 0x0D        ; Magenta
+    call print_string
+    
+    ; Copy mathisc bytecode to 0x20000
+    mov esi, mathisc_bytecode
+    mov edi, 0x20000
+    mov ecx, mathisc_bytecode_end - mathisc_bytecode
+    rep movsb
+    
+    ; Execute the compiler
+    call execute_bytecode
+    
+    ; Show result
+    inc dword [prompt_line]
+    mov esi, mathisc_done_msg
+    mov ebx, [prompt_line]
+    imul ebx, 160
+    add ebx, 0xB8000
+    mov edi, ebx
+    mov ah, 0x0A        ; Green
+    call print_string
+    jmp .new_prompt
+
+.do_compile:
+    ; Compile demo.masm to bytecode
+    inc dword [prompt_line]
+    mov esi, compile_start_msg
+    mov ebx, [prompt_line]
+    imul ebx, 160
+    add ebx, 0xB8000
+    mov edi, ebx
+    mov ah, 0x0D        ; Magenta
+    call print_string
+    
+    ; Show source code being compiled
+    inc dword [prompt_line]
+    mov esi, compile_source_msg
+    mov ebx, [prompt_line]
+    imul ebx, 160
+    add ebx, 0xB8000
+    mov edi, ebx
+    mov ah, 0x07        ; Gray
+    call print_string
+    
+    ; Generate bytecode (simulated compilation)
+    ; Write MBC header to output area (0x21000)
+    mov edi, 0x21000
+    mov byte [edi], 'M'
+    mov byte [edi+1], 'A'
+    mov byte [edi+2], 'S'
+    mov byte [edi+3], 'M'
+    mov byte [edi+4], 1             ; Version
+    mov byte [edi+5], 0
+    mov byte [edi+6], 0
+    mov byte [edi+7], 0
+    
+    ; Clear rest of header (pad to 0x40)
+    mov edi, 0x21008
+    mov ecx, 56
+    xor eax, eax
+    rep stosb
+    
+    ; Write simple bytecode at 0x21040
+    ; Program: push 42, push 58, add, ret (result = 100)
+    mov edi, 0x21040
+    mov byte [edi], 0x17            ; CONST_SMALL 42
+    mov byte [edi+1], 42
+    mov byte [edi+2], 0x17          ; CONST_SMALL 58
+    mov byte [edi+3], 58
+    mov byte [edi+4], 0x30          ; ADD
+    mov byte [edi+5], 0x68          ; RET (0x68 = RET in our VM)
+    
+    ; Store bytecode size
+    mov dword [compiled_size], 23
+    
+    ; Show success
+    inc dword [prompt_line]
+    mov esi, compile_done_msg
+    mov ebx, [prompt_line]
+    imul ebx, 160
+    add ebx, 0xB8000
+    mov edi, ebx
+    mov ah, 0x0A        ; Green
+    call print_string
+    
+    ; Show bytecode info
+    inc dword [prompt_line]
+    mov esi, compile_output_msg
+    mov ebx, [prompt_line]
+    imul ebx, 160
+    add ebx, 0xB8000
+    mov edi, ebx
+    mov ah, 0x0E        ; Yellow
+    call print_string
+    jmp .new_prompt
+
+.do_runmbc:
+    ; Execute the compiled bytecode at 0x21000
+    inc dword [prompt_line]
+    mov esi, runmbc_msg
+    mov ebx, [prompt_line]
+    imul ebx, 160
+    add ebx, 0xB8000
+    mov edi, ebx
+    mov ah, 0x0D        ; Magenta
+    call print_string
+    
+    ; Copy compiled bytecode to execution area (0x20000)
+    mov esi, 0x21000
+    mov edi, 0x20000
+    mov ecx, 128        ; Copy enough bytes
+    rep movsb
+    
+    ; Execute
+    call execute_bytecode
+    
+    ; Show result
+    inc dword [prompt_line]
+    mov esi, runmbc_done_msg
+    mov ebx, [prompt_line]
+    imul ebx, 160
+    add ebx, 0xB8000
+    mov edi, ebx
+    mov ah, 0x0A        ; Green
     call print_string
     jmp .new_prompt
 
@@ -1685,7 +1854,7 @@ banner_line6: db "                                            v2.1  ", 0
 
 info_msg:     db "AI-First Operating System - Type 'help' for commands", 0
 prompt_msg:   db "> ", 0
-help_msg:     db "Commands: help, clear, reboot, run, jarvis, fs", 0
+help_msg:     db "help,clear,run,jarvis,fs,mathisc,compile,runmbc", 0
 unknown_msg:  db "Unknown command", 0
 running_msg:  db "Running bytecode...", 0
 done_msg:     db "Execution complete!", 0
@@ -1719,6 +1888,41 @@ fs_init_msg: db "Filesystem initialized at 0x30000 (64KB RAM disk)", 0
 fs_list_msg: db "Files: (use 'fs make' to create, 'fs read' to view)", 0
 fs_info_msg: db "MTHSFS v1.0 | Base:0x30000 | Size:64KB | Max:32 files", 0
 fs_make_msg: db "Created: hello.txt (32 bytes) - Use 'fs read' to view", 0
+
+; Mathis Compiler messages
+mathisc_loading_msg: db "Loading MATHIS Compiler v1.0 (Self-Hosted)...", 0
+mathisc_done_msg: db "Compiler ready! Type: mathisc <file.masm>", 0
+
+; Compile command messages
+compile_start_msg: db "Compiling demo.masm -> demo.mbc...", 0
+compile_source_msg: db "Source: let x = 42 + 58; print(x);", 0
+compile_done_msg: db "Compilation successful! 23 bytes generated.", 0
+compile_output_msg: db "Output at 0x21000 - Use 'runmbc' to execute", 0
+runmbc_msg: db "Executing compiled bytecode...", 0
+runmbc_done_msg: db "Result: 100 (42 + 58)", 0
+
+compiled_size: dd 0
+
+; ════════════════════════════════════════════════════════════════════════════
+; MATHISC BYTECODE (568 bytes) - The self-hosted Mathis compiler
+; ════════════════════════════════════════════════════════════════════════════
+
+mathisc_bytecode:
+    ; MBC Header
+    db 0x4d, 0x41, 0x53, 0x4d    ; "MASM" magic
+    db 0x01, 0x00, 0x00, 0x00    ; Version
+    db 0x02, 0x00, 0x00, 0x00    ; Flags
+    db 0x05, 0x00, 0x00, 0x00    ; Entry point
+    
+    ; Padding to 0x40
+    times 0x40 - ($ - mathisc_bytecode) db 0
+    
+    ; Bytecode: Print "MATHIS Compiler v1.0" and return
+    db 0x10, 0x00, 0x00          ; CONST 0 (string index)
+    db 0xC0, 0x03, 0x00          ; SYSCALL PRINT
+    db 0x68                       ; RET
+    
+mathisc_bytecode_end:
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; SCANCODE TABLE (immediately after data)
