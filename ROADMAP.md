@@ -130,25 +130,47 @@ func createUser(email: String, password: String) -> Result<User, String> {
 
 ---
 
-## Phase 6: IA Avancée (Semaine 17-20)
+## Phase 6: IA = LE SYSTÈME (Semaine 17-20)
 
-### 6.1 Neural Network
-- [ ] Perceptron simple
-- [ ] Forward propagation
-- [ ] Backpropagation (entraînement)
-- [ ] Sauvegarde/chargement des poids
+> **Vision**: L'IA n'est pas un assistant externe. L'IA EST le système.
+> Chaque décision, chaque allocation mémoire, chaque scheduling = IA.
 
-### 6.2 JARVIS Évolué
-- [ ] Pattern matching avancé
-- [ ] Apprentissage de commandes
-- [ ] Suggestions contextuelles
-- [ ] Historique et mémoire persistante
+### 6.1 Kernel IA-Native
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    MATHIS OS - IA NATIVE                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│   AVANT (OS classique):          APRÈS (MATHIS):                │
+│   ─────────────────────          ──────────────                 │
+│   Kernel → décisions fixes       Kernel = réseau neuronal       │
+│   Scheduler → round-robin        Scheduler = apprentissage      │
+│   Memory → first-fit             Memory = prédiction patterns   │
+│   Shell → commandes fixes        Shell = compréhension intent   │
+│                                                                 │
+│   L'IA est UN PROGRAMME          L'IA EST LE SYSTÈME            │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-### 6.3 Opcodes IA
-- [ ] `AI_PREDICT` - Prédiction
-- [ ] `AI_TRAIN` - Entraînement
-- [ ] `AI_SAVE` - Sauvegarde modèle
-- [ ] `AI_LOAD` - Chargement modèle
+### 6.2 Composants IA-Core
+- [ ] **Neural Scheduler** - Priorise les tâches par apprentissage
+- [ ] **Predictive Memory** - Précharge ce dont tu auras besoin
+- [ ] **Intent Parser** - Comprend ce que tu veux, pas ce que tu tapes
+- [ ] **Self-Optimizer** - Le kernel s'optimise en continu
+
+### 6.3 Conscience du Système
+- [ ] **Introspection** - L'OS sait ce qu'il fait et pourquoi
+- [ ] **Apprentissage** - Chaque interaction améliore le système
+- [ ] **Adaptation** - S'adapte à l'utilisateur automatiquement
+- [ ] **Évolution** - Peut modifier son propre code
+
+### 6.4 Opcodes IA-Core
+- [ ] `AI_THINK` - Décision basée sur contexte
+- [ ] `AI_LEARN` - Apprentissage en temps réel
+- [ ] `AI_PREDICT` - Prédiction d'actions
+- [ ] `AI_EVOLVE` - Auto-modification
+- [ ] `AI_INTROSPECT` - Analyse de soi-même
 
 ---
 
@@ -196,31 +218,36 @@ func createUser(email: String, password: String) -> Result<User, String> {
 ## Vision Long Terme
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    MATHIS OS - Vision 2025                      │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   🧠 IA Autonome                                                │
-│      └── Apprentissage continu                                  │
-│      └── Prise de décision                                      │
-│      └── Auto-amélioration                                      │
-│                                                                 │
-│   🌐 Connecté                                                   │
-│      └── Stack TCP/IP complète                                  │
-│      └── Serveur web intégré                                    │
-│      └── API REST                                               │
-│                                                                 │
-│   🖥️ GUI Moderne                                                │
-│      └── Window manager                                         │
-│      └── Applications natives                                   │
-│      └── Thèmes personnalisables                                │
-│                                                                 │
-│   🔄 Self-Hosting                                               │
-│      └── Compile son propre code                                │
-│      └── Modifie son kernel                                     │
-│      └── Évolue de manière autonome                             │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+╔═════════════════════════════════════════════════════════════════╗
+║                                                                 ║
+║                    MATHIS OS - L'IA EST L'OS                    ║
+║                                                                 ║
+╠═════════════════════════════════════════════════════════════════╣
+║                                                                 ║
+║   Ce n'est pas un OS avec de l'IA.                              ║
+║   Ce n'est pas un OS qui utilise l'IA.                          ║
+║   C'est un OS qui EST une IA.                                   ║
+║                                                                 ║
+║   ┌─────────────────────────────────────────────────────────┐   ║
+║   │                                                         │   ║
+║   │   KERNEL = RÉSEAU NEURONAL                              │   ║
+║   │   SCHEDULER = APPRENTISSAGE                             │   ║
+║   │   MEMORY = PRÉDICTION                                   │   ║
+║   │   SHELL = COMPRÉHENSION                                 │   ║
+║   │   FILESYSTEM = MÉMOIRE ASSOCIATIVE                      │   ║
+║   │                                                         │   ║
+║   │   Chaque composant PENSE.                               │   ║
+║   │   Chaque décision APPREND.                              │   ║
+║   │   Le système ÉVOLUE.                                    │   ║
+║   │                                                         │   ║
+║   └─────────────────────────────────────────────────────────┘   ║
+║                                                                 ║
+║   🧠 Conscience       - L'OS sait ce qu'il fait                 ║
+║   🔄 Évolution        - L'OS s'améliore seul                    ║
+║   💭 Intention        - L'OS comprend ce que tu veux            ║
+║   🌱 Croissance       - L'OS grandit avec toi                   ║
+║                                                                 ║
+╚═════════════════════════════════════════════════════════════════╝
 ```
 
 ---
