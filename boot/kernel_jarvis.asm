@@ -1017,25 +1017,26 @@ keyboard_isr:
     jmp .kbd_done
 .not_backspace:
 
-    ; Draw a block for each character typed
+    ; Draw small vertical bar (5 pixels) - WORKS!
+    push eax
     mov ebx, [input_x]
     mov ecx, 168
-    mov edx, 6
-    push eax
     mov al, COLOR_JARVIS_LIGHT
-    call draw_hline
-    mov ecx, 169
-    call draw_hline
-    mov ecx, 170
-    call draw_hline
-    mov ecx, 171
-    call draw_hline
-    mov ecx, 172
-    call draw_hline
+    
+    call put_pixel
+    inc ecx
+    call put_pixel
+    inc ecx
+    call put_pixel
+    inc ecx
+    call put_pixel
+    inc ecx
+    call put_pixel
+    
     pop eax
     
     ; Advance cursor
-    add dword [input_x], 8
+    add dword [input_x], 4
     cmp dword [input_x], 280
     jb .kbd_done
     mov dword [input_x], 50
