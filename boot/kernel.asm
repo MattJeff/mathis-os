@@ -248,12 +248,20 @@ command_handler:
 .check_jarvis:
     ; Check if command starts with "jarvis " (7 chars)
     cmp dword [cmd_length], 6
-    jl .unknown
+    jl .check_fs
     cmp dword [cmd_buffer], 'jarv'
-    jne .unknown
+    jne .check_fs
     cmp word [cmd_buffer+4], 'is'
-    jne .unknown
+    jne .check_fs
     jmp .do_jarvis
+
+.check_fs:
+    ; Check if command starts with "fs " (3 chars)
+    cmp dword [cmd_length], 2
+    jl .unknown
+    cmp word [cmd_buffer], 'fs'
+    jne .unknown
+    jmp .do_fs
     
 .unknown:
     ; Print "Unknown command"
@@ -586,6 +594,106 @@ command_handler:
     call print_string
     jmp .new_prompt
 
+.do_fs:
+    ; Filesystem commands: fs list, fs read, fs write, fs init
+    inc dword [prompt_line]
+    mov esi, fs_prompt
+    mov ebx, [prompt_line]
+    imul ebx, 160
+    add ebx, 0xB8000
+    mov edi, ebx
+    mov ah, 0x0B        ; Cyan
+    call print_string
+    
+    ; Check subcommand at cmd_buffer+3
+    cmp dword [cmd_buffer+3], 'list'
+    je .fs_list
+    cmp dword [cmd_buffer+3], 'init'
+    je .fs_init
+    cmp dword [cmd_buffer+3], 'info'
+    je .fs_info
+    cmp dword [cmd_buffer+3], 'help'
+    je .fs_help
+    cmp dword [cmd_buffer+3], 'make'
+    je .fs_make
+    cmp dword [cmd_buffer+3], 'read'
+    je .fs_read
+    cmp dword [cmd_buffer+3], 'cat '
+    je .fs_read
+    jmp .fs_help
+
+.fs_list:
+    inc dword [prompt_line]
+    mov esi, fs_list_msg
+    mov ebx, [prompt_line]
+    imul ebx, 160
+    add ebx, 0xB8000
+    mov edi, ebx
+    mov ah, 0x0E
+    call print_string
+    jmp .new_prompt
+
+.fs_init:
+    ; Initialize RAM disk at 0x30000
+    call fs_initialize
+    inc dword [prompt_line]
+    mov esi, fs_init_msg
+    mov ebx, [prompt_line]
+    imul ebx, 160
+    add ebx, 0xB8000
+    mov edi, ebx
+    mov ah, 0x0A        ; Green
+    call print_string
+    jmp .new_prompt
+
+.fs_info:
+    inc dword [prompt_line]
+    mov esi, fs_info_msg
+    mov ebx, [prompt_line]
+    imul ebx, 160
+    add ebx, 0xB8000
+    mov edi, ebx
+    mov ah, 0x0E
+    call print_string
+    jmp .new_prompt
+
+.fs_help:
+    inc dword [prompt_line]
+    mov esi, fs_help_msg
+    mov ebx, [prompt_line]
+    imul ebx, 160
+    add ebx, 0xB8000
+    mov edi, ebx
+    mov ah, 0x0E
+    call print_string
+    jmp .new_prompt
+
+.fs_make:
+    ; Create a demo file: "fs make" creates test.txt
+    call fs_create_demo_file
+    inc dword [prompt_line]
+    mov esi, fs_make_msg
+    mov ebx, [prompt_line]
+    imul ebx, 160
+    add ebx, 0xB8000
+    mov edi, ebx
+    mov ah, 0x0A        ; Green
+    call print_string
+    jmp .new_prompt
+
+.fs_read:
+    ; Read first file and display content
+    call fs_read_first_file
+    inc dword [prompt_line]
+    mov esi, FS_DATA    ; Display file content from RAM disk
+    mov ebx, [prompt_line]
+    imul ebx, 160
+    add ebx, 0xB8000
+    mov edi, ebx
+    mov ah, 0x0F        ; White
+    call print_string
+    jmp .new_prompt
+
 .new_prompt:
     ; Reset buffer
     mov dword [cursor_offset], 4
@@ -622,8 +730,22 @@ command_handler:
 ;   0x00 NOP         - No operation
 ;   0x10 CONST n     - Push constant[n] to stack
 ;   0x11 CONST_I64 n - Push 64-bit integer
+;   0x20 GET_LOCAL n - Push local[n] to stack
+;   0x21 SET_LOCAL n - Pop to local[n]
 ;   0x30 ADD         - Pop 2, push sum
 ;   0x31 SUB         - Pop 2, push difference
+;   0x32 MUL         - Pop 2, push product
+;   0x33 DIV         - Pop 2, push quotient
+;   0x40 EQ          - Pop 2, push 1 if equal, 0 otherwise
+;   0x41 LT          - Pop 2, push 1 if a < b
+;   0x42 GT          - Pop 2, push 1 if a > b
+;   0x50 AND         - Pop 2, push logical AND
+;   0x51 OR          - Pop 2, push logical OR
+;   0x52 NOT         - Pop 1, push logical NOT
+;   0x60 JUMP n      - Jump to offset n
+;   0x61 JUMP_IF n   - Pop, jump if true
+;   0x62 CALL n      - Call function at offset n
+;   0x70 DUP         - Duplicate top of stack
 ;   0x71 RET         - Return from function
 ;   0x80 POP         - Pop and discard
 ;   0xC0 SYSCALL n   - System call
@@ -665,10 +787,38 @@ execute_bytecode:
     je .op_const
     cmp al, 0x11            ; CONST_I64
     je .op_const_i64
+    cmp al, 0x20            ; GET_LOCAL
+    je .op_get_local
+    cmp al, 0x21            ; SET_LOCAL
+    je .op_set_local
     cmp al, 0x30            ; ADD
     je .op_add
     cmp al, 0x31            ; SUB
     je .op_sub
+    cmp al, 0x32            ; MUL
+    je .op_mul
+    cmp al, 0x33            ; DIV
+    je .op_div
+    cmp al, 0x40            ; EQ
+    je .op_eq
+    cmp al, 0x41            ; LT
+    je .op_lt
+    cmp al, 0x42            ; GT
+    je .op_gt
+    cmp al, 0x50            ; AND
+    je .op_and
+    cmp al, 0x51            ; OR
+    je .op_or
+    cmp al, 0x52            ; NOT
+    je .op_not
+    cmp al, 0x60            ; JUMP
+    je .op_jump
+    cmp al, 0x61            ; JUMP_IF
+    je .op_jump_if
+    cmp al, 0x62            ; CALL
+    je .op_call
+    cmp al, 0x70            ; DUP
+    je .op_dup
     cmp al, 0x71            ; RET
     je .op_ret
     cmp al, 0x80            ; POP
@@ -715,6 +865,148 @@ execute_bytecode:
     mov ebx, [ebp]
     sub ebx, eax
     mov [ebp], ebx
+    jmp .vm_loop
+
+.op_get_local:
+    ; Read local index (1 byte)
+    movzx eax, byte [esi]
+    inc esi
+    ; Get value from locals area (simplified: use fixed offset)
+    mov ebx, [0x24000 + eax*4]
+    sub ebp, 4
+    mov [ebp], ebx
+    jmp .vm_loop
+
+.op_set_local:
+    ; Read local index (1 byte)
+    movzx eax, byte [esi]
+    inc esi
+    ; Pop value and store in locals
+    mov ebx, [ebp]
+    add ebp, 4
+    mov [0x24000 + eax*4], ebx
+    jmp .vm_loop
+
+.op_mul:
+    ; Pop two values, multiply, push result
+    mov eax, [ebp]
+    add ebp, 4
+    imul eax, [ebp]
+    mov [ebp], eax
+    jmp .vm_loop
+
+.op_div:
+    ; Pop two values, divide, push result
+    mov eax, [ebp+4]        ; dividend
+    cdq
+    mov ebx, [ebp]          ; divisor
+    add ebp, 4
+    idiv ebx
+    mov [ebp], eax
+    jmp .vm_loop
+
+.op_eq:
+    ; Pop two values, compare, push 1 if equal
+    mov eax, [ebp]
+    add ebp, 4
+    cmp eax, [ebp]
+    je .eq_true
+    mov dword [ebp], 0
+    jmp .vm_loop
+.eq_true:
+    mov dword [ebp], 1
+    jmp .vm_loop
+
+.op_lt:
+    ; Pop two values, push 1 if a < b
+    mov eax, [ebp]          ; b
+    add ebp, 4
+    cmp [ebp], eax          ; a < b?
+    jl .lt_true
+    mov dword [ebp], 0
+    jmp .vm_loop
+.lt_true:
+    mov dword [ebp], 1
+    jmp .vm_loop
+
+.op_gt:
+    ; Pop two values, push 1 if a > b
+    mov eax, [ebp]          ; b
+    add ebp, 4
+    cmp [ebp], eax          ; a > b?
+    jg .gt_true
+    mov dword [ebp], 0
+    jmp .vm_loop
+.gt_true:
+    mov dword [ebp], 1
+    jmp .vm_loop
+
+.op_and:
+    ; Pop two values, push logical AND
+    mov eax, [ebp]
+    add ebp, 4
+    and eax, [ebp]
+    mov [ebp], eax
+    jmp .vm_loop
+
+.op_or:
+    ; Pop two values, push logical OR
+    mov eax, [ebp]
+    add ebp, 4
+    or eax, [ebp]
+    mov [ebp], eax
+    jmp .vm_loop
+
+.op_not:
+    ; Pop value, push logical NOT
+    mov eax, [ebp]
+    test eax, eax
+    jz .not_true
+    mov dword [ebp], 0
+    jmp .vm_loop
+.not_true:
+    mov dword [ebp], 1
+    jmp .vm_loop
+
+.op_jump:
+    ; Read jump offset (2 bytes)
+    movzx eax, word [esi]
+    ; Set IP to new offset (relative to bytecode base)
+    mov esi, 0x20040        ; Base + header
+    add esi, eax
+    jmp .vm_loop
+
+.op_jump_if:
+    ; Read jump offset (2 bytes)
+    movzx eax, word [esi]
+    add esi, 2
+    ; Pop condition
+    mov ebx, [ebp]
+    add ebp, 4
+    test ebx, ebx
+    jz .vm_loop             ; Don't jump if false
+    ; Jump
+    mov esi, 0x20040
+    add esi, eax
+    jmp .vm_loop
+
+.op_call:
+    ; Read function offset (2 bytes)
+    movzx eax, word [esi]
+    add esi, 2
+    ; Push return address
+    sub ebp, 4
+    mov [ebp], esi
+    ; Jump to function
+    mov esi, 0x20040
+    add esi, eax
+    jmp .vm_loop
+
+.op_dup:
+    ; Duplicate top of stack
+    mov eax, [ebp]
+    sub ebp, 4
+    mov [ebp], eax
     jmp .vm_loop
 
 .op_pop:
@@ -798,6 +1090,114 @@ serial_init:
     ret                 ; TODO: Initialize COM1 for AI bridge
 
 ; ════════════════════════════════════════════════════════════════════════════
+; FILESYSTEM - RAM Disk at 0x30000 (64KB)
+; ════════════════════════════════════════════════════════════════════════════
+; Structure:
+;   0x30000: Header (512 bytes)
+;     - Magic: "MTHSFS" (6 bytes)
+;     - Version: 1 (2 bytes)  
+;     - File count: u16
+;     - Total size: u32
+;   0x30200: Directory entries (64 bytes each, max 32 files)
+;   0x30A00: Data blocks (512 bytes each)
+
+FS_BASE     equ 0x30000
+FS_DIR      equ 0x30200
+FS_DATA     equ 0x30A00
+FS_MAX_FILES equ 32
+
+fs_initialize:
+    push eax
+    push ecx
+    push edi
+    
+    ; Clear filesystem area (64KB)
+    mov edi, FS_BASE
+    mov ecx, 16384          ; 64KB / 4 = 16384 dwords
+    xor eax, eax
+    rep stosd
+    
+    ; Write magic header "MTHSFS"
+    mov edi, FS_BASE
+    mov byte [edi], 'M'
+    mov byte [edi+1], 'T'
+    mov byte [edi+2], 'H'
+    mov byte [edi+3], 'S'
+    mov byte [edi+4], 'F'
+    mov byte [edi+5], 'S'
+    
+    ; Version 1.0
+    mov word [edi+6], 0x0001
+    
+    ; File count = 0
+    mov word [edi+8], 0
+    
+    ; Total size = 64KB
+    mov dword [edi+10], 65536
+    
+    ; Mark filesystem as initialized
+    mov byte [fs_initialized], 1
+    
+    pop edi
+    pop ecx
+    pop eax
+    ret
+
+fs_initialized: db 0
+
+fs_create_demo_file:
+    ; Create a demo file in RAM disk
+    push eax
+    push ecx
+    push esi
+    push edi
+    
+    ; Write directory entry at FS_DIR (0x30200)
+    mov edi, FS_DIR
+    
+    ; Filename: "hello.txt"
+    mov byte [edi], 'h'
+    mov byte [edi+1], 'e'
+    mov byte [edi+2], 'l'
+    mov byte [edi+3], 'l'
+    mov byte [edi+4], 'o'
+    mov byte [edi+5], '.'
+    mov byte [edi+6], 't'
+    mov byte [edi+7], 'x'
+    mov byte [edi+8], 't'
+    mov byte [edi+9], 0
+    
+    ; Type = 0 (file)
+    mov byte [edi+32], 0
+    ; Size = 32
+    mov dword [edi+36], 32
+    
+    ; Write file content at FS_DATA (0x30A00)
+    mov edi, FS_DATA
+    mov esi, demo_file_content
+    mov ecx, 32
+.copy_content:
+    lodsb
+    stosb
+    loop .copy_content
+    
+    ; Increment file count
+    mov edi, FS_BASE
+    inc word [edi+8]
+    
+    pop edi
+    pop esi
+    pop ecx
+    pop eax
+    ret
+
+fs_read_first_file:
+    ; Just return - content is already at FS_DATA
+    ret
+
+demo_file_content: db "Hello from MATHIS OS!", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+
+; ════════════════════════════════════════════════════════════════════════════
 ; IDT
 ; ════════════════════════════════════════════════════════════════════════════
 
@@ -832,7 +1232,7 @@ banner_line6: db "                                            v2.1  ", 0
 
 info_msg:     db "AI-First Operating System - Type 'help' for commands", 0
 prompt_msg:   db "> ", 0
-help_msg:     db "Commands: help, clear, reboot, run, jarvis", 0
+help_msg:     db "Commands: help, clear, reboot, run, jarvis, fs", 0
 unknown_msg:  db "Unknown command", 0
 running_msg:  db "Running bytecode...", 0
 done_msg:     db "Execution complete!", 0
@@ -858,6 +1258,14 @@ jarvis_modules_msg: db "Loaded: kernel,vm,jarvis | Pending: fs,net,gui,neural", 
 jarvis_scan_msg: db "Scanning system... All modules nominal. Ready for upgrade.", 0
 jarvis_improve_msg: db "Self-improvement: Optimizing code paths, reducing latency.", 0
 jarvis_default_msg: db "I understand. Awaiting your command to evolve.", 0
+
+; Filesystem messages
+fs_prompt: db "FS> ", 0
+fs_help_msg: db "fs: init, list, info, make (create file), read (show)", 0
+fs_init_msg: db "Filesystem initialized at 0x30000 (64KB RAM disk)", 0
+fs_list_msg: db "Files: (use 'fs make' to create, 'fs read' to view)", 0
+fs_info_msg: db "MTHSFS v1.0 | Base:0x30000 | Size:64KB | Max:32 files", 0
+fs_make_msg: db "Created: hello.txt (32 bytes) - Use 'fs read' to view", 0
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; SCANCODE TABLE (immediately after data)
