@@ -726,29 +726,22 @@ command_handler:
 ;   - VM Stack at 0x25000 (grows down)
 ;   - 32-bit values on stack
 ;
-; Supported Opcodes:
-;   0x00 NOP         - No operation
-;   0x10 CONST n     - Push constant[n] to stack
-;   0x11 CONST_I64 n - Push 64-bit integer
-;   0x20 GET_LOCAL n - Push local[n] to stack
-;   0x21 SET_LOCAL n - Pop to local[n]
-;   0x30 ADD         - Pop 2, push sum
-;   0x31 SUB         - Pop 2, push difference
-;   0x32 MUL         - Pop 2, push product
-;   0x33 DIV         - Pop 2, push quotient
-;   0x40 EQ          - Pop 2, push 1 if equal, 0 otherwise
-;   0x41 LT          - Pop 2, push 1 if a < b
-;   0x42 GT          - Pop 2, push 1 if a > b
-;   0x50 AND         - Pop 2, push logical AND
-;   0x51 OR          - Pop 2, push logical OR
-;   0x52 NOT         - Pop 1, push logical NOT
-;   0x60 JUMP n      - Jump to offset n
-;   0x61 JUMP_IF n   - Pop, jump if true
-;   0x62 CALL n      - Call function at offset n
-;   0x70 DUP         - Duplicate top of stack
-;   0x71 RET         - Return from function
-;   0x80 POP         - Pop and discard
-;   0xC0 SYSCALL n   - System call
+; Supported Opcodes (60+ total):
+; Control:     0x00 NOP, 0x01 HALT, 0x02 PANIC
+; Constants:   0x10 CONST, 0x11 CONST_NONE, 0x12 CONST_TRUE, 0x13 CONST_FALSE
+;              0x14 CONST_I64, 0x15 CONST_F64, 0x16 CONST_STR, 0x17 CONST_SMALL
+; Variables:   0x20 GET_LOCAL, 0x21 SET_LOCAL, 0x22 GET_GLOBAL, 0x23 SET_GLOBAL
+; Arithmetic:  0x30 ADD, 0x31 SUB, 0x32 MUL, 0x33 DIV, 0x34 MOD, 0x35 NEG
+; Comparison:  0x40 EQ, 0x41 NE, 0x42 LT, 0x43 LE, 0x44 GT, 0x45 GE
+; Logic:       0x50 AND, 0x51 OR, 0x52 NOT, 0x53 BIT_AND, 0x54 BIT_OR
+;              0x55 BIT_XOR, 0x56 BIT_NOT, 0x57 SHL, 0x58 SHR
+; Control:     0x60 JUMP, 0x61 JUMP_IF_TRUE, 0x62 JUMP_IF_FALSE, 0x65 CALL
+;              0x68 RET, 0x69 THROW
+; Stack:       0x70 POP, 0x71 DUP, 0x72 DUP2, 0x73 SWAP, 0x74 ROT, 0x75 OVER
+; Objects:     0x80 GET_FIELD, 0x81 SET_FIELD, 0x84 MAKE_STRUCT
+; Collections: 0x90 MAKE_LIST, 0x93 INDEX, 0x94 INDEX_SET, 0x95 LEN, 0x96 PUSH
+; AI:          0xA0 AI_BREAK, 0xA1 AI_CALL, 0xA2 AI_DECIDE, 0xA3 AI_LEARN
+; System:      0xC0 SYSCALL, 0xC1 ALLOC, 0xC2 FREE, 0xC3 PRINT, 0xC4 READ
 ;
 ; ════════════════════════════════════════════════════════════════════════════
 
@@ -780,51 +773,158 @@ execute_bytecode:
     movzx eax, byte [esi]
     inc esi
     
-    ; Dispatch opcode
-    cmp al, 0x00            ; NOP
+    ; Dispatch opcode - 60+ opcodes
+    ; Control (0x00-0x0F)
+    cmp al, 0x00
     je .op_nop
-    cmp al, 0x10            ; CONST
+    cmp al, 0x01
+    je .op_halt
+    cmp al, 0x02
+    je .op_panic
+    
+    ; Constants (0x10-0x1F)
+    cmp al, 0x10
     je .op_const
-    cmp al, 0x11            ; CONST_I64
+    cmp al, 0x11
+    je .op_const_none
+    cmp al, 0x12
+    je .op_const_true
+    cmp al, 0x13
+    je .op_const_false
+    cmp al, 0x14
     je .op_const_i64
-    cmp al, 0x20            ; GET_LOCAL
+    cmp al, 0x15
+    je .op_const_f64
+    cmp al, 0x16
+    je .op_const_str
+    cmp al, 0x17
+    je .op_const_small
+    
+    ; Variables (0x20-0x2F)
+    cmp al, 0x20
     je .op_get_local
-    cmp al, 0x21            ; SET_LOCAL
+    cmp al, 0x21
     je .op_set_local
-    cmp al, 0x30            ; ADD
+    cmp al, 0x22
+    je .op_get_global
+    cmp al, 0x23
+    je .op_set_global
+    
+    ; Arithmetic (0x30-0x3F)
+    cmp al, 0x30
     je .op_add
-    cmp al, 0x31            ; SUB
+    cmp al, 0x31
     je .op_sub
-    cmp al, 0x32            ; MUL
+    cmp al, 0x32
     je .op_mul
-    cmp al, 0x33            ; DIV
+    cmp al, 0x33
     je .op_div
-    cmp al, 0x40            ; EQ
+    cmp al, 0x34
+    je .op_mod
+    cmp al, 0x35
+    je .op_neg
+    
+    ; Comparison (0x40-0x4F)
+    cmp al, 0x40
     je .op_eq
-    cmp al, 0x41            ; LT
+    cmp al, 0x41
+    je .op_ne
+    cmp al, 0x42
     je .op_lt
-    cmp al, 0x42            ; GT
+    cmp al, 0x43
+    je .op_le
+    cmp al, 0x44
     je .op_gt
-    cmp al, 0x50            ; AND
+    cmp al, 0x45
+    je .op_ge
+    
+    ; Logic (0x50-0x5F)
+    cmp al, 0x50
     je .op_and
-    cmp al, 0x51            ; OR
+    cmp al, 0x51
     je .op_or
-    cmp al, 0x52            ; NOT
+    cmp al, 0x52
     je .op_not
-    cmp al, 0x60            ; JUMP
+    cmp al, 0x53
+    je .op_bit_and
+    cmp al, 0x54
+    je .op_bit_or
+    cmp al, 0x55
+    je .op_bit_xor
+    cmp al, 0x56
+    je .op_bit_not
+    cmp al, 0x57
+    je .op_shl
+    cmp al, 0x58
+    je .op_shr
+    
+    ; Control Flow (0x60-0x6F)
+    cmp al, 0x60
     je .op_jump
-    cmp al, 0x61            ; JUMP_IF
-    je .op_jump_if
-    cmp al, 0x62            ; CALL
+    cmp al, 0x61
+    je .op_jump_if_true
+    cmp al, 0x62
+    je .op_jump_if_false
+    cmp al, 0x65
     je .op_call
-    cmp al, 0x70            ; DUP
-    je .op_dup
-    cmp al, 0x71            ; RET
+    cmp al, 0x68
     je .op_ret
-    cmp al, 0x80            ; POP
+    
+    ; Stack (0x70-0x7F)
+    cmp al, 0x70
     je .op_pop
-    cmp al, 0xC0            ; SYSCALL
+    cmp al, 0x71
+    je .op_dup
+    cmp al, 0x72
+    je .op_dup2
+    cmp al, 0x73
+    je .op_swap
+    cmp al, 0x74
+    je .op_rot
+    cmp al, 0x75
+    je .op_over
+    
+    ; Objects (0x80-0x8F)
+    cmp al, 0x80
+    je .op_get_field
+    cmp al, 0x81
+    je .op_set_field
+    cmp al, 0x84
+    je .op_make_struct
+    
+    ; Collections (0x90-0x9F)
+    cmp al, 0x90
+    je .op_make_list
+    cmp al, 0x93
+    je .op_index
+    cmp al, 0x94
+    je .op_index_set
+    cmp al, 0x95
+    je .op_len
+    cmp al, 0x96
+    je .op_push_list
+    
+    ; AI (0xA0-0xAF)
+    cmp al, 0xA0
+    je .op_ai_break
+    cmp al, 0xA1
+    je .op_ai_call
+    cmp al, 0xA2
+    je .op_ai_decide
+    cmp al, 0xA3
+    je .op_ai_learn
+    
+    ; System (0xC0-0xCF)
+    cmp al, 0xC0
     je .op_syscall
+    cmp al, 0xC1
+    je .op_alloc
+    cmp al, 0xC2
+    je .op_free
+    cmp al, 0xC3
+    je .op_print
+    cmp al, 0xC4
+    je .op_read
     
     ; Unknown opcode - skip
     jmp .vm_loop
@@ -1009,6 +1109,353 @@ execute_bytecode:
     mov [ebp], eax
     jmp .vm_loop
 
+; === NEW OPCODES ===
+
+.op_halt:
+    jmp .vm_done
+
+.op_panic:
+    jmp .vm_error
+
+.op_const_none:
+    sub ebp, 4
+    mov dword [ebp], 0
+    jmp .vm_loop
+
+.op_const_true:
+    sub ebp, 4
+    mov dword [ebp], 1
+    jmp .vm_loop
+
+.op_const_false:
+    sub ebp, 4
+    mov dword [ebp], 0
+    jmp .vm_loop
+
+.op_const_f64:
+    mov eax, [esi]
+    add esi, 8
+    sub ebp, 4
+    mov [ebp], eax
+    jmp .vm_loop
+
+.op_const_str:
+    movzx eax, word [esi]
+    add esi, 2
+    sub ebp, 4
+    mov [ebp], eax
+    jmp .vm_loop
+
+.op_const_small:
+    movsx eax, byte [esi]
+    inc esi
+    sub ebp, 4
+    mov [ebp], eax
+    jmp .vm_loop
+
+.op_get_global:
+    movzx eax, word [esi]
+    add esi, 2
+    mov ebx, [0x23000 + eax*4]
+    sub ebp, 4
+    mov [ebp], ebx
+    jmp .vm_loop
+
+.op_set_global:
+    movzx eax, word [esi]
+    add esi, 2
+    mov ebx, [ebp]
+    add ebp, 4
+    mov [0x23000 + eax*4], ebx
+    jmp .vm_loop
+
+.op_mod:
+    mov eax, [ebp+4]
+    cdq
+    mov ebx, [ebp]
+    add ebp, 4
+    idiv ebx
+    mov [ebp], edx      ; remainder
+    jmp .vm_loop
+
+.op_neg:
+    neg dword [ebp]
+    jmp .vm_loop
+
+.op_ne:
+    mov eax, [ebp]
+    add ebp, 4
+    cmp eax, [ebp]
+    jne .ne_true
+    mov dword [ebp], 0
+    jmp .vm_loop
+.ne_true:
+    mov dword [ebp], 1
+    jmp .vm_loop
+
+.op_le:
+    mov eax, [ebp]
+    add ebp, 4
+    cmp [ebp], eax
+    jle .le_true
+    mov dword [ebp], 0
+    jmp .vm_loop
+.le_true:
+    mov dword [ebp], 1
+    jmp .vm_loop
+
+.op_ge:
+    mov eax, [ebp]
+    add ebp, 4
+    cmp [ebp], eax
+    jge .ge_true
+    mov dword [ebp], 0
+    jmp .vm_loop
+.ge_true:
+    mov dword [ebp], 1
+    jmp .vm_loop
+
+.op_bit_and:
+    mov eax, [ebp]
+    add ebp, 4
+    and [ebp], eax
+    jmp .vm_loop
+
+.op_bit_or:
+    mov eax, [ebp]
+    add ebp, 4
+    or [ebp], eax
+    jmp .vm_loop
+
+.op_bit_xor:
+    mov eax, [ebp]
+    add ebp, 4
+    xor [ebp], eax
+    jmp .vm_loop
+
+.op_bit_not:
+    not dword [ebp]
+    jmp .vm_loop
+
+.op_shl:
+    mov ecx, [ebp]
+    add ebp, 4
+    shl dword [ebp], cl
+    jmp .vm_loop
+
+.op_shr:
+    mov ecx, [ebp]
+    add ebp, 4
+    sar dword [ebp], cl
+    jmp .vm_loop
+
+.op_jump_if_true:
+    movzx eax, word [esi]
+    add esi, 2
+    mov ebx, [ebp]
+    add ebp, 4
+    test ebx, ebx
+    jz .vm_loop
+    mov esi, 0x20040
+    add esi, eax
+    jmp .vm_loop
+
+.op_jump_if_false:
+    movzx eax, word [esi]
+    add esi, 2
+    mov ebx, [ebp]
+    add ebp, 4
+    test ebx, ebx
+    jnz .vm_loop
+    mov esi, 0x20040
+    add esi, eax
+    jmp .vm_loop
+
+.op_dup2:
+    mov eax, [ebp]
+    mov ebx, [ebp+4]
+    sub ebp, 8
+    mov [ebp], eax
+    mov [ebp+4], ebx
+    jmp .vm_loop
+
+.op_swap:
+    mov eax, [ebp]
+    mov ebx, [ebp+4]
+    mov [ebp], ebx
+    mov [ebp+4], eax
+    jmp .vm_loop
+
+.op_rot:
+    mov eax, [ebp]
+    mov ebx, [ebp+4]
+    mov ecx, [ebp+8]
+    mov [ebp], ebx
+    mov [ebp+4], ecx
+    mov [ebp+8], eax
+    jmp .vm_loop
+
+.op_over:
+    mov eax, [ebp+4]
+    sub ebp, 4
+    mov [ebp], eax
+    jmp .vm_loop
+
+.op_get_field:
+    movzx eax, word [esi]
+    add esi, 2
+    mov ebx, [ebp]          ; object ptr
+    mov ecx, [ebx + eax*4]  ; field value
+    mov [ebp], ecx
+    jmp .vm_loop
+
+.op_set_field:
+    movzx eax, word [esi]
+    add esi, 2
+    mov ebx, [ebp+4]        ; object ptr
+    mov ecx, [ebp]          ; value
+    add ebp, 4
+    mov [ebx + eax*4], ecx
+    jmp .vm_loop
+
+.op_make_struct:
+    movzx eax, word [esi]   ; type_id
+    add esi, 2
+    movzx ebx, byte [esi]   ; field count
+    inc esi
+    ; Allocate at heap (simplified: use fixed area)
+    mov edi, [heap_ptr]
+    mov ecx, ebx
+.make_struct_loop:
+    test ecx, ecx
+    jz .make_struct_done
+    mov eax, [ebp]
+    add ebp, 4
+    mov [edi], eax
+    add edi, 4
+    dec ecx
+    jmp .make_struct_loop
+.make_struct_done:
+    mov eax, [heap_ptr]
+    sub ebp, 4
+    mov [ebp], eax
+    mov [heap_ptr], edi
+    jmp .vm_loop
+
+.op_make_list:
+    movzx ebx, word [esi]   ; count
+    add esi, 2
+    mov edi, [heap_ptr]
+    mov [edi], ebx          ; store length
+    add edi, 4
+    mov ecx, ebx
+.make_list_loop:
+    test ecx, ecx
+    jz .make_list_done
+    mov eax, [ebp]
+    add ebp, 4
+    mov [edi], eax
+    add edi, 4
+    dec ecx
+    jmp .make_list_loop
+.make_list_done:
+    mov eax, [heap_ptr]
+    add dword [heap_ptr], 4
+    imul ebx, 4
+    add [heap_ptr], ebx
+    sub ebp, 4
+    mov [ebp], eax
+    jmp .vm_loop
+
+.op_index:
+    mov eax, [ebp]          ; index
+    add ebp, 4
+    mov ebx, [ebp]          ; list ptr
+    mov ecx, [ebx + 4 + eax*4]
+    mov [ebp], ecx
+    jmp .vm_loop
+
+.op_index_set:
+    mov eax, [ebp+4]        ; index
+    mov ebx, [ebp+8]        ; list ptr
+    mov ecx, [ebp]          ; value
+    add ebp, 8
+    mov [ebx + 4 + eax*4], ecx
+    jmp .vm_loop
+
+.op_len:
+    mov eax, [ebp]          ; list ptr
+    mov ebx, [eax]          ; length
+    mov [ebp], ebx
+    jmp .vm_loop
+
+.op_push_list:
+    mov eax, [ebp]          ; value
+    mov ebx, [ebp+4]        ; list ptr
+    add ebp, 4
+    mov ecx, [ebx]          ; length
+    mov [ebx + 4 + ecx*4], eax
+    inc dword [ebx]
+    jmp .vm_loop
+
+; AI Opcodes
+.op_ai_break:
+    ; AI breakpoint - pause for inspection
+    jmp .vm_loop
+
+.op_ai_call:
+    ; AI function call
+    movzx eax, word [esi]
+    add esi, 2
+    ; Store AI call ID
+    mov [ai_last_call], eax
+    jmp .vm_loop
+
+.op_ai_decide:
+    ; AI decision - push 1 (always yes for now)
+    sub ebp, 4
+    mov dword [ebp], 1
+    jmp .vm_loop
+
+.op_ai_learn:
+    ; AI learn - store pattern
+    mov eax, [ebp]
+    add ebp, 4
+    mov [ai_last_pattern], eax
+    jmp .vm_loop
+
+; System Opcodes
+.op_alloc:
+    mov eax, [ebp]          ; size
+    mov ebx, [heap_ptr]
+    mov [ebp], ebx          ; return ptr
+    add [heap_ptr], eax
+    jmp .vm_loop
+
+.op_free:
+    add ebp, 4              ; simplified: just pop
+    jmp .vm_loop
+
+.op_print:
+    mov eax, [ebp]
+    add ebp, 4
+    inc dword [prompt_line]
+    mov esi, vm_output_msg
+    mov ebx, [prompt_line]
+    imul ebx, 160
+    add ebx, 0xB8000
+    mov edi, ebx
+    mov ah, 0x0E
+    call print_string
+    mov esi, 0x20040
+    jmp .vm_loop
+
+.op_read:
+    ; Read input (simplified: push 0)
+    sub ebp, 4
+    mov dword [ebp], 0
+    jmp .vm_loop
+
 .op_pop:
     ; Discard top of stack
     add ebp, 4
@@ -1145,6 +1592,11 @@ fs_initialize:
 
 fs_initialized: db 0
 
+; VM Heap and AI state
+heap_ptr: dd 0x40000            ; Heap starts at 256KB
+ai_last_call: dd 0
+ai_last_pattern: dd 0
+
 fs_create_demo_file:
     ; Create a demo file in RAM disk
     push eax
@@ -1201,27 +1653,28 @@ demo_file_content: db "Hello from MATHIS OS!", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 ; IDT
 ; ════════════════════════════════════════════════════════════════════════════
 
-    times 0x1000 - ($ - $$) db 0    ; Pad to 0x11000
+    times 0x3000 - ($ - $$) db 0    ; Pad to 0x13000 (larger kernel with 60+ opcodes)
 
 idt_ptr:
     dw 256*8 - 1
-    dd 0x11006                      ; Address of IDT (0x10000 + 0x1006)
+    dd 0x13006                      ; Address of IDT (0x10000 + 0x3006)
 
 idt:
     times 0x21 dq 0                 ; Entries 0-0x20
-    ; Entry 0x21 - Keyboard (hardcoded for 0x10200)
-    dw 0x0200                       ; Offset low (0x10200 & 0xFFFF = 0x0200)
+    ; Entry 0x21 - Keyboard
+    ; keyboard_isr is at offset 0x200 in the kernel, so 0x10000 + 0x200 = 0x10200
+    dw 0x0200                       ; Offset low
     dw 0x08                         ; Selector
     db 0
     db 0x8E                         ; Present, Ring 0, 32-bit interrupt gate
-    dw 0x0001                       ; Offset high (0x10200 >> 16 = 0x0001)
+    dw 0x0001                       ; Offset high
     times (256-0x22) dq 0           ; Rest of IDT
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; DATA SECTION
 ; ════════════════════════════════════════════════════════════════════════════
 
-    times 0x2000 - ($ - $$) db 0    ; Pad to 0x12000
+    times 0x4000 - ($ - $$) db 0    ; Pad to 0x14000
 
 banner_line1: db " __  __    _  _____ _   _ ___ ____     ___  ____  ", 0
 banner_line2: db "|  \/  |  / \|_   _| | | |_ _/ ___|   / _ \/ ___| ", 0
@@ -1310,7 +1763,7 @@ embedded_program_end:
 ; VARIABLES
 ; ════════════════════════════════════════════════════════════════════════════
 
-    times 0x3000 - ($ - $$) db 0    ; Pad to 0x13000
+    times 0x5000 - ($ - $$) db 0    ; Pad to 0x15000
 
 cursor_offset: dd 0
 cmd_length:    dd 0
@@ -1318,7 +1771,7 @@ cmd_buffer:    times 64 db 0
 prompt_line:   dd 0
 
 ; ════════════════════════════════════════════════════════════════════════════
-; PAD TO 16KB
+; PAD TO 24KB (larger kernel with 60+ opcodes)
 ; ════════════════════════════════════════════════════════════════════════════
 
-    times 0x4000 - ($ - $$) db 0
+    times 0x6000 - ($ - $$) db 0
