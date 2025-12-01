@@ -119,6 +119,13 @@ no_lba:
     mov al, 'K'
     int 0x10
 
+    ; ═══════════════════════════════════════════════════════════════════
+    ; SWITCH TO VGA MODE 13h (320x200x256) - JARVIS GRAPHICS MODE
+    ; Must be done BEFORE entering protected mode (while BIOS is available)
+    ; ═══════════════════════════════════════════════════════════════════
+    mov ax, 0x0013      ; VGA Mode 13h: 320x200, 256 colors
+    int 0x10            ; Call BIOS video interrupt
+
     jmp enable_a20
 
 disk_error:
@@ -159,9 +166,6 @@ dap:
     dw 0x1000               ; Segment (destination) = 0x1000:0 = 0x10000
     dq 9                    ; Starting LBA (sector 9 = kernel start)
 
-    ; Padding to offset 0xC0 for PM code
-    times 0xC0 - ($ - $$) db 0
-
 [BITS 32]
 pm_entry:
     ; Set up segment registers
@@ -171,28 +175,13 @@ pm_entry:
     mov ss, ax
     mov esp, 0x90000
 
-    ; Write "MATHIS" to VGA as proof we got here
-    mov edi, 0xB8000
-    mov eax, 0x1F4D         ; 'M' white on blue
-    stosd
-    mov eax, 0x1F41         ; 'A'
-    stosd
-    mov eax, 0x1F54         ; 'T'
-    stosd
-    mov eax, 0x1F48         ; 'H'
-    stosd
-    mov eax, 0x1F49         ; 'I'
-    stosd
-    mov eax, 0x1F53         ; 'S'
-    stosd
-
+    ; We're now in VGA Mode 13h (320x200 graphics)
+    ; No text mode VGA writes - kernel will draw JARVIS UI
+    
     ; Jump to kernel at 0x10000
     jmp 0x08:0x10000
 
-    ; Pad to offset 0x100 for GDT
-    times 0x100 - ($ - $$) db 0
-
-; GDT Pointer at offset 0x100 (address 0x7F00)
+; GDT Pointer
 gdt_ptr:
     dw gdt_end - gdt - 1    ; GDT limit
     dd gdt                  ; GDT base (will be 0x7F06)
@@ -218,9 +207,6 @@ gdt:
     db 0xCF                 ; Flags: 4KB granularity, 32-bit + limit high
     db 0x00                 ; Base high
 gdt_end:
-
-    ; Pad to offset 0x180 for message
-    times 0x180 - ($ - $$) db 0
 
 loading_msg: db "Loading...", 13, 10, 0
 
