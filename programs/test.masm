@@ -1,0 +1,26 @@
+; ════════════════════════════════════════════════════════════════════════════
+; TEST PROGRAM - Simple program to test Mini VM
+; ════════════════════════════════════════════════════════════════════════════
+
+.module "test"
+.version "1.0.0"
+
+.constants:
+    0: str "Test OK"
+
+.func main
+    .arity 0
+    .locals 0
+    .ai_block "test_main"
+    .ai_intent "Test the Mini VM"
+
+    ; Simple: push 2 numbers, add them
+    CONST_I64 10
+    CONST_I64 20
+    ADD
+    POP
+    
+    ; Return
+    CONST_I64 0
+    RET
+.end

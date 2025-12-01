@@ -1,0 +1,22 @@
+; ════════════════════════════════════════════════════════════════════
+; Simple Math - Basic arithmetic example
+; ════════════════════════════════════════════════════════════════════
+
+.module "simple_math"
+.version "1.0.0"
+
+.func main
+    .arity 0
+    .locals 0
+
+    ; Calculate: (10 + 20) * 2 = 60
+    CONST_I64 10
+    CONST_I64 20
+    ADD
+
+    CONST_I64 2
+    MUL
+
+    ; Result (60) is on stack, return it
+    RET
+.end

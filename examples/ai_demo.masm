@@ -1,0 +1,90 @@
+; ════════════════════════════════════════════════════════════════════
+; AI Demo - Showcase AI syscalls (unique to MATHIS OS!)
+; ════════════════════════════════════════════════════════════════════
+
+.module "ai_demo"
+.version "1.0.0"
+
+.func main
+    .arity 0
+    .locals 2
+    .ai_block "ai_showcase"
+    .ai_intent "Demonstrate AI integration in MATHIS OS"
+    .ai_pure false
+
+    ; Print header
+    CONST_STR "════════════════════════════════════════════════════"
+    SYSCALL 0x0011
+
+    CONST_STR "           MATHIS OS - AI Integration Demo"
+    SYSCALL 0x0011
+
+    CONST_STR "════════════════════════════════════════════════════"
+    SYSCALL 0x0011
+
+    ; ── AI Completion ──
+    CONST_STR ""
+    SYSCALL 0x0011
+
+    CONST_STR "Testing AI Completion syscall (0x0A01)..."
+    SYSCALL 0x0011
+
+    CONST_STR "Write a haiku about programming"
+    CONST_STR "gpt-4"
+    SYSCALL 0x0A01     ; ai_complete
+    SET_LOCAL 0
+
+    CONST_STR "AI Response: "
+    SYSCALL 0x0010
+
+    GET_LOCAL 0
+    SYSCALL 0x0011
+
+    ; ── Token Count ──
+    CONST_STR ""
+    SYSCALL 0x0011
+
+    CONST_STR "Counting tokens in 'Hello MATHIS OS'..."
+    SYSCALL 0x0011
+
+    CONST_STR "Hello MATHIS OS, you are amazing!"
+    CONST_STR "gpt-4"
+    SYSCALL 0x0A63     ; ai_token_count
+    SET_LOCAL 1
+
+    CONST_STR "Token count: "
+    SYSCALL 0x0010
+
+    ; Token count result discarded (would need int-to-string)
+    GET_LOCAL 1
+    POP
+
+    ; ── AI Config ──
+    CONST_STR ""
+    SYSCALL 0x0011
+
+    CONST_STR "Setting AI model to 'claude-3'..."
+    SYSCALL 0x0011
+
+    CONST_STR "claude-3"
+    SYSCALL 0x0A61     ; ai_set_model
+
+    CONST_STR "AI model configured!"
+    SYSCALL 0x0011
+
+    ; Footer
+    CONST_STR ""
+    SYSCALL 0x0011
+    CONST_STR "════════════════════════════════════════════════════"
+    SYSCALL 0x0011
+    CONST_STR "  This is what makes MATHIS OS unique: AI at the"
+    SYSCALL 0x0011
+    CONST_STR "  kernel level, accessible from bytecode!"
+    SYSCALL 0x0011
+    CONST_STR "════════════════════════════════════════════════════"
+    SYSCALL 0x0011
+
+    ; Return
+    CONST_NONE
+    RET
+.end

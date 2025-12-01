@@ -1,0 +1,716 @@
+; ════════════════════════════════════════════════════════════════════════════════
+; MATHIS COMPILER - CODE GENERATOR
+; Written in MathisASM - 100% from scratch, no Rust!
+; ════════════════════════════════════════════════════════════════════════════════
+;
+; This code generator transforms the AST into MathisASM bytecode.
+; It outputs .masm text that can then be assembled into .mbc
+;
+; The output format is MathisASM assembly text, which our existing
+; assembler (masm) will then compile to bytecode.
+;
+; ════════════════════════════════════════════════════════════════════════════════
+
+.module "mathisc_codegen"
+.version "1.0.0"
+
+; ─────────────────────────────────────────────────────────────────────────────────
+; CONSTANTS
+; ─────────────────────────────────────────────────────────────────────────────────
+
+.constants:
+    ; AST Node Types (must match parser)
+    0: i64 1      ; AST_MODULE
+    1: i64 2      ; AST_FUNC
+    2: i64 3      ; AST_BLOCK
+    3: i64 4      ; AST_LET
+    4: i64 5      ; AST_IF
+    5: i64 6      ; AST_WHILE
+    6: i64 7      ; AST_FOR
+    7: i64 8      ; AST_RETURN
+    8: i64 9      ; AST_CALL
+    9: i64 10     ; AST_BINARY
+    10: i64 11    ; AST_UNARY
+    11: i64 12    ; AST_IDENT
+    12: i64 13    ; AST_INT_LIT
+    13: i64 14    ; AST_FLOAT_LIT
+    14: i64 15    ; AST_STRING_LIT
+    15: i64 16    ; AST_BOOL_LIT
+
+    ; Binary operators
+    16: str "+"
+    17: str "-"
+    18: str "*"
+    19: str "/"
+    20: str "%"
+    21: str "=="
+    22: str "!="
+    23: str "<"
+    24: str ">"
+    25: str "<="
+    26: str ">="
+    27: str "and"
+    28: str "or"
+
+    ; Output strings (MathisASM instructions)
+    29: str ".module \""
+    30: str "\"\n.version \"1.0.0\"\n\n"
+    31: str ".func "
+    32: str "\n    .arity "
+    33: str "\n    .locals "
+    34: str "\n"
+    35: str ".end\n\n"
+    36: str "    CONST_I64 "
+    37: str "    CONST_F64 "
+    38: str "    CONST_TRUE\n"
+    39: str "    CONST_FALSE\n"
+    40: str "    ADD\n"
+    41: str "    SUB\n"
+    42: str "    MUL\n"
+    43: str "    DIV\n"
+    44: str "    MOD\n"
+    45: str "    EQ\n"
+    46: str "    NE\n"
+    47: str "    LT\n"
+    48: str "    GT\n"
+    49: str "    LE\n"
+    50: str "    GE\n"
+    51: str "    AND\n"
+    52: str "    OR\n"
+    53: str "    NOT\n"
+    54: str "    NEG\n"
+    55: str "    GET_LOCAL "
+    56: str "    SET_LOCAL "
+    57: str "    RET\n"
+    58: str "    JUMP "
+    59: str "    JUMP_IF_TRUE "
+    60: str "    JUMP_IF_FALSE "
+    61: str "    POP\n"
+    62: str "    DUP\n"
+    63: str "    SYSCALL 0x0011\n"    ; println
+    64: str "    CONST_NONE\n"
+
+    ; Label prefixes
+    65: str ".if_else_"
+    66: str ".if_end_"
+    67: str ".while_start_"
+    68: str ".while_end_"
+
+    ; AI metadata
+    69: str "    .ai_block \""
+    70: str "    .ai_intent \""
+    71: str "\"\n"
+
+; ─────────────────────────────────────────────────────────────────────────────────
+; CODE GENERATOR STATE
+; Uses locals:
+;   0 = output (string being built)
+;   1 = local_vars (map: name -> index)
+;   2 = local_count
+;   3 = label_counter (for unique labels)
+;   4 = constant_pool (list of strings)
+;   5 = current_function_name
+; ─────────────────────────────────────────────────────────────────────────────────
+
+; ═══════════════════════════════════════════════════════════════════════════════
+; FUNCTION: generate
+; INPUT: AST (module node)
+; OUTPUT: MathisASM source code string
+; ═══════════════════════════════════════════════════════════════════════════════
+
+.func generate
+    .arity 1
+    .locals 6
+    .ai_block "codegen_main"
+    .ai_intent "Generate MathisASM code from AST"
+
+    ; Store AST in temp, initialize state
+    DUP              ; keep AST on stack
+
+    ; Initialize empty output string
+    CONST 29         ; ".module \""
+    SET_LOCAL 0
+
+    ; Initialize empty locals map
+    MAKE_MAP 0
+    SET_LOCAL 1
+
+    ; Initialize local count
+    CONST_I64 0
+    SET_LOCAL 2
+
+    ; Initialize label counter
+    CONST_I64 0
+    SET_LOCAL 3
+
+    ; Initialize constant pool
+    MAKE_LIST 0
+    SET_LOCAL 4
+
+    ; AST is on stack - extract module name and items
+    ; AST format: (type, items)
+
+    CONST_I64 0
+    INDEX            ; get type - should be AST_MODULE
+
+    ; For now, emit a simple module header
+    GET_LOCAL 0
+    CONST 29         ; ".module \""
+    ADD
+    ; Would add actual module name here
+    CONST 30         ; closing and version
+    ADD
+    SET_LOCAL 0
+
+    ; Now generate code for each item in module
+    ; Get the AST again and iterate items
+    ; Simplified - would iterate module.items
+
+    ; Return the generated code
+    GET_LOCAL 0
+    RET
+.end
+
+; ═══════════════════════════════════════════════════════════════════════════════
+; FUNCTION: gen_function
+; INPUT: function AST node
+; OUTPUT: none (appends to output)
+; ═══════════════════════════════════════════════════════════════════════════════
+
+.func gen_function
+    .arity 1
+    .locals 7
+    .ai_block "gen_func"
+    .ai_intent "Generate code for a function definition"
+
+    ; func node format: (type, name, params, ret_type, body, annotations)
+
+    SET_LOCAL 0      ; store func node
+
+    ; Reset locals for this function
+    MAKE_MAP 0
+    SET_LOCAL 1      ; local_vars
+
+    CONST_I64 0
+    SET_LOCAL 2      ; local_count
+
+    ; Get function name
+    GET_LOCAL 0
+    CONST_I64 1
+    INDEX
+    SET_LOCAL 3      ; name
+
+    ; Get params
+    GET_LOCAL 0
+    CONST_I64 2
+    INDEX
+    SET_LOCAL 4      ; params
+
+    ; Get body
+    GET_LOCAL 0
+    CONST_I64 4
+    INDEX
+    SET_LOCAL 5      ; body
+
+    ; Get annotations
+    GET_LOCAL 0
+    CONST_I64 5
+    INDEX
+    SET_LOCAL 6      ; annotations
+
+    ; Emit function header
+    ; ".func " + name + "\n"
+    CONST 31         ; ".func "
+    GET_LOCAL 3      ; name
+    ADD
+    CONST 34         ; "\n"
+    ADD
+
+    ; Emit arity
+    CONST 32         ; ".arity "
+    ADD
+    GET_LOCAL 4
+    LEN              ; number of params
+    ; Would convert to string
+    CONST 34
+    ADD
+
+    ; Emit locals count (will need to determine from body analysis)
+    CONST 33         ; ".locals "
+    ADD
+    ; Would calculate actual locals needed
+    CONST_I64 0
+    ; convert to string
+    CONST 34
+    ADD
+
+    ; Emit AI metadata from annotations
+    ; Would iterate annotations and emit .ai_block, .ai_intent
+
+    ; Generate code for each statement in body
+    ; Would iterate body and call gen_statement
+
+    ; Emit return if not explicit
+    CONST 57         ; "    RET\n"
+    ADD
+
+    ; Emit function end
+    CONST 35         ; ".end\n\n"
+    ADD
+
+    ; Append to global output (in real impl)
+    RET
+.end
+
+; ═══════════════════════════════════════════════════════════════════════════════
+; FUNCTION: gen_statement
+; INPUT: statement AST node
+; OUTPUT: MathisASM code string
+; ═══════════════════════════════════════════════════════════════════════════════
+
+.func gen_statement
+    .arity 1
+    .locals 2
+    .ai_block "gen_stmt"
+    .ai_intent "Generate code for a statement"
+
+    SET_LOCAL 0      ; store statement
+
+    ; Get statement type
+    GET_LOCAL 0
+    CONST_I64 0
+    INDEX
+    SET_LOCAL 1      ; type
+
+    ; Dispatch based on type
+    GET_LOCAL 1
+    CONST 3          ; AST_LET
+    EQ
+    JUMP_IF_TRUE .gen_let
+
+    GET_LOCAL 1
+    CONST 4          ; AST_IF
+    EQ
+    JUMP_IF_TRUE .gen_if
+
+    GET_LOCAL 1
+    CONST 5          ; AST_WHILE
+    EQ
+    JUMP_IF_TRUE .gen_while
+
+    GET_LOCAL 1
+    CONST 7          ; AST_RETURN
+    EQ
+    JUMP_IF_TRUE .gen_return
+
+    ; Default: expression statement
+    GET_LOCAL 0
+    JUMP .gen_expr_stmt
+
+.gen_let:
+    ; let node: (type, name, type_ann, init)
+    ; Generate init expression, then SET_LOCAL
+    GET_LOCAL 0
+    CONST_I64 3
+    INDEX            ; init expression
+
+    ; Generate expression code (would call gen_expression)
+
+    ; Emit SET_LOCAL
+    CONST 56         ; "    SET_LOCAL "
+    ; Would add local index
+    CONST 34
+    ADD
+    RET
+
+.gen_if:
+    ; if node: (type, condition, then_branch, else_branch)
+
+    ; Generate condition
+    GET_LOCAL 0
+    CONST_I64 1
+    INDEX            ; condition
+    ; call gen_expression
+
+    ; Emit JUMP_IF_FALSE to else or end
+    CONST 60         ; "    JUMP_IF_FALSE "
+    ; add label
+
+    ; Generate then branch
+
+    ; If else exists, emit JUMP to end, then else label, then else code
+
+    ; Emit end label
+    RET
+
+.gen_while:
+    ; while node: (type, condition, body)
+
+    ; Emit start label
+    CONST 67         ; ".while_start_"
+    ; add counter
+
+    ; Generate condition
+    ; Emit JUMP_IF_FALSE to end
+
+    ; Generate body
+
+    ; Emit JUMP to start
+
+    ; Emit end label
+    RET
+
+.gen_return:
+    ; return node: (type, expression)
+
+    ; Generate expression if present
+    GET_LOCAL 0
+    CONST_I64 1
+    INDEX            ; expression
+    IS_NONE
+    JUMP_IF_TRUE .return_none
+
+    ; Generate expression
+    ; (would call gen_expression)
+
+    ; Emit RET
+    CONST 57         ; "    RET\n"
+    RET
+
+.return_none:
+    ; Return none
+    CONST 64         ; "    CONST_NONE\n"
+    CONST 57         ; "    RET\n"
+    ADD
+    RET
+
+.gen_expr_stmt:
+    ; Expression statement - generate expr then pop result
+    ; (would call gen_expression)
+    CONST 61         ; "    POP\n"
+    RET
+.end
+
+; ═══════════════════════════════════════════════════════════════════════════════
+; FUNCTION: gen_expression
+; INPUT: expression AST node
+; OUTPUT: MathisASM code string
+; ═══════════════════════════════════════════════════════════════════════════════
+
+.func gen_expression
+    .arity 1
+    .locals 3
+    .ai_block "gen_expr"
+    .ai_intent "Generate code for an expression"
+
+    SET_LOCAL 0      ; store expression
+
+    ; Get expression type
+    GET_LOCAL 0
+    CONST_I64 0
+    INDEX
+    SET_LOCAL 1      ; type
+
+    ; Dispatch based on type
+    GET_LOCAL 1
+    CONST 12         ; AST_INT_LIT
+    EQ
+    JUMP_IF_TRUE .gen_int
+
+    GET_LOCAL 1
+    CONST 13         ; AST_FLOAT_LIT
+    EQ
+    JUMP_IF_TRUE .gen_float
+
+    GET_LOCAL 1
+    CONST 14         ; AST_STRING_LIT
+    EQ
+    JUMP_IF_TRUE .gen_string
+
+    GET_LOCAL 1
+    CONST 15         ; AST_BOOL_LIT
+    EQ
+    JUMP_IF_TRUE .gen_bool
+
+    GET_LOCAL 1
+    CONST 11         ; AST_IDENT
+    EQ
+    JUMP_IF_TRUE .gen_ident
+
+    GET_LOCAL 1
+    CONST 9          ; AST_BINARY
+    EQ
+    JUMP_IF_TRUE .gen_binary
+
+    GET_LOCAL 1
+    CONST 10         ; AST_UNARY
+    EQ
+    JUMP_IF_TRUE .gen_unary
+
+    GET_LOCAL 1
+    CONST 8          ; AST_CALL
+    EQ
+    JUMP_IF_TRUE .gen_call
+
+    ; Unknown - return empty
+    CONST 34         ; "\n"
+    RET
+
+.gen_int:
+    ; int literal: (type, value)
+    CONST 36         ; "    CONST_I64 "
+    GET_LOCAL 0
+    CONST_I64 1
+    INDEX            ; value
+    ; Would convert number to string
+    ADD
+    CONST 34         ; "\n"
+    ADD
+    RET
+
+.gen_float:
+    ; float literal: (type, value)
+    CONST 37         ; "    CONST_F64 "
+    GET_LOCAL 0
+    CONST_I64 1
+    INDEX
+    ADD
+    CONST 34
+    ADD
+    RET
+
+.gen_string:
+    ; string literal - would add to constant pool
+    ; and emit CONST <index>
+    CONST 34         ; placeholder
+    RET
+
+.gen_bool:
+    ; bool literal: (type, value)
+    GET_LOCAL 0
+    CONST_I64 1
+    INDEX            ; value (true/false)
+    JUMP_IF_TRUE .emit_true
+    CONST 39         ; "    CONST_FALSE\n"
+    RET
+
+.emit_true:
+    CONST 38         ; "    CONST_TRUE\n"
+    RET
+
+.gen_ident:
+    ; identifier - load from local
+    CONST 55         ; "    GET_LOCAL "
+    ; Would look up variable index in local_vars map
+    CONST 34
+    ADD
+    RET
+
+.gen_binary:
+    ; binary op: (type, op, left, right)
+
+    ; Generate left operand
+    GET_LOCAL 0
+    CONST_I64 2
+    INDEX            ; left
+    ; call gen_expression recursively
+
+    ; Generate right operand
+    GET_LOCAL 0
+    CONST_I64 3
+    INDEX            ; right
+    ; call gen_expression recursively
+
+    ; Emit operator instruction
+    GET_LOCAL 0
+    CONST_I64 1
+    INDEX            ; operator
+    SET_LOCAL 2
+
+    GET_LOCAL 2
+    CONST 16         ; "+"
+    EQ
+    JUMP_IF_TRUE .emit_add
+
+    GET_LOCAL 2
+    CONST 17         ; "-"
+    EQ
+    JUMP_IF_TRUE .emit_sub
+
+    GET_LOCAL 2
+    CONST 18         ; "*"
+    EQ
+    JUMP_IF_TRUE .emit_mul
+
+    GET_LOCAL 2
+    CONST 19         ; "/"
+    EQ
+    JUMP_IF_TRUE .emit_div
+
+    GET_LOCAL 2
+    CONST 21         ; "=="
+    EQ
+    JUMP_IF_TRUE .emit_eq
+
+    GET_LOCAL 2
+    CONST 22         ; "!="
+    EQ
+    JUMP_IF_TRUE .emit_ne
+
+    GET_LOCAL 2
+    CONST 23         ; "<"
+    EQ
+    JUMP_IF_TRUE .emit_lt
+
+    GET_LOCAL 2
+    CONST 24         ; ">"
+    EQ
+    JUMP_IF_TRUE .emit_gt
+
+    ; Default
+    CONST 34
+    RET
+
+.emit_add:
+    CONST 40         ; "    ADD\n"
+    RET
+.emit_sub:
+    CONST 41         ; "    SUB\n"
+    RET
+.emit_mul:
+    CONST 42         ; "    MUL\n"
+    RET
+.emit_div:
+    CONST 43         ; "    DIV\n"
+    RET
+.emit_eq:
+    CONST 45         ; "    EQ\n"
+    RET
+.emit_ne:
+    CONST 46         ; "    NE\n"
+    RET
+.emit_lt:
+    CONST 47         ; "    LT\n"
+    RET
+.emit_gt:
+    CONST 48         ; "    GT\n"
+    RET
+
+.gen_unary:
+    ; unary op: (type, op, operand)
+
+    ; Generate operand
+    GET_LOCAL 0
+    CONST_I64 2
+    INDEX            ; operand
+    ; call gen_expression
+
+    ; Emit operator
+    GET_LOCAL 0
+    CONST_I64 1
+    INDEX            ; operator
+
+    DUP
+    CONST 17         ; "-"
+    EQ
+    JUMP_IF_TRUE .emit_neg
+
+    CONST 31         ; "not"
+    EQ
+    JUMP_IF_TRUE .emit_not
+
+    CONST 34
+    RET
+
+.emit_neg:
+    CONST 54         ; "    NEG\n"
+    RET
+.emit_not:
+    CONST 53         ; "    NOT\n"
+    RET
+
+.gen_call:
+    ; function call: (type, callee, args)
+
+    ; Generate each argument
+    GET_LOCAL 0
+    CONST_I64 2
+    INDEX            ; args list
+    ; Would iterate and call gen_expression for each
+
+    ; Emit CALL instruction
+    ; (would need function index resolution)
+    CONST 34
+    RET
+.end
+
+; ═══════════════════════════════════════════════════════════════════════════════
+; FUNCTION: emit_label
+; INPUT: prefix, counter
+; OUTPUT: label string
+; ═══════════════════════════════════════════════════════════════════════════════
+
+.func emit_label
+    .arity 2
+    .locals 0
+    .ai_block "label_emit"
+    .ai_intent "Generate a unique label"
+
+    ; prefix on stack, then counter
+    ; Would concatenate: prefix + counter + ":\n"
+    ADD
+    RET
+.end
+
+; ═══════════════════════════════════════════════════════════════════════════════
+; FUNCTION: int_to_string
+; INPUT: integer
+; OUTPUT: string representation
+; ═══════════════════════════════════════════════════════════════════════════════
+
+.func int_to_string
+    .arity 1
+    .locals 3
+    .ai_block "int_str"
+    .ai_intent "Convert integer to string"
+
+    SET_LOCAL 0      ; number
+
+    ; Handle negative
+    GET_LOCAL 0
+    CONST_I64 0
+    LT
+    JUMP_IF_FALSE .positive
+
+    ; Negative - prepend minus
+    GET_LOCAL 0
+    NEG
+    SET_LOCAL 0
+    ; Would prepend "-"
+
+.positive:
+    ; Convert digit by digit
+    ; Simplified - would actually implement
+    CONST 34         ; placeholder
+    RET
+.end
+
+; ═══════════════════════════════════════════════════════════════════════════════
+; FUNCTION: add_constant
+; INPUT: constant value
+; OUTPUT: index in constant pool
+; ═══════════════════════════════════════════════════════════════════════════════
+
+.func add_constant
+    .arity 1
+    .locals 1
+    .ai_block "const_add"
+    .ai_intent "Add a constant to the pool and return its index"
+
+    SET_LOCAL 0      ; value
+
+    ; Would add to constant pool and return index
+    ; For now, return 0
+    CONST_I64 0
+    RET
+.end

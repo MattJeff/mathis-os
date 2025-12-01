@@ -1,0 +1,26 @@
+; ════════════════════════════════════════════════════════════════════
+; Hello World - First MATHIS OS program
+; ════════════════════════════════════════════════════════════════════
+
+.module "hello"
+.version "1.0.0"
+
+.constants:
+    0: str "Hello, MATHIS OS!"
+
+.func main
+    .arity 0
+    .locals 0
+    .ai_block "greeting"
+    .ai_intent "Print a greeting message"
+
+    ; Load the message from constant pool
+    CONST 0
+
+    ; Call the println syscall (0x0011)
+    SYSCALL 0x0011
+
+    ; Return success
+    CONST_I64 0
+    RET
+.end

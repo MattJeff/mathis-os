@@ -1,0 +1,812 @@
+; ════════════════════════════════════════════════════════════════════════════════
+; MATHIS COMPILER - PARSER
+; Written in MathisASM - 100% from scratch, no Rust!
+; ════════════════════════════════════════════════════════════════════════════════
+;
+; This parser builds an AST from tokens produced by the lexer.
+;
+; AST Node Types:
+;   0x01 = MODULE      (module declaration)
+;   0x02 = FUNC        (function definition)
+;   0x03 = BLOCK       (code block)
+;   0x04 = LET         (variable declaration)
+;   0x05 = IF          (if statement)
+;   0x06 = WHILE       (while loop)
+;   0x07 = FOR         (for loop)
+;   0x08 = RETURN      (return statement)
+;   0x09 = CALL        (function call)
+;   0x0A = BINARY      (binary operation)
+;   0x0B = UNARY       (unary operation)
+;   0x0C = IDENT       (identifier)
+;   0x0D = INT_LIT     (integer literal)
+;   0x0E = FLOAT_LIT   (float literal)
+;   0x0F = STRING_LIT  (string literal)
+;   0x10 = BOOL_LIT    (boolean literal)
+;   0x11 = STRUCT      (struct definition)
+;   0x12 = ANNOTATION  (annotation node)
+;   0x13 = TYPE        (type annotation)
+;   0x14 = PARAM       (parameter)
+;   0x15 = MATCH       (match expression)
+;   0x16 = MATCH_ARM   (match arm)
+;
+; ════════════════════════════════════════════════════════════════════════════════
+
+.module "mathisc_parser"
+.version "1.0.0"
+
+; ─────────────────────────────────────────────────────────────────────────────────
+; CONSTANTS - AST Node Types
+; ─────────────────────────────────────────────────────────────────────────────────
+
+.constants:
+    ; AST Node Types
+    0: i64 1      ; AST_MODULE
+    1: i64 2      ; AST_FUNC
+    2: i64 3      ; AST_BLOCK
+    3: i64 4      ; AST_LET
+    4: i64 5      ; AST_IF
+    5: i64 6      ; AST_WHILE
+    6: i64 7      ; AST_FOR
+    7: i64 8      ; AST_RETURN
+    8: i64 9      ; AST_CALL
+    9: i64 10     ; AST_BINARY
+    10: i64 11    ; AST_UNARY
+    11: i64 12    ; AST_IDENT
+    12: i64 13    ; AST_INT_LIT
+    13: i64 14    ; AST_FLOAT_LIT
+    14: i64 15    ; AST_STRING_LIT
+    15: i64 16    ; AST_BOOL_LIT
+    16: i64 17    ; AST_STRUCT
+    17: i64 18    ; AST_ANNOTATION
+    18: i64 19    ; AST_TYPE
+    19: i64 20    ; AST_PARAM
+    20: i64 21    ; AST_MATCH
+    21: i64 22    ; AST_MATCH_ARM
+
+    ; Token types (must match lexer)
+    22: i64 1     ; TOK_IDENT
+    23: i64 2     ; TOK_INT
+    24: i64 3     ; TOK_FLOAT
+    25: i64 4     ; TOK_STRING
+    26: i64 5     ; TOK_KEYWORD
+    27: i64 6     ; TOK_ANNOTATION
+    28: i64 7     ; TOK_OPERATOR
+    29: i64 8     ; TOK_PUNCT
+    30: i64 9     ; TOK_NEWLINE
+    31: i64 10    ; TOK_EOF
+
+    ; Keywords as strings for matching
+    32: str "func"
+    33: str "let"
+    34: str "const"
+    35: str "if"
+    36: str "else"
+    37: str "while"
+    38: str "for"
+    39: str "return"
+    40: str "struct"
+    41: str "match"
+    42: str "true"
+    43: str "false"
+
+    ; Punctuation
+    44: str "("
+    45: str ")"
+    46: str "{"
+    47: str "}"
+    48: str ","
+    49: str ":"
+    50: str "->"
+
+; ─────────────────────────────────────────────────────────────────────────────────
+; PARSER STATE
+; Uses locals:
+;   0 = tokens (list)
+;   1 = pos (current token index)
+;   2 = current annotations (list, cleared after use)
+;   3 = errors (list of error messages)
+; ─────────────────────────────────────────────────────────────────────────────────
+
+; ═══════════════════════════════════════════════════════════════════════════════
+; FUNCTION: parse
+; INPUT: list of tokens from lexer
+; OUTPUT: AST (module node)
+; ═══════════════════════════════════════════════════════════════════════════════
+
+.func parse
+    .arity 1
+    .locals 4
+    .ai_block "parser_main"
+    .ai_intent "Parse tokens into an Abstract Syntax Tree"
+
+    ; Store tokens
+    SET_LOCAL 0
+
+    ; Initialize position to 0
+    CONST_I64 0
+    SET_LOCAL 1
+
+    ; Initialize empty annotations list
+    MAKE_LIST 0
+    SET_LOCAL 2
+
+    ; Initialize empty errors list
+    MAKE_LIST 0
+    SET_LOCAL 3
+
+    ; Parse module (top-level)
+    ; A module contains: annotations, functions, structs, type aliases
+
+    ; Create module AST node
+    CONST 0          ; AST_MODULE
+    MAKE_LIST 0      ; empty items list (will be filled)
+    MAKE_TUPLE 2     ; (type, items)
+
+    ; Store module node - local 4 doesn't exist, use stack
+
+    ; Parse until EOF
+.parse_loop:
+    ; Get current token
+    GET_LOCAL 0      ; tokens
+    GET_LOCAL 1      ; pos
+    INDEX            ; tokens[pos]
+
+    ; Extract token type (first element of tuple)
+    CONST_I64 0
+    INDEX            ; token[0] = type
+
+    ; Check if EOF
+    DUP
+    CONST 31         ; TOK_EOF
+    EQ
+    JUMP_IF_TRUE .parse_done
+
+    ; Check if NEWLINE - skip
+    DUP
+    CONST 30         ; TOK_NEWLINE
+    EQ
+    JUMP_IF_TRUE .skip_newline
+
+    ; Check if annotation
+    DUP
+    CONST 27         ; TOK_ANNOTATION
+    EQ
+    JUMP_IF_TRUE .parse_annotation
+
+    ; Check if identifier (could be keyword like func)
+    DUP
+    CONST 22         ; TOK_IDENT
+    EQ
+    JUMP_IF_TRUE .check_keyword
+
+    ; Unknown token - skip for now
+    POP
+    JUMP .advance_and_continue
+
+.skip_newline:
+    POP
+    JUMP .advance_and_continue
+
+.parse_annotation:
+    POP              ; remove token type
+    ; Get the full token
+    GET_LOCAL 0
+    GET_LOCAL 1
+    INDEX
+    ; Create annotation node and add to pending annotations
+    CONST 17         ; AST_ANNOTATION
+    SWAP
+    MAKE_TUPLE 2
+    ; Add to annotations list
+    GET_LOCAL 2
+    SWAP
+    PUSH
+    SET_LOCAL 2
+    JUMP .advance_and_continue
+
+.check_keyword:
+    POP
+    ; Get token value to check which keyword
+    GET_LOCAL 0
+    GET_LOCAL 1
+    INDEX
+    ; Get token's text value (second element if present)
+    ; For now, check the token itself
+
+    ; We need to look at the actual text - simplified for now
+    ; In a real implementation, token would carry the text
+
+    ; Try to parse function
+    JUMP .try_parse_func
+
+.try_parse_func:
+    ; Assume it's a function for now
+    ; Call parse_func helper
+    GET_LOCAL 0      ; tokens
+    GET_LOCAL 1      ; pos
+    GET_LOCAL 2      ; annotations
+
+    ; Save state for function parsing
+    ; parse_function will:
+    ; 1. Check for 'func' keyword
+    ; 2. Parse name
+    ; 3. Parse parameters
+    ; 4. Parse return type
+    ; 5. Parse body
+
+    ; Simplified: create a placeholder function node
+    CONST 1          ; AST_FUNC
+    CONST_NONE       ; name placeholder
+    MAKE_LIST 0      ; empty params
+    CONST_NONE       ; return type
+    MAKE_LIST 0      ; empty body
+    GET_LOCAL 2      ; annotations
+    MAKE_TUPLE 6     ; (type, name, params, ret_type, body, annotations)
+
+    ; Clear annotations after use
+    MAKE_LIST 0
+    SET_LOCAL 2
+
+    ; Skip to end of function (find matching })
+    ; For now, just advance one token
+    JUMP .advance_and_continue
+
+.advance_and_continue:
+    ; Advance position
+    GET_LOCAL 1
+    CONST_I64 1
+    ADD
+    SET_LOCAL 1
+    JUMP .parse_loop
+
+.parse_done:
+    ; Return the module AST
+    CONST 0          ; AST_MODULE
+    MAKE_LIST 0      ; items (would contain parsed functions)
+    MAKE_TUPLE 2
+    RET
+.end
+
+; ═══════════════════════════════════════════════════════════════════════════════
+; FUNCTION: parse_function
+; INPUT: tokens, pos, pending_annotations
+; OUTPUT: (func_node, new_pos)
+; ═══════════════════════════════════════════════════════════════════════════════
+
+.func parse_function
+    .arity 3
+    .locals 6
+    .ai_block "func_parser"
+    .ai_intent "Parse a function definition"
+
+    ; locals:
+    ; 0 = tokens
+    ; 1 = pos
+    ; 2 = annotations
+    ; 3 = name
+    ; 4 = params
+    ; 5 = body
+
+    SET_LOCAL 2      ; annotations
+    SET_LOCAL 1      ; pos
+    SET_LOCAL 0      ; tokens
+
+    ; Expect 'func' keyword - advance past it
+    GET_LOCAL 1
+    CONST_I64 1
+    ADD
+    SET_LOCAL 1
+
+    ; Parse function name (identifier)
+    GET_LOCAL 0
+    GET_LOCAL 1
+    INDEX
+    ; This should be the name token
+    ; Extract and store
+    SET_LOCAL 3
+
+    ; Advance past name
+    GET_LOCAL 1
+    CONST_I64 1
+    ADD
+    SET_LOCAL 1
+
+    ; Expect '('
+    ; Skip it
+    GET_LOCAL 1
+    CONST_I64 1
+    ADD
+    SET_LOCAL 1
+
+    ; Parse parameters until ')'
+    MAKE_LIST 0
+    SET_LOCAL 4      ; params list
+
+.parse_params_loop:
+    ; Get current token
+    GET_LOCAL 0
+    GET_LOCAL 1
+    INDEX
+
+    ; Check if ')'
+    ; Simplified - just check token type for punct
+    CONST_I64 0
+    INDEX            ; token type
+    CONST 29         ; TOK_PUNCT
+    EQ
+    JUMP_IF_TRUE .params_done
+
+    ; Parse parameter: name: Type
+    ; Simplified - just skip for now
+    GET_LOCAL 1
+    CONST_I64 1
+    ADD
+    SET_LOCAL 1
+    JUMP .parse_params_loop
+
+.params_done:
+    ; Skip ')'
+    GET_LOCAL 1
+    CONST_I64 1
+    ADD
+    SET_LOCAL 1
+
+    ; Check for return type (->)
+    ; Simplified - skip
+
+    ; Expect '{'
+    ; Skip
+    GET_LOCAL 1
+    CONST_I64 1
+    ADD
+    SET_LOCAL 1
+
+    ; Parse body statements until '}'
+    MAKE_LIST 0
+    SET_LOCAL 5      ; body statements
+
+.parse_body_loop:
+    GET_LOCAL 0
+    GET_LOCAL 1
+    INDEX
+
+    CONST_I64 0
+    INDEX
+    DUP
+    CONST 29         ; TOK_PUNCT (could be })
+    EQ
+    JUMP_IF_TRUE .body_done
+
+    ; Check if it's a return statement
+    CONST 22         ; TOK_IDENT
+    EQ
+    JUMP_IF_FALSE .skip_stmt
+
+    ; Try to parse statement
+    ; Simplified - skip
+    JUMP .skip_stmt
+
+.skip_stmt:
+    GET_LOCAL 1
+    CONST_I64 1
+    ADD
+    SET_LOCAL 1
+    JUMP .parse_body_loop
+
+.body_done:
+    POP
+    ; Skip '}'
+    GET_LOCAL 1
+    CONST_I64 1
+    ADD
+    SET_LOCAL 1
+
+    ; Build function node
+    CONST 1          ; AST_FUNC
+    GET_LOCAL 3      ; name
+    GET_LOCAL 4      ; params
+    CONST_NONE       ; return type
+    GET_LOCAL 5      ; body
+    GET_LOCAL 2      ; annotations
+    MAKE_TUPLE 6
+
+    ; Return (node, new_pos)
+    GET_LOCAL 1
+    MAKE_TUPLE 2
+    RET
+.end
+
+; ═══════════════════════════════════════════════════════════════════════════════
+; FUNCTION: parse_expression
+; INPUT: tokens, pos
+; OUTPUT: (expr_node, new_pos)
+; ═══════════════════════════════════════════════════════════════════════════════
+
+.func parse_expression
+    .arity 2
+    .locals 3
+    .ai_block "expr_parser"
+    .ai_intent "Parse an expression with proper precedence"
+
+    SET_LOCAL 1      ; pos
+    SET_LOCAL 0      ; tokens
+
+    ; Start with comparison (lowest precedence we handle)
+    GET_LOCAL 0
+    GET_LOCAL 1
+
+    ; Parse additive first
+    ; (In real impl, would call parse_comparison -> parse_additive -> parse_mult -> parse_unary -> parse_primary)
+
+    ; For now, just parse primary
+    JUMP .parse_primary
+
+.parse_primary:
+    ; Get current token
+    GET_LOCAL 0
+    GET_LOCAL 1
+    INDEX
+
+    DUP
+    CONST_I64 0
+    INDEX            ; token type
+
+    ; Check token type
+    DUP
+    CONST 23         ; TOK_INT
+    EQ
+    JUMP_IF_TRUE .make_int_lit
+
+    DUP
+    CONST 24         ; TOK_FLOAT
+    EQ
+    JUMP_IF_TRUE .make_float_lit
+
+    DUP
+    CONST 25         ; TOK_STRING
+    EQ
+    JUMP_IF_TRUE .make_string_lit
+
+    DUP
+    CONST 22         ; TOK_IDENT
+    EQ
+    JUMP_IF_TRUE .make_ident
+
+    ; Default - return none
+    POP
+    POP
+    CONST_NONE
+    GET_LOCAL 1
+    MAKE_TUPLE 2
+    RET
+
+.make_int_lit:
+    POP
+    POP
+    CONST 12         ; AST_INT_LIT
+    ; token value
+    SWAP
+    MAKE_TUPLE 2
+    GET_LOCAL 1
+    CONST_I64 1
+    ADD
+    MAKE_TUPLE 2
+    RET
+
+.make_float_lit:
+    POP
+    POP
+    CONST 13         ; AST_FLOAT_LIT
+    SWAP
+    MAKE_TUPLE 2
+    GET_LOCAL 1
+    CONST_I64 1
+    ADD
+    MAKE_TUPLE 2
+    RET
+
+.make_string_lit:
+    POP
+    POP
+    CONST 14         ; AST_STRING_LIT
+    SWAP
+    MAKE_TUPLE 2
+    GET_LOCAL 1
+    CONST_I64 1
+    ADD
+    MAKE_TUPLE 2
+    RET
+
+.make_ident:
+    POP
+    POP
+    CONST 11         ; AST_IDENT
+    SWAP
+    MAKE_TUPLE 2
+    GET_LOCAL 1
+    CONST_I64 1
+    ADD
+    MAKE_TUPLE 2
+    RET
+.end
+
+; ═══════════════════════════════════════════════════════════════════════════════
+; FUNCTION: parse_statement
+; INPUT: tokens, pos
+; OUTPUT: (stmt_node, new_pos)
+; ═══════════════════════════════════════════════════════════════════════════════
+
+.func parse_statement
+    .arity 2
+    .locals 2
+    .ai_block "stmt_parser"
+    .ai_intent "Parse a statement (let, if, while, return, expr)"
+
+    SET_LOCAL 1      ; pos
+    SET_LOCAL 0      ; tokens
+
+    ; Get current token
+    GET_LOCAL 0
+    GET_LOCAL 1
+    INDEX
+
+    ; Check what kind of statement
+    ; Would check for 'let', 'if', 'while', 'return', etc.
+
+    ; For now, try to parse as expression statement
+    GET_LOCAL 0
+    GET_LOCAL 1
+    ; Would call parse_expression here
+    CONST_NONE
+    GET_LOCAL 1
+    CONST_I64 1
+    ADD
+    MAKE_TUPLE 2
+    RET
+.end
+
+; ═══════════════════════════════════════════════════════════════════════════════
+; FUNCTION: parse_if
+; INPUT: tokens, pos
+; OUTPUT: (if_node, new_pos)
+; ═══════════════════════════════════════════════════════════════════════════════
+
+.func parse_if
+    .arity 2
+    .locals 5
+    .ai_block "if_parser"
+    .ai_intent "Parse an if statement with optional else"
+
+    ; locals:
+    ; 0 = tokens
+    ; 1 = pos
+    ; 2 = condition
+    ; 3 = then_branch
+    ; 4 = else_branch
+
+    SET_LOCAL 1
+    SET_LOCAL 0
+
+    ; Skip 'if' keyword
+    GET_LOCAL 1
+    CONST_I64 1
+    ADD
+    SET_LOCAL 1
+
+    ; Parse condition expression
+    ; (would call parse_expression)
+    CONST_NONE
+    SET_LOCAL 2
+
+    ; Expect '{'
+    GET_LOCAL 1
+    CONST_I64 1
+    ADD
+    SET_LOCAL 1
+
+    ; Parse then branch (block)
+    MAKE_LIST 0
+    SET_LOCAL 3
+
+    ; Check for 'else'
+    CONST_NONE
+    SET_LOCAL 4
+
+    ; Build if node
+    CONST 4          ; AST_IF
+    GET_LOCAL 2      ; condition
+    GET_LOCAL 3      ; then
+    GET_LOCAL 4      ; else
+    MAKE_TUPLE 4
+
+    GET_LOCAL 1
+    MAKE_TUPLE 2
+    RET
+.end
+
+; ═══════════════════════════════════════════════════════════════════════════════
+; FUNCTION: parse_return
+; INPUT: tokens, pos
+; OUTPUT: (return_node, new_pos)
+; ═══════════════════════════════════════════════════════════════════════════════
+
+.func parse_return
+    .arity 2
+    .locals 2
+    .ai_block "return_parser"
+    .ai_intent "Parse a return statement"
+
+    SET_LOCAL 1
+    SET_LOCAL 0
+
+    ; Skip 'return' keyword
+    GET_LOCAL 1
+    CONST_I64 1
+    ADD
+    SET_LOCAL 1
+
+    ; Parse expression (optional)
+    ; (would call parse_expression)
+
+    ; Build return node
+    CONST 7          ; AST_RETURN
+    CONST_NONE       ; expression (placeholder)
+    MAKE_TUPLE 2
+
+    GET_LOCAL 1
+    MAKE_TUPLE 2
+    RET
+.end
+
+; ═══════════════════════════════════════════════════════════════════════════════
+; FUNCTION: parse_let
+; INPUT: tokens, pos
+; OUTPUT: (let_node, new_pos)
+; ═══════════════════════════════════════════════════════════════════════════════
+
+.func parse_let
+    .arity 2
+    .locals 4
+    .ai_block "let_parser"
+    .ai_intent "Parse a let variable declaration"
+
+    ; locals:
+    ; 0 = tokens
+    ; 1 = pos
+    ; 2 = name
+    ; 3 = init_value
+
+    SET_LOCAL 1
+    SET_LOCAL 0
+
+    ; Skip 'let' keyword
+    GET_LOCAL 1
+    CONST_I64 1
+    ADD
+    SET_LOCAL 1
+
+    ; Parse variable name
+    GET_LOCAL 0
+    GET_LOCAL 1
+    INDEX
+    SET_LOCAL 2
+
+    ; Advance
+    GET_LOCAL 1
+    CONST_I64 1
+    ADD
+    SET_LOCAL 1
+
+    ; Check for type annotation (:)
+    ; Skip for now
+
+    ; Expect '='
+    GET_LOCAL 1
+    CONST_I64 1
+    ADD
+    SET_LOCAL 1
+
+    ; Parse initializer expression
+    CONST_NONE
+    SET_LOCAL 3
+
+    ; Build let node
+    CONST 3          ; AST_LET
+    GET_LOCAL 2      ; name
+    CONST_NONE       ; type (optional)
+    GET_LOCAL 3      ; init value
+    MAKE_TUPLE 4
+
+    GET_LOCAL 1
+    MAKE_TUPLE 2
+    RET
+.end
+
+; ═══════════════════════════════════════════════════════════════════════════════
+; FUNCTION: expect_token
+; INPUT: tokens, pos, expected_type
+; OUTPUT: token or error
+; ═══════════════════════════════════════════════════════════════════════════════
+
+.func expect_token
+    .arity 3
+    .locals 1
+    .ai_block "token_expect"
+    .ai_intent "Expect a specific token type, error if not found"
+
+    SET_LOCAL 0      ; expected type
+    ; pos and tokens on stack
+
+    ; Get token at pos
+    INDEX            ; tokens[pos]
+
+    ; Check type
+    DUP
+    CONST_I64 0
+    INDEX            ; token.type
+
+    GET_LOCAL 0
+    EQ
+    JUMP_IF_FALSE .error
+
+    ; Success - return token
+    RET
+
+.error:
+    ; Return error - in real impl would add to error list
+    POP
+    CONST_NONE
+    RET
+.end
+
+; ═══════════════════════════════════════════════════════════════════════════════
+; FUNCTION: current_token
+; INPUT: tokens, pos
+; OUTPUT: current token
+; ═══════════════════════════════════════════════════════════════════════════════
+
+.func current_token
+    .arity 2
+    .locals 0
+    .ai_block "current_tok"
+    .ai_intent "Get the current token without advancing"
+
+    ; tokens, pos on stack
+    INDEX
+    RET
+.end
+
+; ═══════════════════════════════════════════════════════════════════════════════
+; FUNCTION: peek_token
+; INPUT: tokens, pos, offset
+; OUTPUT: token at pos+offset
+; ═══════════════════════════════════════════════════════════════════════════════
+
+.func peek_token
+    .arity 3
+    .locals 0
+    .ai_block "peek_tok"
+    .ai_intent "Peek at a token ahead without advancing"
+
+    ; offset, pos, tokens on stack
+    ADD              ; pos + offset
+    INDEX            ; tokens[pos + offset]
+    RET
+.end
+
+; ═══════════════════════════════════════════════════════════════════════════════
+; FUNCTION: make_error
+; INPUT: message, line, col
+; OUTPUT: error tuple
+; ═══════════════════════════════════════════════════════════════════════════════
+
+.func make_error
+    .arity 3
+    .locals 0
+    .ai_block "error_maker"
+    .ai_intent "Create an error message with location"
+
+    ; All args on stack
+    MAKE_TUPLE 3
+    RET
+.end

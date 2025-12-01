@@ -1,0 +1,65 @@
+; ════════════════════════════════════════════════════════════════════
+; Disassembled MathisASM bytecode
+; Version: 1.0
+; ════════════════════════════════════════════════════════════════════
+
+.module "disassembled"
+.version "1.0.0"
+
+; ════════════════════════════════════════════════════════════════════
+; CODE
+; ════════════════════════════════════════════════════════════════════
+
+.func main
+    .arity 0
+    .locals 0
+
+    GET_LOCAL 0
+    GET_LOCAL 1
+    ADD
+    RET
+    GET_LOCAL 0
+    GET_LOCAL 1
+    ADD
+    RET
+    GET_LOCAL 0
+    CONST_I64 1
+    LE
+    JUMP_IF_FALSE 16
+    CONST_I64 10
+    CONST_I64 3
+    CALL 0 2
+    RET
+    JUMP 8
+    GET_LOCAL 0
+    GET_LOCAL 0
+    CONST_I64 1
+    SUB
+    CALL 2 1
+    MUL
+    RET
+    GET_LOCAL 0
+    GET_LOCAL 1
+    GT
+    JUMP_IF_FALSE -69
+    GET_LOCAL 0
+    RET
+    JUMP -74
+    GET_LOCAL 1
+    RET
+    GET_LOCAL 0
+    CONST_I64 0
+    LT
+    JUMP_IF_FALSE -80
+    CONST_I64 0
+    GET_LOCAL 0
+    SUB
+    RET
+    JUMP -95
+    GET_LOCAL 0
+    RET
+    GET_LOCAL 0
+    GET_LOCAL 1
+    DIV
+    RET
+.end

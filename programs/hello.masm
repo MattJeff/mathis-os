@@ -1,0 +1,37 @@
+; ════════════════════════════════════════════════════════════════════════════
+; HELLO WORLD - First Mathis Program for MATHIS OS
+; ════════════════════════════════════════════════════════════════════════════
+
+.module "hello"
+.version "1.0.0"
+
+.constants:
+    0: str "Hello from Mathis!\n"
+    1: str "This program was compiled to .mbc bytecode.\n"
+    2: str "Running on MATHIS OS v2.1\n"
+
+.func main
+    .arity 0
+    .locals 2
+    .ai_block "hello_main"
+    .ai_intent "Display greeting message"
+
+    ; Print hello message
+    CONST 0
+    SYSCALL 0x0010
+    POP
+
+    ; Print info
+    CONST 1
+    SYSCALL 0x0010
+    POP
+
+    ; Print OS info
+    CONST 2
+    SYSCALL 0x0010
+    POP
+
+    ; Return success
+    CONST_I64 0
+    RET
+.end

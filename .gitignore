@@ -1,0 +1,16 @@
+# Binaries (keep .img for releases)
+*.bin
+!boot/boot.bin
+!boot/stage2.bin
+
+# Temporary files
+*.tmp
+*.bak
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+
+# Build artifacts
+target/

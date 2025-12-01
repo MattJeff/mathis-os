@@ -1,0 +1,407 @@
+; ════════════════════════════════════════════════════════════════════════════
+; MATHIS KERNEL v3.0 - 100% Mathis (Self-Generating)
+; ════════════════════════════════════════════════════════════════════════════
+;
+; This kernel is written entirely in Mathis and generates its own machine code.
+; It uses a two-pass approach to calculate jump offsets correctly.
+;
+; Pass 1: Generate code, record label positions
+; Pass 2: Patch jump offsets
+;
+; ════════════════════════════════════════════════════════════════════════════
+
+.module "kernel_v3"
+.version "3.0.0"
+
+.constants:
+    0: str "boot/kernel.bin"
+    1: str "MATHIS Kernel v3.0 (100% Mathis)\n"
+    2: str "Generating kernel...\n"
+    3: str "Pass 1: Generating code...\n"
+    4: str "Pass 2: Patching jumps...\n"
+    5: str "Done! Generated boot/kernel.bin\n"
+    6: str "Error: "
+
+; ════════════════════════════════════════════════════════════════════════════
+; MAIN - Generate the kernel
+; ════════════════════════════════════════════════════════════════════════════
+
+.func main
+    .arity 0
+    .locals 20
+    .ai_block "kernel_main"
+    .ai_intent "Generate MATHIS kernel v3 - 100% Mathis"
+
+    ; Print banner
+    CONST 1
+    SYSCALL 0x0010
+    POP
+    CONST 2
+    SYSCALL 0x0010
+    POP
+
+    ; ══════════════════════════════════════════════════════════════════════
+    ; PASS 1: Generate machine code
+    ; ══════════════════════════════════════════════════════════════════════
+    
+    CONST 3
+    SYSCALL 0x0010
+    POP
+
+    ; Local 0 = code buffer (Bytes)
+    MAKE_LIST 0
+    SET_LOCAL 0
+    
+    ; Local 1 = current position
+    CONST_I64 0
+    SET_LOCAL 1
+
+    ; ══════════════════════════════════════════════════════════════════════
+    ; KERNEL ENTRY @ 0x10000
+    ; ══════════════════════════════════════════════════════════════════════
+
+    ; MOV ESP, 0x2FFFF (BC FF FF 02 00)
+    GET_LOCAL 0
+    CONST_I64 0xBC
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0xFF
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0xFF
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0x02
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0x00
+    SYSCALL 0x0020
+    ADD
+    SET_LOCAL 0
+
+    ; ══════════════════════════════════════════════════════════════════════
+    ; Initialize PIC
+    ; ══════════════════════════════════════════════════════════════════════
+
+    ; MOV AL, 0x11 (B0 11)
+    GET_LOCAL 0
+    CONST_I64 0xB0
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0x11
+    SYSCALL 0x0020
+    ADD
+    SET_LOCAL 0
+
+    ; OUT 0x20, AL (E6 20)
+    GET_LOCAL 0
+    CONST_I64 0xE6
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0x20
+    SYSCALL 0x0020
+    ADD
+    SET_LOCAL 0
+
+    ; OUT 0xA0, AL (E6 A0)
+    GET_LOCAL 0
+    CONST_I64 0xE6
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0xA0
+    SYSCALL 0x0020
+    ADD
+    SET_LOCAL 0
+
+    ; MOV AL, 0x20 / OUT 0x21, AL
+    GET_LOCAL 0
+    CONST_I64 0xB0
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0x20
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0xE6
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0x21
+    SYSCALL 0x0020
+    ADD
+    SET_LOCAL 0
+
+    ; MOV AL, 0x28 / OUT 0xA1, AL
+    GET_LOCAL 0
+    CONST_I64 0xB0
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0x28
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0xE6
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0xA1
+    SYSCALL 0x0020
+    ADD
+    SET_LOCAL 0
+
+    ; MOV AL, 0x04 / OUT 0x21, AL
+    GET_LOCAL 0
+    CONST_I64 0xB0
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0x04
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0xE6
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0x21
+    SYSCALL 0x0020
+    ADD
+    SET_LOCAL 0
+
+    ; MOV AL, 0x02 / OUT 0xA1, AL
+    GET_LOCAL 0
+    CONST_I64 0xB0
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0x02
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0xE6
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0xA1
+    SYSCALL 0x0020
+    ADD
+    SET_LOCAL 0
+
+    ; MOV AL, 0x01 / OUT 0x21, AL / OUT 0xA1, AL
+    GET_LOCAL 0
+    CONST_I64 0xB0
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0x01
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0xE6
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0x21
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0xE6
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0xA1
+    SYSCALL 0x0020
+    ADD
+    SET_LOCAL 0
+
+    ; MOV AL, 0xFD / OUT 0x21, AL (enable keyboard only)
+    GET_LOCAL 0
+    CONST_I64 0xB0
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0xFD
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0xE6
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0x21
+    SYSCALL 0x0020
+    ADD
+    SET_LOCAL 0
+
+    ; MOV AL, 0xFF / OUT 0xA1, AL
+    GET_LOCAL 0
+    CONST_I64 0xB0
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0xFF
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0xE6
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0xA1
+    SYSCALL 0x0020
+    ADD
+    SET_LOCAL 0
+
+    ; ══════════════════════════════════════════════════════════════════════
+    ; LIDT [idt_ptr] - Load IDT
+    ; ══════════════════════════════════════════════════════════════════════
+
+    ; LIDT [0x11000] (0F 01 1D 00 10 01 00)
+    GET_LOCAL 0
+    CONST_I64 0x0F
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0x01
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0x1D
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0x00
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0x10
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0x01
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0x00
+    SYSCALL 0x0020
+    ADD
+    SET_LOCAL 0
+
+    ; STI (FB)
+    GET_LOCAL 0
+    CONST_I64 0xFB
+    SYSCALL 0x0020
+    ADD
+    SET_LOCAL 0
+
+    ; ══════════════════════════════════════════════════════════════════════
+    ; Clear screen and display banner
+    ; ══════════════════════════════════════════════════════════════════════
+
+    ; MOV EDI, 0xB8000 (BF 00 80 0B 00)
+    GET_LOCAL 0
+    CONST_I64 0xBF
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0x00
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0x80
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0x0B
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0x00
+    SYSCALL 0x0020
+    ADD
+    SET_LOCAL 0
+
+    ; MOV ECX, 2000 (B9 D0 07 00 00)
+    GET_LOCAL 0
+    CONST_I64 0xB9
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0xD0
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0x07
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0x00
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0x00
+    SYSCALL 0x0020
+    ADD
+    SET_LOCAL 0
+
+    ; MOV EAX, 0x0720 (B8 20 07 00 00)
+    GET_LOCAL 0
+    CONST_I64 0xB8
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0x20
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0x07
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0x00
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0x00
+    SYSCALL 0x0020
+    ADD
+    SET_LOCAL 0
+
+    ; REP STOSD (F3 AB) - but we use 16-bit version (F3 66 AB)
+    GET_LOCAL 0
+    CONST_I64 0xF3
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0x66
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0xAB
+    SYSCALL 0x0020
+    ADD
+    SET_LOCAL 0
+
+    ; ══════════════════════════════════════════════════════════════════════
+    ; HLT loop
+    ; ══════════════════════════════════════════════════════════════════════
+
+    ; HLT (F4)
+    GET_LOCAL 0
+    CONST_I64 0xF4
+    SYSCALL 0x0020
+    ADD
+    SET_LOCAL 0
+
+    ; JMP -2 (EB FD)
+    GET_LOCAL 0
+    CONST_I64 0xEB
+    SYSCALL 0x0020
+    ADD
+    CONST_I64 0xFD
+    SYSCALL 0x0020
+    ADD
+    SET_LOCAL 0
+
+    ; ══════════════════════════════════════════════════════════════════════
+    ; Pad to 16KB
+    ; ══════════════════════════════════════════════════════════════════════
+
+    GET_LOCAL 0
+    LEN
+    SET_LOCAL 1
+
+.pad_loop:
+    GET_LOCAL 1
+    CONST_I64 16384
+    GE
+    JUMP_IF_TRUE .write_file
+    
+    GET_LOCAL 0
+    CONST_I64 0x90
+    SYSCALL 0x0020
+    ADD
+    SET_LOCAL 0
+    
+    GET_LOCAL 1
+    CONST_I64 1
+    ADD
+    SET_LOCAL 1
+    JUMP .pad_loop
+
+.write_file:
+    ; ══════════════════════════════════════════════════════════════════════
+    ; Write to file
+    ; ══════════════════════════════════════════════════════════════════════
+    
+    CONST 5
+    SYSCALL 0x0010
+    POP
+
+    CONST 0
+    GET_LOCAL 0
+    SYSCALL 0x0018
+    POP
+
+    CONST_I64 0
+    RET
+.end

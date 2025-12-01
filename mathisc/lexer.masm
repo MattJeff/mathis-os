@@ -1,0 +1,927 @@
+; ════════════════════════════════════════════════════════════════════════════════
+; MATHIS COMPILER - LEXER
+; Written in MathisASM - 100% from scratch, no Rust!
+; ════════════════════════════════════════════════════════════════════════════════
+;
+; This lexer tokenizes MATHIS (.mhs) source code into tokens.
+;
+; Token Types:
+;   0x01 = IDENT       (identifier)
+;   0x02 = INT         (integer literal)
+;   0x03 = FLOAT       (float literal)
+;   0x04 = STRING      (string literal)
+;   0x05 = KEYWORD     (func, let, if, etc.)
+;   0x06 = ANNOTATION  (@module, @intent, etc.)
+;   0x07 = OPERATOR    (+, -, *, /, etc.)
+;   0x08 = PUNCT       (parentheses, braces, etc.)
+;   0x09 = NEWLINE
+;   0x0A = EOF
+;   0x0B = COMMENT
+;
+; ════════════════════════════════════════════════════════════════════════════════
+
+.module "mathisc_lexer"
+.version "1.0.0"
+
+; ─────────────────────────────────────────────────────────────────────────────────
+; CONSTANTS - Token Types
+; ─────────────────────────────────────────────────────────────────────────────────
+
+.constants:
+    ; Token type IDs
+    0: i64 1      ; TOK_IDENT
+    1: i64 2      ; TOK_INT
+    2: i64 3      ; TOK_FLOAT
+    3: i64 4      ; TOK_STRING
+    4: i64 5      ; TOK_KEYWORD
+    5: i64 6      ; TOK_ANNOTATION
+    6: i64 7      ; TOK_OPERATOR
+    7: i64 8      ; TOK_PUNCT
+    8: i64 9      ; TOK_NEWLINE
+    9: i64 10     ; TOK_EOF
+    10: i64 11    ; TOK_COMMENT
+
+    ; Keywords
+    11: str "func"
+    12: str "let"
+    13: str "const"
+    14: str "if"
+    15: str "else"
+    16: str "match"
+    17: str "for"
+    18: str "while"
+    19: str "return"
+    20: str "struct"
+    21: str "enum"
+    22: str "type"
+    23: str "import"
+    24: str "export"
+    25: str "module"
+    26: str "true"
+    27: str "false"
+    28: str "null"
+    29: str "and"
+    30: str "or"
+    31: str "not"
+    32: str "in"
+    33: str "pub"
+    34: str "mut"
+    35: str "async"
+    36: str "await"
+
+    ; Operators
+    37: str "+"
+    38: str "-"
+    39: str "*"
+    40: str "/"
+    41: str "%"
+    42: str "=="
+    43: str "!="
+    44: str "<"
+    45: str ">"
+    46: str "<="
+    47: str ">="
+    48: str "="
+    49: str "+="
+    50: str "-="
+    51: str "*="
+    52: str "/="
+    53: str "->"
+    54: str "=>"
+    55: str "&&"
+    56: str "||"
+    57: str "!"
+
+    ; Punctuation
+    58: str "("
+    59: str ")"
+    60: str "{"
+    61: str "}"
+    62: str "["
+    63: str "]"
+    64: str ","
+    65: str ":"
+    66: str ";"
+    67: str "."
+    68: str "@"
+
+; ─────────────────────────────────────────────────────────────────────────────────
+; LEXER STATE
+; Uses locals:
+;   0 = source (string)
+;   1 = pos (current position)
+;   2 = len (source length)
+;   3 = line (current line number)
+;   4 = col (current column)
+;   5 = tokens (list of tokens)
+; ─────────────────────────────────────────────────────────────────────────────────
+
+; ═══════════════════════════════════════════════════════════════════════════════
+; FUNCTION: tokenize
+; INPUT: source code string on stack
+; OUTPUT: list of tokens
+; ═══════════════════════════════════════════════════════════════════════════════
+
+.func tokenize
+    .arity 1
+    .locals 6
+    .ai_block "lexer_main"
+    .ai_intent "Tokenize MATHIS source code into a list of tokens"
+
+    ; Store source in local 0
+    SET_LOCAL 0
+
+    ; Initialize position to 0
+    CONST_I64 0
+    SET_LOCAL 1
+
+    ; Get source length
+    GET_LOCAL 0
+    LEN
+    SET_LOCAL 2
+
+    ; Initialize line to 1
+    CONST_I64 1
+    SET_LOCAL 3
+
+    ; Initialize column to 1
+    CONST_I64 1
+    SET_LOCAL 4
+
+    ; Initialize empty token list
+    MAKE_LIST 0
+    SET_LOCAL 5
+
+.loop_start:
+    ; Check if pos < len
+    GET_LOCAL 1      ; pos
+    GET_LOCAL 2      ; len
+    LT
+    JUMP_IF_FALSE .loop_end
+
+    ; Get current character
+    GET_LOCAL 0      ; source
+    GET_LOCAL 1      ; pos
+    INDEX            ; source[pos]
+
+    ; Check what kind of character it is
+    DUP
+
+    ; ─────────────────────────────────────────────────────────────────────────
+    ; Check for whitespace (space = 32, tab = 9)
+    ; ─────────────────────────────────────────────────────────────────────────
+    CONST_I64 32     ; space
+    EQ
+    JUMP_IF_TRUE .skip_whitespace
+
+    DUP
+    CONST_I64 9      ; tab
+    EQ
+    JUMP_IF_TRUE .skip_whitespace
+
+    ; ─────────────────────────────────────────────────────────────────────────
+    ; Check for newline (10)
+    ; ─────────────────────────────────────────────────────────────────────────
+    DUP
+    CONST_I64 10     ; newline
+    EQ
+    JUMP_IF_TRUE .handle_newline
+
+    ; ─────────────────────────────────────────────────────────────────────────
+    ; Check for @ (annotation start, 64)
+    ; ─────────────────────────────────────────────────────────────────────────
+    DUP
+    CONST_I64 64     ; '@'
+    EQ
+    JUMP_IF_TRUE .handle_annotation
+
+    ; ─────────────────────────────────────────────────────────────────────────
+    ; Check for " (string start, 34)
+    ; ─────────────────────────────────────────────────────────────────────────
+    DUP
+    CONST_I64 34     ; '"'
+    EQ
+    JUMP_IF_TRUE .handle_string
+
+    ; ─────────────────────────────────────────────────────────────────────────
+    ; Check for digit (48-57 = '0'-'9')
+    ; ─────────────────────────────────────────────────────────────────────────
+    DUP
+    CONST_I64 48     ; '0'
+    GE
+    SWAP
+    DUP
+    CONST_I64 57     ; '9'
+    LE
+    AND
+    JUMP_IF_TRUE .handle_number
+
+    ; ─────────────────────────────────────────────────────────────────────────
+    ; Check for letter or underscore (identifier start)
+    ; a-z: 97-122, A-Z: 65-90, _: 95
+    ; ─────────────────────────────────────────────────────────────────────────
+    DUP
+    CONST_I64 95     ; '_'
+    EQ
+    JUMP_IF_TRUE .handle_ident
+
+    DUP
+    CONST_I64 97     ; 'a'
+    GE
+    OVER
+    CONST_I64 122    ; 'z'
+    LE
+    AND
+    JUMP_IF_TRUE .handle_ident
+
+    DUP
+    CONST_I64 65     ; 'A'
+    GE
+    OVER
+    CONST_I64 90     ; 'Z'
+    LE
+    AND
+    JUMP_IF_TRUE .handle_ident
+
+    ; ─────────────────────────────────────────────────────────────────────────
+    ; Check for / (comment or division)
+    ; ─────────────────────────────────────────────────────────────────────────
+    DUP
+    CONST_I64 47     ; '/'
+    EQ
+    JUMP_IF_TRUE .handle_slash
+
+    ; ─────────────────────────────────────────────────────────────────────────
+    ; Check for operators and punctuation
+    ; ─────────────────────────────────────────────────────────────────────────
+    JUMP .handle_operator_or_punct
+
+; ─────────────────────────────────────────────────────────────────────────────
+; HANDLERS
+; ─────────────────────────────────────────────────────────────────────────────
+
+.skip_whitespace:
+    POP              ; remove the char
+    ; Increment position
+    GET_LOCAL 1
+    CONST_I64 1
+    ADD
+    SET_LOCAL 1
+    ; Increment column
+    GET_LOCAL 4
+    CONST_I64 1
+    ADD
+    SET_LOCAL 4
+    JUMP .loop_start
+
+.handle_newline:
+    POP              ; remove the char
+    ; Create newline token
+    CONST 8          ; TOK_NEWLINE
+    GET_LOCAL 3      ; line
+    GET_LOCAL 4      ; col
+    MAKE_TUPLE 3
+    ; Add to tokens list
+    GET_LOCAL 5
+    SWAP
+    PUSH
+    SET_LOCAL 5
+    ; Increment position
+    GET_LOCAL 1
+    CONST_I64 1
+    ADD
+    SET_LOCAL 1
+    ; Increment line, reset column
+    GET_LOCAL 3
+    CONST_I64 1
+    ADD
+    SET_LOCAL 3
+    CONST_I64 1
+    SET_LOCAL 4
+    JUMP .loop_start
+
+.handle_annotation:
+    POP              ; remove '@'
+    ; Save start position
+    GET_LOCAL 1
+    CONST_I64 1
+    ADD              ; skip '@'
+    DUP
+    SET_LOCAL 1      ; update pos
+
+    ; Read identifier after @
+.anno_loop:
+    GET_LOCAL 1
+    GET_LOCAL 2
+    LT
+    JUMP_IF_FALSE .anno_done
+
+    GET_LOCAL 0
+    GET_LOCAL 1
+    INDEX
+
+    ; Check if still identifier char
+    DUP
+    CONST_I64 95     ; '_'
+    EQ
+    JUMP_IF_TRUE .anno_continue
+
+    DUP
+    CONST_I64 97     ; 'a'
+    GE
+    OVER
+    CONST_I64 122    ; 'z'
+    LE
+    AND
+    JUMP_IF_TRUE .anno_continue
+
+    DUP
+    CONST_I64 65     ; 'A'
+    GE
+    OVER
+    CONST_I64 90     ; 'Z'
+    LE
+    AND
+    JUMP_IF_TRUE .anno_continue
+
+    DUP
+    CONST_I64 48     ; '0'
+    GE
+    OVER
+    CONST_I64 57     ; '9'
+    LE
+    AND
+    JUMP_IF_TRUE .anno_continue
+
+    POP
+    JUMP .anno_done
+
+.anno_continue:
+    POP
+    GET_LOCAL 1
+    CONST_I64 1
+    ADD
+    SET_LOCAL 1
+    JUMP .anno_loop
+
+.anno_done:
+    ; Create annotation token with the text
+    CONST 5          ; TOK_ANNOTATION
+    ; TODO: extract substring
+    GET_LOCAL 3      ; line
+    GET_LOCAL 4      ; col
+    MAKE_TUPLE 3
+    ; Add to tokens
+    GET_LOCAL 5
+    SWAP
+    PUSH
+    SET_LOCAL 5
+    JUMP .loop_start
+
+.handle_string:
+    POP              ; remove '"'
+    GET_LOCAL 1
+    CONST_I64 1
+    ADD
+    SET_LOCAL 1      ; skip opening quote
+
+    ; Read until closing quote
+.string_loop:
+    GET_LOCAL 1
+    GET_LOCAL 2
+    LT
+    JUMP_IF_FALSE .string_done
+
+    GET_LOCAL 0
+    GET_LOCAL 1
+    INDEX
+
+    DUP
+    CONST_I64 34     ; '"'
+    EQ
+    JUMP_IF_TRUE .string_end
+
+    ; TODO: handle escape sequences
+    POP
+    GET_LOCAL 1
+    CONST_I64 1
+    ADD
+    SET_LOCAL 1
+    JUMP .string_loop
+
+.string_end:
+    POP              ; remove '"'
+    GET_LOCAL 1
+    CONST_I64 1
+    ADD
+    SET_LOCAL 1      ; skip closing quote
+
+.string_done:
+    ; Create string token
+    CONST 3          ; TOK_STRING
+    GET_LOCAL 3
+    GET_LOCAL 4
+    MAKE_TUPLE 3
+    GET_LOCAL 5
+    SWAP
+    PUSH
+    SET_LOCAL 5
+    JUMP .loop_start
+
+.handle_number:
+    ; Read digits
+.number_loop:
+    GET_LOCAL 1
+    GET_LOCAL 2
+    LT
+    JUMP_IF_FALSE .number_done
+
+    GET_LOCAL 0
+    GET_LOCAL 1
+    INDEX
+
+    DUP
+    CONST_I64 48     ; '0'
+    GE
+    OVER
+    CONST_I64 57     ; '9'
+    LE
+    AND
+    JUMP_IF_FALSE .check_float
+
+    POP
+    GET_LOCAL 1
+    CONST_I64 1
+    ADD
+    SET_LOCAL 1
+    JUMP .number_loop
+
+.check_float:
+    ; Check for decimal point
+    DUP
+    CONST_I64 46     ; '.'
+    EQ
+    JUMP_IF_FALSE .number_done
+
+    POP
+    GET_LOCAL 1
+    CONST_I64 1
+    ADD
+    SET_LOCAL 1
+
+    ; Read fractional digits
+.frac_loop:
+    GET_LOCAL 1
+    GET_LOCAL 2
+    LT
+    JUMP_IF_FALSE .number_done
+
+    GET_LOCAL 0
+    GET_LOCAL 1
+    INDEX
+
+    DUP
+    CONST_I64 48
+    GE
+    OVER
+    CONST_I64 57
+    LE
+    AND
+    JUMP_IF_FALSE .number_done
+
+    POP
+    GET_LOCAL 1
+    CONST_I64 1
+    ADD
+    SET_LOCAL 1
+    JUMP .frac_loop
+
+.number_done:
+    POP
+    ; Create number token (we'd need to track if float or int)
+    CONST 1          ; TOK_INT (simplified)
+    GET_LOCAL 3
+    GET_LOCAL 4
+    MAKE_TUPLE 3
+    GET_LOCAL 5
+    SWAP
+    PUSH
+    SET_LOCAL 5
+    JUMP .loop_start
+
+.handle_ident:
+    ; Read identifier
+.ident_loop:
+    GET_LOCAL 1
+    GET_LOCAL 2
+    LT
+    JUMP_IF_FALSE .ident_done
+
+    GET_LOCAL 0
+    GET_LOCAL 1
+    INDEX
+
+    ; Check if still ident char (letter, digit, underscore)
+    DUP
+    CONST_I64 95     ; '_'
+    EQ
+    JUMP_IF_TRUE .ident_continue
+
+    DUP
+    CONST_I64 97
+    GE
+    OVER
+    CONST_I64 122
+    LE
+    AND
+    JUMP_IF_TRUE .ident_continue
+
+    DUP
+    CONST_I64 65
+    GE
+    OVER
+    CONST_I64 90
+    LE
+    AND
+    JUMP_IF_TRUE .ident_continue
+
+    DUP
+    CONST_I64 48
+    GE
+    OVER
+    CONST_I64 57
+    LE
+    AND
+    JUMP_IF_TRUE .ident_continue
+
+    POP
+    JUMP .ident_done
+
+.ident_continue:
+    POP
+    GET_LOCAL 1
+    CONST_I64 1
+    ADD
+    SET_LOCAL 1
+    JUMP .ident_loop
+
+.ident_done:
+    ; Create identifier token (TODO: check if keyword)
+    CONST 0          ; TOK_IDENT
+    GET_LOCAL 3
+    GET_LOCAL 4
+    MAKE_TUPLE 3
+    GET_LOCAL 5
+    SWAP
+    PUSH
+    SET_LOCAL 5
+    JUMP .loop_start
+
+.handle_slash:
+    POP
+    ; Check next char for comment
+    GET_LOCAL 1
+    CONST_I64 1
+    ADD
+    DUP
+    GET_LOCAL 2
+    LT
+    JUMP_IF_FALSE .just_div
+
+    GET_LOCAL 0
+    SWAP
+    INDEX
+
+    DUP
+    CONST_I64 47     ; '/'
+    EQ
+    JUMP_IF_TRUE .line_comment
+
+    POP
+    JUMP .just_div
+
+.line_comment:
+    POP
+    ; Skip until newline
+.comment_loop:
+    GET_LOCAL 1
+    GET_LOCAL 2
+    LT
+    JUMP_IF_FALSE .comment_done
+
+    GET_LOCAL 0
+    GET_LOCAL 1
+    INDEX
+
+    CONST_I64 10     ; newline
+    EQ
+    JUMP_IF_TRUE .comment_done
+
+    GET_LOCAL 1
+    CONST_I64 1
+    ADD
+    SET_LOCAL 1
+    JUMP .comment_loop
+
+.comment_done:
+    ; Create comment token
+    CONST 10         ; TOK_COMMENT
+    GET_LOCAL 3
+    GET_LOCAL 4
+    MAKE_TUPLE 3
+    GET_LOCAL 5
+    SWAP
+    PUSH
+    SET_LOCAL 5
+    JUMP .loop_start
+
+.just_div:
+    ; Create operator token for /
+    CONST 6          ; TOK_OPERATOR
+    GET_LOCAL 3
+    GET_LOCAL 4
+    MAKE_TUPLE 3
+    GET_LOCAL 5
+    SWAP
+    PUSH
+    SET_LOCAL 5
+    GET_LOCAL 1
+    CONST_I64 1
+    ADD
+    SET_LOCAL 1
+    JUMP .loop_start
+
+.handle_operator_or_punct:
+    ; For now, treat single char as operator/punct
+    POP              ; remove char we already read
+    CONST 7          ; TOK_PUNCT (simplified)
+    GET_LOCAL 3
+    GET_LOCAL 4
+    MAKE_TUPLE 3
+    GET_LOCAL 5
+    SWAP
+    PUSH
+    SET_LOCAL 5
+    GET_LOCAL 1
+    CONST_I64 1
+    ADD
+    SET_LOCAL 1
+    JUMP .loop_start
+
+.loop_end:
+    ; Add EOF token
+    CONST 9          ; TOK_EOF
+    GET_LOCAL 3
+    GET_LOCAL 4
+    MAKE_TUPLE 3
+    GET_LOCAL 5
+    SWAP
+    PUSH
+    SET_LOCAL 5
+
+    ; Return tokens list
+    GET_LOCAL 5
+    RET
+.end
+
+; ═══════════════════════════════════════════════════════════════════════════════
+; FUNCTION: is_keyword
+; INPUT: identifier string
+; OUTPUT: true if keyword, false otherwise
+; ═══════════════════════════════════════════════════════════════════════════════
+
+.func is_keyword
+    .arity 1
+    .locals 1
+    .ai_block "keyword_check"
+    .ai_intent "Check if an identifier is a reserved keyword"
+
+    SET_LOCAL 0      ; store the identifier
+
+    ; Check against each keyword
+    GET_LOCAL 0
+    CONST 11         ; "func"
+    EQ
+    JUMP_IF_TRUE .is_kw
+
+    GET_LOCAL 0
+    CONST 12         ; "let"
+    EQ
+    JUMP_IF_TRUE .is_kw
+
+    GET_LOCAL 0
+    CONST 13         ; "const"
+    EQ
+    JUMP_IF_TRUE .is_kw
+
+    GET_LOCAL 0
+    CONST 14         ; "if"
+    EQ
+    JUMP_IF_TRUE .is_kw
+
+    GET_LOCAL 0
+    CONST 15         ; "else"
+    EQ
+    JUMP_IF_TRUE .is_kw
+
+    GET_LOCAL 0
+    CONST 16         ; "match"
+    EQ
+    JUMP_IF_TRUE .is_kw
+
+    GET_LOCAL 0
+    CONST 17         ; "for"
+    EQ
+    JUMP_IF_TRUE .is_kw
+
+    GET_LOCAL 0
+    CONST 18         ; "while"
+    EQ
+    JUMP_IF_TRUE .is_kw
+
+    GET_LOCAL 0
+    CONST 19         ; "return"
+    EQ
+    JUMP_IF_TRUE .is_kw
+
+    GET_LOCAL 0
+    CONST 20         ; "struct"
+    EQ
+    JUMP_IF_TRUE .is_kw
+
+    GET_LOCAL 0
+    CONST 21         ; "enum"
+    EQ
+    JUMP_IF_TRUE .is_kw
+
+    GET_LOCAL 0
+    CONST 22         ; "type"
+    EQ
+    JUMP_IF_TRUE .is_kw
+
+    GET_LOCAL 0
+    CONST 26         ; "true"
+    EQ
+    JUMP_IF_TRUE .is_kw
+
+    GET_LOCAL 0
+    CONST 27         ; "false"
+    EQ
+    JUMP_IF_TRUE .is_kw
+
+    GET_LOCAL 0
+    CONST 28         ; "null"
+    EQ
+    JUMP_IF_TRUE .is_kw
+
+    GET_LOCAL 0
+    CONST 29         ; "and"
+    EQ
+    JUMP_IF_TRUE .is_kw
+
+    GET_LOCAL 0
+    CONST 30         ; "or"
+    EQ
+    JUMP_IF_TRUE .is_kw
+
+    GET_LOCAL 0
+    CONST 31         ; "not"
+    EQ
+    JUMP_IF_TRUE .is_kw
+
+    GET_LOCAL 0
+    CONST 32         ; "in"
+    EQ
+    JUMP_IF_TRUE .is_kw
+
+    ; Not a keyword
+    CONST_FALSE
+    RET
+
+.is_kw:
+    CONST_TRUE
+    RET
+.end
+
+; ═══════════════════════════════════════════════════════════════════════════════
+; FUNCTION: char_at
+; INPUT: string, index
+; OUTPUT: character code at index
+; ═══════════════════════════════════════════════════════════════════════════════
+
+.func char_at
+    .arity 2
+    .locals 0
+    .ai_block "char_access"
+    .ai_intent "Get character code at position in string"
+
+    ; string is on stack, then index
+    INDEX
+    RET
+.end
+
+; ═══════════════════════════════════════════════════════════════════════════════
+; FUNCTION: is_digit
+; INPUT: character code
+; OUTPUT: true if '0'-'9'
+; ═══════════════════════════════════════════════════════════════════════════════
+
+.func is_digit
+    .arity 1
+    .locals 1
+    .ai_block "digit_check"
+    .ai_intent "Check if character is a digit 0-9"
+
+    SET_LOCAL 0
+
+    GET_LOCAL 0
+    CONST_I64 48     ; '0'
+    GE
+
+    GET_LOCAL 0
+    CONST_I64 57     ; '9'
+    LE
+
+    AND
+    RET
+.end
+
+; ═══════════════════════════════════════════════════════════════════════════════
+; FUNCTION: is_alpha
+; INPUT: character code
+; OUTPUT: true if letter or underscore
+; ═══════════════════════════════════════════════════════════════════════════════
+
+.func is_alpha
+    .arity 1
+    .locals 1
+    .ai_block "alpha_check"
+    .ai_intent "Check if character is a letter or underscore"
+
+    SET_LOCAL 0
+
+    ; Check underscore
+    GET_LOCAL 0
+    CONST_I64 95     ; '_'
+    EQ
+    JUMP_IF_TRUE .yes
+
+    ; Check a-z
+    GET_LOCAL 0
+    CONST_I64 97     ; 'a'
+    GE
+    GET_LOCAL 0
+    CONST_I64 122    ; 'z'
+    LE
+    AND
+    JUMP_IF_TRUE .yes
+
+    ; Check A-Z
+    GET_LOCAL 0
+    CONST_I64 65     ; 'A'
+    GE
+    GET_LOCAL 0
+    CONST_I64 90     ; 'Z'
+    LE
+    AND
+    JUMP_IF_TRUE .yes
+
+    CONST_FALSE
+    RET
+
+.yes:
+    CONST_TRUE
+    RET
+.end
+
+; ═══════════════════════════════════════════════════════════════════════════════
+; FUNCTION: is_whitespace
+; INPUT: character code
+; OUTPUT: true if space or tab
+; ═══════════════════════════════════════════════════════════════════════════════
+
+.func is_whitespace
+    .arity 1
+    .locals 1
+    .ai_block "whitespace_check"
+    .ai_intent "Check if character is whitespace (space or tab)"
+
+    SET_LOCAL 0
+
+    GET_LOCAL 0
+    CONST_I64 32     ; space
+    EQ
+    JUMP_IF_TRUE .yes
+
+    GET_LOCAL 0
+    CONST_I64 9      ; tab
+    EQ
+    JUMP_IF_TRUE .yes
+
+    CONST_FALSE
+    RET
+
+.yes:
+    CONST_TRUE
+    RET
+.end

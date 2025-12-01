@@ -1,0 +1,40 @@
+; ════════════════════════════════════════════════════════════════════
+; Simple Calculator - Demonstrates arithmetic and variables
+; ════════════════════════════════════════════════════════════════════
+
+.module "calculator"
+.version "1.0.0"
+
+.func main
+    .arity 0
+    .locals 3
+    .ai_block "calculator"
+    .ai_intent "Perform basic arithmetic"
+
+    ; a = 42
+    CONST_I64 42
+    SET_LOCAL 0
+
+    ; b = 8
+    CONST_I64 8
+    SET_LOCAL 1
+
+    ; c = a + b
+    GET_LOCAL 0
+    GET_LOCAL 1
+    ADD
+    SET_LOCAL 2
+
+    ; Print "Result: "
+    CONST_STR "42 + 8 = "
+    SYSCALL 0x0010     ; io_print
+
+    ; Print result (need to convert to string and print)
+    ; For now, just return the value
+    ; GET_LOCAL 2
+    ; SYSCALL 0x0011   ; Would need int-to-string conversion
+
+    ; Return the result
+    GET_LOCAL 2
+    RET
+.end

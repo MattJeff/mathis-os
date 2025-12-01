@@ -1,0 +1,52 @@
+; ════════════════════════════════════════════════════════════════════
+; Crypto Demo - SHA256 hash and UUID generation
+; ════════════════════════════════════════════════════════════════════
+
+.module "crypto_demo"
+.version "1.0.0"
+
+.func main
+    .arity 0
+    .locals 2
+    .ai_block "crypto"
+    .ai_intent "Demonstrate cryptographic syscalls"
+
+    ; Print header
+    CONST_STR "=== Crypto Demo ==="
+    SYSCALL 0x0011     ; println
+
+    ; ── SHA256 ──
+    CONST_STR "SHA256 of 'hello': "
+    SYSCALL 0x0010     ; print
+
+    CONST_STR "hello"
+    SYSCALL 0x0900     ; crypto_sha256
+    SET_LOCAL 0
+
+    GET_LOCAL 0
+    SYSCALL 0x0011     ; println
+
+    ; ── UUID ──
+    CONST_STR "Generated UUID: "
+    SYSCALL 0x0010     ; print
+
+    SYSCALL 0x0942     ; crypto_uuid_v4
+    SET_LOCAL 1
+
+    GET_LOCAL 1
+    SYSCALL 0x0011     ; println
+
+    ; ── Random ──
+    CONST_STR "Random number (1-100): "
+    SYSCALL 0x0010     ; print
+
+    CONST_I64 1
+    CONST_I64 100
+    SYSCALL 0x0941     ; crypto_random_int
+    ; Result is on stack - we'll just discard and continue
+    POP
+
+    ; Return
+    CONST_NONE
+    RET
+.end

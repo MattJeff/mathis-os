@@ -1,0 +1,435 @@
+; ════════════════════════════════════════════════════════════════════════════════
+; MATHIS COMPILER - Test de compilation réelle
+; Lit un fichier .mhs et affiche les tokens
+; ════════════════════════════════════════════════════════════════════════════════
+
+.module "compile_test"
+.version "1.0.0"
+
+.constants:
+    0: str "═══════════════════════════════════════════════════════════════\n"
+    1: str "MATHIS Compiler - Test de lecture de fichier\n"
+    2: str "═══════════════════════════════════════════════════════════════\n"
+    3: str "\nLecture du fichier: "
+    4: str "/Users/mathishiguinen/Desktop/Higuinen/llml/examples/hello.mhs"
+    5: str "\n\nContenu du fichier:\n"
+    6: str "\n─────────────────────────────────────────────────────────────────\n"
+    7: str "\nTokenisation...\n"
+    8: str "Token trouvé: "
+    9: str "\n"
+    10: str "Erreur: impossible de lire le fichier\n"
+    11: str "\n✓ Fichier lu avec succès!\n"
+    12: str "Taille: "
+    13: str " caractères\n"
+    14: str "\nAnalyse des tokens:\n"
+    15: str "  - Ligne "
+    16: str ": "
+
+    ; Token type names
+    20: str "IDENT"
+    21: str "INT"
+    22: str "FLOAT"
+    23: str "STRING"
+    24: str "KEYWORD"
+    25: str "ANNOTATION"
+    26: str "OPERATOR"
+    27: str "PUNCT"
+    28: str "NEWLINE"
+    29: str "EOF"
+    30: str "COMMENT"
+
+.func main
+    .arity 0
+    .locals 5
+    .ai_block "test_main"
+    .ai_intent "Test reading and tokenizing a MATHIS file"
+
+    ; Print header
+    CONST 0
+    SYSCALL 0x0010
+    POP
+
+    CONST 1
+    SYSCALL 0x0010
+    POP
+
+    CONST 0
+    SYSCALL 0x0010
+    POP
+
+    ; Print filename
+    CONST 3          ; "Lecture du fichier: "
+    SYSCALL 0x0010
+    POP
+
+    CONST 4          ; path
+    SYSCALL 0x0010
+    POP
+
+    ; Read the file
+    CONST 4          ; path
+    SYSCALL 0x0015   ; io_read_file
+    SET_LOCAL 0      ; store content
+
+    ; Check if we got content
+    GET_LOCAL 0
+    IS_NONE
+    JUMP_IF_TRUE .error
+
+    ; Success!
+    CONST 11         ; "Fichier lu avec succès!"
+    SYSCALL 0x0010
+    POP
+
+    ; Print content info
+    CONST 12         ; "Taille: "
+    SYSCALL 0x0010
+    POP
+
+    GET_LOCAL 0
+    LEN
+    SET_LOCAL 1      ; store length
+
+    ; Print length (we don't have int_to_string yet, so just trace)
+    GET_LOCAL 1
+    TRACE
+
+    CONST 13         ; " caractères"
+    SYSCALL 0x0010
+    POP
+
+    ; Print separator
+    CONST 5          ; "Contenu du fichier:"
+    SYSCALL 0x0010
+    POP
+
+    CONST 6          ; separator
+    SYSCALL 0x0010
+    POP
+
+    ; Print the file content
+    GET_LOCAL 0
+    SYSCALL 0x0010
+    POP
+
+    CONST 6          ; separator
+    SYSCALL 0x0010
+    POP
+
+    ; Now let's tokenize!
+    CONST 7          ; "Tokenisation..."
+    SYSCALL 0x0010
+    POP
+
+    ; Call our tokenizer
+    ; For now, we'll do a simple character-by-character analysis
+    ; to show the concept works
+
+    CONST 14         ; "Analyse des tokens:"
+    SYSCALL 0x0010
+    POP
+
+    ; Initialize position
+    CONST_I64 0
+    SET_LOCAL 2      ; pos
+
+    ; Initialize line counter
+    CONST_I64 1
+    SET_LOCAL 3      ; line
+
+.scan_loop:
+    ; Check if pos < len
+    GET_LOCAL 2      ; pos
+    GET_LOCAL 1      ; len
+    LT
+    JUMP_IF_FALSE .scan_done
+
+    ; Get character at position
+    GET_LOCAL 0      ; content
+    GET_LOCAL 2      ; pos
+    INDEX            ; content[pos]
+    SET_LOCAL 4      ; current char
+
+    ; Check for newline (10)
+    GET_LOCAL 4
+    CONST_I64 10
+    EQ
+    JUMP_IF_TRUE .found_newline
+
+    ; Check for @ (annotation, 64)
+    GET_LOCAL 4
+    CONST_I64 64
+    EQ
+    JUMP_IF_TRUE .found_annotation
+
+    ; Check for " (string, 34)
+    GET_LOCAL 4
+    CONST_I64 34
+    EQ
+    JUMP_IF_TRUE .found_string
+
+    ; Check for letter (start of identifier)
+    GET_LOCAL 4
+    CONST_I64 97     ; 'a'
+    GE
+    GET_LOCAL 4
+    CONST_I64 122    ; 'z'
+    LE
+    AND
+    JUMP_IF_TRUE .found_ident
+
+    GET_LOCAL 4
+    CONST_I64 65     ; 'A'
+    GE
+    GET_LOCAL 4
+    CONST_I64 90     ; 'Z'
+    LE
+    AND
+    JUMP_IF_TRUE .found_ident
+
+    ; Check for digit
+    GET_LOCAL 4
+    CONST_I64 48     ; '0'
+    GE
+    GET_LOCAL 4
+    CONST_I64 57     ; '9'
+    LE
+    AND
+    JUMP_IF_TRUE .found_number
+
+    ; Otherwise skip
+    JUMP .advance
+
+.found_newline:
+    ; Increment line
+    GET_LOCAL 3
+    CONST_I64 1
+    ADD
+    SET_LOCAL 3
+    JUMP .advance
+
+.found_annotation:
+    ; Print annotation found
+    CONST 15         ; "  - Ligne "
+    SYSCALL 0x0010
+    POP
+
+    GET_LOCAL 3
+    TRACE
+
+    CONST 16         ; ": "
+    SYSCALL 0x0010
+    POP
+
+    CONST 25         ; "ANNOTATION"
+    SYSCALL 0x0011
+    POP
+
+    ; Skip to end of annotation (until whitespace)
+.skip_anno:
+    GET_LOCAL 2
+    CONST_I64 1
+    ADD
+    SET_LOCAL 2
+
+    GET_LOCAL 2
+    GET_LOCAL 1
+    GE
+    JUMP_IF_TRUE .scan_done
+
+    GET_LOCAL 0
+    GET_LOCAL 2
+    INDEX
+
+    ; Check if whitespace or special char
+    DUP
+    CONST_I64 32     ; space
+    EQ
+    JUMP_IF_TRUE .advance
+
+    DUP
+    CONST_I64 40     ; '('
+    EQ
+    JUMP_IF_TRUE .advance
+
+    DUP
+    CONST_I64 10     ; newline
+    EQ
+    JUMP_IF_TRUE .advance
+
+    POP
+    JUMP .skip_anno
+
+.found_string:
+    CONST 15
+    SYSCALL 0x0010
+    POP
+    GET_LOCAL 3
+    TRACE
+    CONST 16
+    SYSCALL 0x0010
+    POP
+    CONST 23         ; "STRING"
+    SYSCALL 0x0011
+    POP
+
+    ; Skip to end of string
+.skip_string:
+    GET_LOCAL 2
+    CONST_I64 1
+    ADD
+    SET_LOCAL 2
+
+    GET_LOCAL 2
+    GET_LOCAL 1
+    GE
+    JUMP_IF_TRUE .scan_done
+
+    GET_LOCAL 0
+    GET_LOCAL 2
+    INDEX
+    CONST_I64 34     ; closing quote
+    EQ
+    JUMP_IF_FALSE .skip_string
+
+    JUMP .advance
+
+.found_ident:
+    CONST 15
+    SYSCALL 0x0010
+    POP
+    GET_LOCAL 3
+    TRACE
+    CONST 16
+    SYSCALL 0x0010
+    POP
+    CONST 20         ; "IDENT"
+    SYSCALL 0x0011
+    POP
+
+    ; Skip to end of identifier
+.skip_ident:
+    GET_LOCAL 2
+    CONST_I64 1
+    ADD
+    SET_LOCAL 2
+
+    GET_LOCAL 2
+    GET_LOCAL 1
+    GE
+    JUMP_IF_TRUE .scan_done
+
+    GET_LOCAL 0
+    GET_LOCAL 2
+    INDEX
+    SET_LOCAL 4
+
+    ; Check if still identifier char
+    GET_LOCAL 4
+    CONST_I64 97
+    GE
+    GET_LOCAL 4
+    CONST_I64 122
+    LE
+    AND
+    JUMP_IF_TRUE .skip_ident
+
+    GET_LOCAL 4
+    CONST_I64 65
+    GE
+    GET_LOCAL 4
+    CONST_I64 90
+    LE
+    AND
+    JUMP_IF_TRUE .skip_ident
+
+    GET_LOCAL 4
+    CONST_I64 48
+    GE
+    GET_LOCAL 4
+    CONST_I64 57
+    LE
+    AND
+    JUMP_IF_TRUE .skip_ident
+
+    GET_LOCAL 4
+    CONST_I64 95     ; '_'
+    EQ
+    JUMP_IF_TRUE .skip_ident
+
+    ; Back one step since we're at a non-ident char
+    GET_LOCAL 2
+    CONST_I64 1
+    SUB
+    SET_LOCAL 2
+    JUMP .advance
+
+.found_number:
+    CONST 15
+    SYSCALL 0x0010
+    POP
+    GET_LOCAL 3
+    TRACE
+    CONST 16
+    SYSCALL 0x0010
+    POP
+    CONST 21         ; "INT"
+    SYSCALL 0x0011
+    POP
+
+    ; Skip digits
+.skip_number:
+    GET_LOCAL 2
+    CONST_I64 1
+    ADD
+    SET_LOCAL 2
+
+    GET_LOCAL 2
+    GET_LOCAL 1
+    GE
+    JUMP_IF_TRUE .scan_done
+
+    GET_LOCAL 0
+    GET_LOCAL 2
+    INDEX
+    SET_LOCAL 4
+
+    GET_LOCAL 4
+    CONST_I64 48
+    GE
+    GET_LOCAL 4
+    CONST_I64 57
+    LE
+    AND
+    JUMP_IF_TRUE .skip_number
+
+    GET_LOCAL 2
+    CONST_I64 1
+    SUB
+    SET_LOCAL 2
+    JUMP .advance
+
+.advance:
+    POP              ; clean stack if needed
+    GET_LOCAL 2
+    CONST_I64 1
+    ADD
+    SET_LOCAL 2
+    JUMP .scan_loop
+
+.scan_done:
+    ; Print final stats
+    CONST 6
+    SYSCALL 0x0010
+    POP
+
+    CONST_I64 0
+    RET
+
+.error:
+    CONST 10         ; Error message
+    SYSCALL 0x0011
+    POP
+    CONST_I64 1
+    RET
+.end
