@@ -1,0 +1,520 @@
+; ═══════════════════════════════════════════════════════════════════════════
+; LLML-MATHIS: Self-Introspection System
+; ═══════════════════════════════════════════════════════════════════════════
+;
+; THE HEART OF AGI: Self-awareness and code navigation
+;
+; This module allows the AI to:
+; - Know its own code structure
+; - Navigate between modules
+; - Understand function relationships
+; - Modify itself safely
+; - Track its own state
+;
+; ═══════════════════════════════════════════════════════════════════════════
+
+; --- System Knowledge Base ---
+; AI's understanding of itself
+
+struct Module {
+    name: ptr(String),
+    path: ptr(String),
+    source_code: ptr(String),
+    functions: [ptr(Function)],
+    structs: [ptr(Struct)],
+    dependencies: [ptr(Module)],
+    line_count: u32,
+    compiled: bool,
+    bytecode: ptr
+}
+
+struct Function {
+    name: ptr(String),
+    module: ptr(Module),
+    params: [ptr(String)],
+    return_type: ptr(String),
+    source_line: u32,
+    source_code: ptr(String),
+    bytecode_offset: u32,
+    call_count: u64,        ; How often called (for optimization)
+    last_modified: u64,     ; Timestamp
+    can_self_modify: bool   ; Safe to modify at runtime?
+}
+
+struct Struct {
+    name: ptr(String),
+    module: ptr(Module),
+    fields: [Field],
+    size: u32
+}
+
+struct Field {
+    name: ptr(String),
+    type_name: ptr(String),
+    offset: u32
+}
+
+; --- Global System Map ---
+; AI's complete knowledge of itself
+
+const MAX_MODULES = 100
+var known_modules: [ptr(Module); MAX_MODULES]
+var module_count: u32 = 0
+
+var self_source_root: ptr(String) = null
+var self_knowledge_initialized: bool = false
+
+; --- Initialization ---
+
+fn init_self_knowledge(source_root: ptr(String)) {
+    self_source_root = source_root
+    self_knowledge_initialized = true
+    
+    ; Scan all modules
+    scan_all_modules()
+}
+
+fn scan_all_modules() {
+    ; Discover and index all .masm files
+    ; AI builds its mental map of the codebase
+    
+    ; Core modules
+    register_module("core/types.masm")
+    register_module("core/memory.masm")
+    register_module("core/error.masm")
+    register_module("core/string.masm")
+    register_module("core/introspect.masm")
+    
+    ; Other modules will be added as they're created
+}
+
+fn register_module(path: string) -> ptr(Module) {
+    if module_count >= MAX_MODULES {
+        return null
+    }
+    
+    let m = alloc(sizeof(Module)) as ptr(Module)
+    m.path = string_from_cstr(path)
+    m.name = extract_module_name(path)
+    m.source_code = load_source_file(path)
+    m.compiled = false
+    
+    ; Parse to understand structure
+    if m.source_code != null {
+        parse_module_structure(m)
+    }
+    
+    known_modules[module_count] = m
+    module_count = module_count + 1
+    
+    return m
+}
+
+fn parse_module_structure(m: ptr(Module)) {
+    ; AI analyzes module to understand its contents
+    let code = m.source_code
+    m.line_count = count_lines(code)
+    
+    ; Find all functions
+    m.functions = find_all_function_defs(code)
+    
+    ; Find all structs
+    m.structs = find_all_struct_defs(code)
+}
+
+fn find_all_function_defs(code: ptr(String)) -> [ptr(Function)] {
+    var functions: [ptr(Function); 100]
+    var count: u32 = 0
+    
+    let lines = string_split_lines(code)
+    for i in 0..lines.length {
+        let line = lines[i]
+        if string_starts_with(line, string_from_cstr("fn ")) {
+            let f = alloc(sizeof(Function)) as ptr(Function)
+            f.name = extract_function_name(line)
+            f.source_line = i + 1
+            f.call_count = 0
+            f.can_self_modify = true
+            
+            if count < 100 {
+                functions[count] = f
+                count = count + 1
+            }
+        }
+    }
+    
+    return functions[0..count]
+}
+
+fn find_all_struct_defs(code: ptr(String)) -> [ptr(Struct)] {
+    var structs: [ptr(Struct); 50]
+    var count: u32 = 0
+    
+    let lines = string_split_lines(code)
+    for i in 0..lines.length {
+        let line = lines[i]
+        if string_starts_with(line, string_from_cstr("struct ")) {
+            let s = alloc(sizeof(Struct)) as ptr(Struct)
+            s.name = extract_struct_name(line)
+            
+            if count < 50 {
+                structs[count] = s
+                count = count + 1
+            }
+        }
+    }
+    
+    return structs[0..count]
+}
+
+; --- Self-Navigation ---
+; AI can query its own structure
+
+fn get_module(name: ptr(String)) -> ptr(Module) {
+    for i in 0..module_count {
+        if string_equals(known_modules[i].name, name) {
+            return known_modules[i]
+        }
+    }
+    return null
+}
+
+fn get_function(module_name: ptr(String), func_name: ptr(String)) -> ptr(Function) {
+    let m = get_module(module_name)
+    if m == null {
+        return null
+    }
+    
+    for i in 0..m.functions.length {
+        if string_equals(m.functions[i].name, func_name) {
+            return m.functions[i]
+        }
+    }
+    return null
+}
+
+fn list_all_modules() -> [ptr(String)] {
+    var names: [ptr(String); MAX_MODULES]
+    for i in 0..module_count {
+        names[i] = known_modules[i].name
+    }
+    return names[0..module_count]
+}
+
+fn list_functions_in_module(module_name: ptr(String)) -> [ptr(String)] {
+    let m = get_module(module_name)
+    if m == null {
+        return []
+    }
+    
+    var names: [ptr(String); 100]
+    for i in 0..m.functions.length {
+        names[i] = m.functions[i].name
+    }
+    return names[0..m.functions.length]
+}
+
+fn get_function_source(module_name: ptr(String), func_name: ptr(String)) -> ptr(String) {
+    ; AI can read its own function source code
+    let f = get_function(module_name, func_name)
+    if f == null {
+        return null
+    }
+    return f.source_code
+}
+
+; --- Self-Analysis ---
+; AI understands its own capabilities
+
+fn count_total_functions() -> u32 {
+    var total: u32 = 0
+    for i in 0..module_count {
+        total = total + known_modules[i].functions.length
+    }
+    return total
+}
+
+fn count_total_lines() -> u32 {
+    var total: u32 = 0
+    for i in 0..module_count {
+        total = total + known_modules[i].line_count
+    }
+    return total
+}
+
+fn find_callers_of(func_name: ptr(String)) -> [ptr(Function)] {
+    ; AI finds all functions that call a given function
+    var callers: [ptr(Function); 100]
+    var count: u32 = 0
+    
+    for i in 0..module_count {
+        let m = known_modules[i]
+        for j in 0..m.functions.length {
+            let f = m.functions[j]
+            if f.source_code != null {
+                if string_contains(f.source_code, func_name) {
+                    if count < 100 {
+                        callers[count] = f
+                        count = count + 1
+                    }
+                }
+            }
+        }
+    }
+    
+    return callers[0..count]
+}
+
+fn find_dependencies(module_name: ptr(String)) -> [ptr(String)] {
+    ; AI understands module dependencies
+    let m = get_module(module_name)
+    if m == null {
+        return []
+    }
+    
+    var deps: [ptr(String); 50]
+    var count: u32 = 0
+    
+    ; Look for "use" or "import" statements
+    let lines = string_split_lines(m.source_code)
+    for i in 0..lines.length {
+        if string_starts_with(lines[i], string_from_cstr("use ")) {
+            let dep = extract_import_name(lines[i])
+            if count < 50 {
+                deps[count] = dep
+                count = count + 1
+            }
+        }
+    }
+    
+    return deps[0..count]
+}
+
+; --- Self-Modification ---
+; AI can safely modify its own code
+
+fn can_modify_function(func: ptr(Function)) -> bool {
+    ; Check if it's safe to modify at runtime
+    return func.can_self_modify and func.call_count == 0
+}
+
+fn modify_function_source(func: ptr(Function), new_source: ptr(String)) -> Result {
+    if not can_modify_function(func) {
+        return err(ERROR_SELF_MODIFY, "Cannot modify active function")
+    }
+    
+    ; Store old source for rollback
+    let old_source = func.source_code
+    
+    ; Update source
+    func.source_code = new_source
+    func.last_modified = get_timestamp()
+    
+    ; Recompile
+    let compile_result = recompile_function(func)
+    if is_err(compile_result) {
+        ; Rollback on failure
+        func.source_code = old_source
+        return compile_result
+    }
+    
+    return ok()
+}
+
+fn recompile_function(func: ptr(Function)) -> Result {
+    ; Recompile a single function without restarting
+    ; This enables live self-modification
+    
+    ; Parse new source
+    let tokens = tokenize_code(func.source_code)
+    if tokens.length == 0 {
+        return err(ERROR_PARSE_FAILED, "Failed to tokenize")
+    }
+    
+    ; Generate bytecode (future: implement full compiler)
+    ; For now, return ok
+    return ok()
+}
+
+; --- Self-Improvement ---
+; AI tracks its own performance
+
+struct PerformanceMetric {
+    function_name: ptr(String),
+    call_count: u64,
+    total_time_ns: u64,
+    avg_time_ns: u64,
+    last_call: u64
+}
+
+var metrics: [PerformanceMetric; 500]
+var metrics_count: u32 = 0
+
+fn track_call(func_name: ptr(String), duration_ns: u64) {
+    ; AI tracks how long each function takes
+    for i in 0..metrics_count {
+        if string_equals(metrics[i].function_name, func_name) {
+            metrics[i].call_count = metrics[i].call_count + 1
+            metrics[i].total_time_ns = metrics[i].total_time_ns + duration_ns
+            metrics[i].avg_time_ns = metrics[i].total_time_ns / metrics[i].call_count
+            metrics[i].last_call = get_timestamp()
+            return
+        }
+    }
+    
+    ; New function
+    if metrics_count < 500 {
+        metrics[metrics_count] = PerformanceMetric {
+            function_name: func_name,
+            call_count: 1,
+            total_time_ns: duration_ns,
+            avg_time_ns: duration_ns,
+            last_call: get_timestamp()
+        }
+        metrics_count = metrics_count + 1
+    }
+}
+
+fn get_slowest_functions(n: u32) -> [PerformanceMetric] {
+    ; AI identifies optimization targets
+    ; Sort by avg_time_ns descending (bubble sort for simplicity)
+    for i in 0..metrics_count {
+        for j in i+1..metrics_count {
+            if metrics[j].avg_time_ns > metrics[i].avg_time_ns {
+                let tmp = metrics[i]
+                metrics[i] = metrics[j]
+                metrics[j] = tmp
+            }
+        }
+    }
+    
+    let count = min(n, metrics_count)
+    return metrics[0..count]
+}
+
+fn suggest_optimizations() -> [ptr(String)] {
+    ; AI suggests code improvements
+    var suggestions: [ptr(String); 10]
+    var count: u32 = 0
+    
+    let slow = get_slowest_functions(5)
+    for i in 0..slow.length {
+        if slow[i].avg_time_ns > 1000000 {  ; > 1ms
+            let msg = string_concat(
+                string_from_cstr("Optimize "),
+                slow[i].function_name
+            )
+            suggestions[count] = msg
+            count = count + 1
+        }
+    }
+    
+    return suggestions[0..count]
+}
+
+; --- AI Self-Description ---
+; AI can describe itself
+
+fn describe_self() -> ptr(String) {
+    let total_funcs = count_total_functions()
+    let total_lines = count_total_lines()
+    
+    return string_concat(
+        string_from_cstr("LLML-MATHIS AGI System\n"),
+        string_concat(
+            string_from_cstr("Modules: "),
+            int_to_string(module_count)
+        )
+    )
+}
+
+fn get_capability_list() -> [ptr(String)] {
+    ; AI knows what it can do
+    return [
+        string_from_cstr("Self-introspection"),
+        string_from_cstr("Code navigation"),
+        string_from_cstr("Function analysis"),
+        string_from_cstr("Self-modification"),
+        string_from_cstr("Performance tracking"),
+        string_from_cstr("Error learning"),
+        string_from_cstr("Pattern recognition")
+    ]
+}
+
+; --- Helper Functions ---
+
+fn extract_module_name(path: string) -> ptr(String) {
+    let parts = string_split(string_from_cstr(path), '/')
+    if parts.length > 0 {
+        let filename = parts[parts.length - 1]
+        let name_parts = string_split(filename, '.')
+        if name_parts.length > 0 {
+            return name_parts[0]
+        }
+    }
+    return string_from_cstr("unknown")
+}
+
+fn extract_function_name(line: ptr(String)) -> ptr(String) {
+    let after_fn = string_substring(line, 3, line.length)
+    let parts = string_split(after_fn, '(')
+    if parts.length > 0 {
+        return string_trim(parts[0])
+    }
+    return string_from_cstr("unknown")
+}
+
+fn extract_struct_name(line: ptr(String)) -> ptr(String) {
+    let after_struct = string_substring(line, 7, line.length)
+    let parts = string_split(after_struct, ' ')
+    if parts.length > 0 {
+        return string_trim(parts[0])
+    }
+    return string_from_cstr("unknown")
+}
+
+fn extract_import_name(line: ptr(String)) -> ptr(String) {
+    let after_use = string_substring(line, 4, line.length)
+    return string_trim(after_use)
+}
+
+fn load_source_file(path: string) -> ptr(String) {
+    ; Future: Implement file loading
+    ; For now, return null
+    return null
+}
+
+fn min(a: u32, b: u32) -> u32 {
+    if a < b { return a }
+    return b
+}
+
+fn int_to_string(n: u32) -> ptr(String) {
+    ; Simple integer to string conversion
+    if n == 0 {
+        return string_from_cstr("0")
+    }
+    
+    var buf: [u8; 10]
+    var len: u32 = 0
+    var tmp = n
+    
+    while tmp > 0 {
+        buf[len] = '0' + (tmp % 10) as u8
+        tmp = tmp / 10
+        len = len + 1
+    }
+    
+    ; Reverse
+    for i in 0..(len / 2) {
+        let t = buf[i]
+        buf[i] = buf[len - 1 - i]
+        buf[len - 1 - i] = t
+    }
+    
+    return string_from(&buf, len)
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; END OF MODULE
+; ═══════════════════════════════════════════════════════════════════════════

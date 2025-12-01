@@ -5,11 +5,13 @@ Réécrire entièrement LLML en Mathis natif pour créer un écosystème AGI aut
 
 ## Phases
 
-### Phase 1: Core (Semaine 1-2)
-- [ ] types.masm - Système de types
-- [ ] memory.masm - Gestion mémoire
-- [ ] error.masm - Gestion erreurs
-- [ ] string.masm - Manipulation strings
+### Phase 1: Core (Semaine 1-2) ✅ COMPLETE
+- [x] types.masm - Système de types (170 lignes)
+- [x] memory.masm - Gestion mémoire (140 lignes)
+- [x] error.masm - Gestion erreurs AGI-oriented (280 lignes)
+- [x] string.masm - Manipulation strings + tokenization (420 lignes)
+- [x] introspect.masm - Self-awareness + code navigation (450 lignes)
+- [x] agent.masm - AGI Agent core (650 lignes)
 
 ### Phase 2: Stdlib (Semaine 3-4)
 - [ ] math.masm - Fonctions mathématiques

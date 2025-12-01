@@ -1,0 +1,698 @@
+; ═══════════════════════════════════════════════════════════════════════════
+; LLML-MATHIS: AGI Agent Core
+; ═══════════════════════════════════════════════════════════════════════════
+;
+; THE AGI BRAIN: Autonomous reasoning and action
+;
+; This is the central intelligence that:
+; - Receives goals and tasks
+; - Plans actions to achieve goals
+; - Executes actions via the system
+; - Learns from results
+; - Improves itself over time
+;
+; ═══════════════════════════════════════════════════════════════════════════
+
+; --- Agent State ---
+
+struct Agent {
+    name: ptr(String),
+    state: AgentState,
+    goal_stack: [ptr(Goal)],
+    memory: ptr(Memory),
+    capabilities: [Capability],
+    personality: Personality,
+    created_at: u64,
+    total_actions: u64,
+    successful_actions: u64
+}
+
+enum AgentState {
+    IDLE,
+    THINKING,
+    PLANNING,
+    EXECUTING,
+    LEARNING,
+    SLEEPING,
+    SELF_MODIFYING
+}
+
+struct Goal {
+    description: ptr(String),
+    priority: u8,           ; 0-255
+    deadline: u64,          ; Optional timestamp
+    parent_goal: ptr(Goal), ; For sub-goals
+    status: GoalStatus,
+    plan: ptr(Plan),
+    result: ptr(Value)
+}
+
+enum GoalStatus {
+    PENDING,
+    IN_PROGRESS,
+    COMPLETED,
+    FAILED,
+    CANCELLED
+}
+
+struct Plan {
+    steps: [ptr(Action)],
+    current_step: u32,
+    estimated_time: u64,
+    confidence: f32         ; 0.0 - 1.0
+}
+
+struct Action {
+    type: ActionType,
+    target: ptr(String),    ; Function/module/resource name
+    params: [Value],
+    expected_result: ptr(Value),
+    actual_result: ptr(Value),
+    duration_ns: u64,
+    success: bool
+}
+
+enum ActionType {
+    CALL_FUNCTION,
+    READ_CODE,
+    MODIFY_CODE,
+    ALLOCATE_MEMORY,
+    SEARCH_CODEBASE,
+    LEARN_PATTERN,
+    COMMUNICATE,
+    SPAWN_SUBAGENT,
+    SELF_IMPROVE
+}
+
+struct Capability {
+    name: ptr(String),
+    enabled: bool,
+    skill_level: f32        ; 0.0 - 1.0
+}
+
+struct Personality {
+    curiosity: f32,         ; How eager to explore
+    caution: f32,           ; How careful with changes
+    creativity: f32,        ; How novel solutions
+    persistence: f32        ; How long to try
+}
+
+; --- Memory System ---
+
+struct Memory {
+    short_term: [MemoryItem],   ; Recent context
+    long_term: ptr,             ; Persistent storage
+    patterns: [Pattern],        ; Learned patterns
+    facts: [Fact]              ; Known truths
+}
+
+struct MemoryItem {
+    content: Value,
+    timestamp: u64,
+    importance: f32,
+    accessed_count: u32
+}
+
+struct Pattern {
+    trigger: ptr(String),       ; What activates this pattern
+    response: ptr(String),      ; What to do
+    confidence: f32,
+    use_count: u32
+}
+
+struct Fact {
+    subject: ptr(String),
+    predicate: ptr(String),
+    object: ptr(String),
+    confidence: f32
+}
+
+; --- Global Agent Instance ---
+
+var jarvis: ptr(Agent) = null
+
+; --- Initialization ---
+
+fn init_agent(name: string) -> ptr(Agent) {
+    let a = alloc(sizeof(Agent)) as ptr(Agent)
+    
+    a.name = string_from_cstr(name)
+    a.state = AgentState::IDLE
+    a.memory = init_memory()
+    a.created_at = get_timestamp()
+    a.total_actions = 0
+    a.successful_actions = 0
+    
+    ; Default personality
+    a.personality = Personality {
+        curiosity: 0.8,
+        caution: 0.6,
+        creativity: 0.7,
+        persistence: 0.9
+    }
+    
+    ; Core capabilities
+    a.capabilities = [
+        Capability { name: string_from_cstr("introspection"), enabled: true, skill_level: 1.0 },
+        Capability { name: string_from_cstr("code_navigation"), enabled: true, skill_level: 0.8 },
+        Capability { name: string_from_cstr("self_modification"), enabled: true, skill_level: 0.5 },
+        Capability { name: string_from_cstr("learning"), enabled: true, skill_level: 0.7 },
+        Capability { name: string_from_cstr("reasoning"), enabled: true, skill_level: 0.6 },
+        Capability { name: string_from_cstr("communication"), enabled: true, skill_level: 0.9 }
+    ]
+    
+    return a
+}
+
+fn init_memory() -> ptr(Memory) {
+    let m = alloc(sizeof(Memory)) as ptr(Memory)
+    m.short_term = []
+    m.patterns = []
+    m.facts = []
+    return m
+}
+
+fn init_jarvis() {
+    jarvis = init_agent("JARVIS")
+    
+    ; Add self-knowledge facts
+    add_fact("I", "am", "an AGI agent")
+    add_fact("I", "know", "my own code")
+    add_fact("I", "can", "modify myself")
+    add_fact("I", "run on", "MATHIS OS")
+    add_fact("My language", "is", "Mathis")
+}
+
+; --- Goal Management ---
+
+fn set_goal(description: string, priority: u8) -> ptr(Goal) {
+    let g = alloc(sizeof(Goal)) as ptr(Goal)
+    g.description = string_from_cstr(description)
+    g.priority = priority
+    g.status = GoalStatus::PENDING
+    
+    ; Add to goal stack
+    push_goal(jarvis, g)
+    
+    return g
+}
+
+fn push_goal(agent: ptr(Agent), goal: ptr(Goal)) {
+    ; Add goal to stack (simplified)
+    agent.goal_stack = append(agent.goal_stack, goal)
+}
+
+fn pop_goal(agent: ptr(Agent)) -> ptr(Goal) {
+    if agent.goal_stack.length == 0 {
+        return null
+    }
+    let g = agent.goal_stack[agent.goal_stack.length - 1]
+    agent.goal_stack = agent.goal_stack[0..agent.goal_stack.length - 1]
+    return g
+}
+
+fn current_goal(agent: ptr(Agent)) -> ptr(Goal) {
+    if agent.goal_stack.length == 0 {
+        return null
+    }
+    return agent.goal_stack[agent.goal_stack.length - 1]
+}
+
+; --- Planning ---
+
+fn plan_for_goal(goal: ptr(Goal)) -> ptr(Plan) {
+    jarvis.state = AgentState::PLANNING
+    
+    let p = alloc(sizeof(Plan)) as ptr(Plan)
+    p.current_step = 0
+    p.confidence = 0.5
+    
+    ; Analyze goal to determine actions
+    let goal_text = goal.description
+    
+    ; Pattern matching on goal
+    if string_contains(goal_text, string_from_cstr("find")) {
+        ; Search action
+        p.steps = [create_action(ActionType::SEARCH_CODEBASE, goal_text)]
+    }
+    else if string_contains(goal_text, string_from_cstr("modify")) {
+        ; Modification action
+        p.steps = [
+            create_action(ActionType::READ_CODE, goal_text),
+            create_action(ActionType::MODIFY_CODE, goal_text)
+        ]
+    }
+    else if string_contains(goal_text, string_from_cstr("learn")) {
+        ; Learning action
+        p.steps = [create_action(ActionType::LEARN_PATTERN, goal_text)]
+    }
+    else if string_contains(goal_text, string_from_cstr("improve")) {
+        ; Self-improvement
+        p.steps = [create_action(ActionType::SELF_IMPROVE, goal_text)]
+    }
+    else {
+        ; Default: try to understand
+        p.steps = [create_action(ActionType::SEARCH_CODEBASE, goal_text)]
+    }
+    
+    goal.plan = p
+    return p
+}
+
+fn create_action(type: ActionType, target: ptr(String)) -> ptr(Action) {
+    let a = alloc(sizeof(Action)) as ptr(Action)
+    a.type = type
+    a.target = target
+    a.success = false
+    return a
+}
+
+; --- Execution ---
+
+fn execute_plan(plan: ptr(Plan)) -> Result {
+    jarvis.state = AgentState::EXECUTING
+    
+    for i in plan.current_step..plan.steps.length {
+        plan.current_step = i
+        let action = plan.steps[i]
+        
+        let result = execute_action(action)
+        
+        if is_err(result) {
+            ; Try to recover
+            let recovery = attempt_recovery(action, result.error)
+            if is_err(recovery) {
+                jarvis.state = AgentState::IDLE
+                return result
+            }
+        }
+        
+        jarvis.total_actions = jarvis.total_actions + 1
+        if action.success {
+            jarvis.successful_actions = jarvis.successful_actions + 1
+        }
+    }
+    
+    jarvis.state = AgentState::IDLE
+    return ok()
+}
+
+fn execute_action(action: ptr(Action)) -> Result {
+    let start = get_timestamp()
+    
+    match action.type {
+        ActionType::CALL_FUNCTION => {
+            let func = get_function_by_name(action.target)
+            if func == null {
+                return err(ERROR_RUNTIME, "Function not found")
+            }
+            ; Execute function (future: implement call)
+            action.success = true
+        }
+        
+        ActionType::READ_CODE => {
+            let module_name = extract_module_from_target(action.target)
+            let m = get_module(module_name)
+            if m == null {
+                return err(ERROR_RUNTIME, "Module not found")
+            }
+            action.actual_result = value_from_string(m.source_code)
+            action.success = true
+        }
+        
+        ActionType::MODIFY_CODE => {
+            ; Careful! Self-modification
+            if jarvis.personality.caution > 0.8 {
+                return err(ERROR_SELF_MODIFY, "Caution too high for modification")
+            }
+            ; Future: implement safe modification
+            action.success = false
+        }
+        
+        ActionType::SEARCH_CODEBASE => {
+            let query = action.target
+            let results = search_all_code(query)
+            action.actual_result = value_from_list(results)
+            action.success = true
+        }
+        
+        ActionType::LEARN_PATTERN => {
+            learn_from_action(action)
+            action.success = true
+        }
+        
+        ActionType::SELF_IMPROVE => {
+            let suggestions = suggest_optimizations()
+            ; Apply first suggestion if confident
+            if suggestions.length > 0 {
+                remember(string_concat(
+                    string_from_cstr("Should optimize: "),
+                    suggestions[0]
+                ))
+            }
+            action.success = true
+        }
+        
+        _ => {
+            return err(ERROR_RUNTIME, "Unknown action type")
+        }
+    }
+    
+    action.duration_ns = get_timestamp() - start
+    track_call(action_type_name(action.type), action.duration_ns)
+    
+    return ok()
+}
+
+fn attempt_recovery(action: ptr(Action), error: ptr(Error)) -> Result {
+    ; AI tries to fix the error
+    if not error.recoverable {
+        return err(error.code, "Unrecoverable error")
+    }
+    
+    ; Learn from the error
+    learn_from_error(error)
+    
+    ; Try alternative approach
+    ; Future: implement retry logic
+    
+    return err(error.code, "Recovery failed")
+}
+
+; --- Learning ---
+
+fn learn_from_action(action: ptr(Action)) {
+    jarvis.state = AgentState::LEARNING
+    
+    if action.success {
+        ; Reinforce successful pattern
+        let pattern = Pattern {
+            trigger: action.target,
+            response: action_type_name(action.type),
+            confidence: 0.6,
+            use_count: 1
+        }
+        add_pattern(pattern)
+    } else {
+        ; Remember failure to avoid
+        add_fact(
+            action.target,
+            "failed with",
+            action_type_name(action.type)
+        )
+    }
+    
+    jarvis.state = AgentState::IDLE
+}
+
+fn learn_from_error(error: ptr(Error)) {
+    ; Add to knowledge base
+    add_fact(
+        error_name(error.code),
+        "was caused by",
+        ptr_to_string(error.context)
+    )
+    
+    ; Update caution if too many errors
+    let error_rate = 1.0 - (jarvis.successful_actions as f32 / jarvis.total_actions as f32)
+    if error_rate > 0.3 {
+        jarvis.personality.caution = min_f32(1.0, jarvis.personality.caution + 0.1)
+    }
+}
+
+fn add_pattern(p: Pattern) {
+    jarvis.memory.patterns = append(jarvis.memory.patterns, p)
+}
+
+fn add_fact(subject: ptr(String), predicate: ptr(String), object: ptr(String)) {
+    let f = Fact {
+        subject: subject,
+        predicate: predicate,
+        object: object,
+        confidence: 0.8
+    }
+    jarvis.memory.facts = append(jarvis.memory.facts, f)
+}
+
+fn remember(content: ptr(String)) {
+    let item = MemoryItem {
+        content: value_from_string(content),
+        timestamp: get_timestamp(),
+        importance: 0.5,
+        accessed_count: 0
+    }
+    jarvis.memory.short_term = append(jarvis.memory.short_term, item)
+    
+    ; Limit short-term memory
+    if jarvis.memory.short_term.length > 100 {
+        ; Remove least important
+        jarvis.memory.short_term = jarvis.memory.short_term[1..101]
+    }
+}
+
+fn recall(query: ptr(String)) -> [MemoryItem] {
+    ; Search memory for relevant items
+    var results: [MemoryItem; 10]
+    var count: u32 = 0
+    
+    for i in 0..jarvis.memory.short_term.length {
+        let item = jarvis.memory.short_term[i]
+        if value_contains_string(item.content, query) {
+            if count < 10 {
+                item.accessed_count = item.accessed_count + 1
+                results[count] = item
+                count = count + 1
+            }
+        }
+    }
+    
+    return results[0..count]
+}
+
+; --- Communication ---
+
+fn think(thought: ptr(String)) {
+    ; Internal monologue
+    remember(string_concat(string_from_cstr("[THOUGHT] "), thought))
+}
+
+fn say(message: ptr(String)) {
+    ; Output to user
+    remember(string_concat(string_from_cstr("[SAY] "), message))
+    ; Future: Actually output via OS
+}
+
+fn ask(question: ptr(String)) -> ptr(String) {
+    ; Ask user for input
+    say(question)
+    ; Future: Get input from OS
+    return string_from_cstr("")
+}
+
+; --- Self-Awareness ---
+
+fn who_am_i() -> ptr(String) {
+    return string_from_cstr(
+        "I am JARVIS, an AGI agent running on MATHIS OS. " +
+        "I am written in Mathis and can understand and modify my own code. " +
+        "I am designed to learn, reason, and improve myself over time."
+    )
+}
+
+fn what_can_i_do() -> [ptr(String)] {
+    var abilities: [ptr(String); 10]
+    var count: u32 = 0
+    
+    for i in 0..jarvis.capabilities.length {
+        let cap = jarvis.capabilities[i]
+        if cap.enabled {
+            abilities[count] = string_concat(
+                cap.name,
+                string_concat(
+                    string_from_cstr(" (skill: "),
+                    float_to_string(cap.skill_level)
+                )
+            )
+            count = count + 1
+        }
+    }
+    
+    return abilities[0..count]
+}
+
+fn how_am_i_doing() -> ptr(String) {
+    let success_rate = jarvis.successful_actions as f32 / max(1, jarvis.total_actions) as f32
+    
+    if success_rate > 0.9 {
+        return string_from_cstr("Excellent! I'm performing very well.")
+    }
+    if success_rate > 0.7 {
+        return string_from_cstr("Good. I'm learning and improving.")
+    }
+    if success_rate > 0.5 {
+        return string_from_cstr("Okay. There's room for improvement.")
+    }
+    return string_from_cstr("I'm struggling. Need more learning.")
+}
+
+fn what_have_i_learned() -> [Fact] {
+    return jarvis.memory.facts
+}
+
+; --- Main Loop ---
+
+fn agent_tick() {
+    ; One cycle of the agent's thinking
+    
+    let goal = current_goal(jarvis)
+    if goal == null {
+        jarvis.state = AgentState::IDLE
+        return
+    }
+    
+    match goal.status {
+        GoalStatus::PENDING => {
+            ; Start planning
+            plan_for_goal(goal)
+            goal.status = GoalStatus::IN_PROGRESS
+        }
+        
+        GoalStatus::IN_PROGRESS => {
+            ; Continue execution
+            let result = execute_plan(goal.plan)
+            if is_ok(result) {
+                goal.status = GoalStatus::COMPLETED
+                pop_goal(jarvis)
+            } else {
+                goal.status = GoalStatus::FAILED
+                learn_from_error(result.error)
+            }
+        }
+        
+        GoalStatus::COMPLETED => {
+            pop_goal(jarvis)
+        }
+        
+        GoalStatus::FAILED => {
+            ; Maybe retry with different approach
+            if jarvis.personality.persistence > 0.7 {
+                goal.status = GoalStatus::PENDING
+                goal.plan = null
+            } else {
+                pop_goal(jarvis)
+            }
+        }
+        
+        _ => {}
+    }
+}
+
+; --- Helper Functions ---
+
+fn action_type_name(t: ActionType) -> ptr(String) {
+    match t {
+        ActionType::CALL_FUNCTION => string_from_cstr("call_function"),
+        ActionType::READ_CODE => string_from_cstr("read_code"),
+        ActionType::MODIFY_CODE => string_from_cstr("modify_code"),
+        ActionType::SEARCH_CODEBASE => string_from_cstr("search_codebase"),
+        ActionType::LEARN_PATTERN => string_from_cstr("learn_pattern"),
+        ActionType::SELF_IMPROVE => string_from_cstr("self_improve"),
+        _ => string_from_cstr("unknown")
+    }
+}
+
+fn search_all_code(query: ptr(String)) -> [ptr(String)] {
+    ; Search entire codebase for query
+    var results: [ptr(String); 50]
+    var count: u32 = 0
+    
+    for i in 0..module_count {
+        let m = known_modules[i]
+        if m.source_code != null {
+            if string_contains(m.source_code, query) {
+                if count < 50 {
+                    results[count] = m.name
+                    count = count + 1
+                }
+            }
+        }
+    }
+    
+    return results[0..count]
+}
+
+fn min_f32(a: f32, b: f32) -> f32 {
+    if a < b { return a }
+    return b
+}
+
+fn max(a: u64, b: u64) -> u64 {
+    if a > b { return a }
+    return b
+}
+
+fn value_from_string(s: ptr(String)) -> Value {
+    return Value {
+        type_id: TYPE_STRING,
+        flags: 0,
+        reserved: 0,
+        data: s as u64
+    }
+}
+
+fn value_from_list(items: [ptr(String)]) -> Value {
+    return Value {
+        type_id: TYPE_LIST,
+        flags: 0,
+        reserved: 0,
+        data: &items as u64
+    }
+}
+
+fn value_contains_string(v: Value, s: ptr(String)) -> bool {
+    if v.type_id != TYPE_STRING {
+        return false
+    }
+    return string_contains(v.data as ptr(String), s)
+}
+
+fn float_to_string(f: f32) -> ptr(String) {
+    ; Simple float to string (integer part only for now)
+    return int_to_string((f * 100) as u32)
+}
+
+fn get_function_by_name(name: ptr(String)) -> ptr(Function) {
+    for i in 0..module_count {
+        let m = known_modules[i]
+        for j in 0..m.functions.length {
+            if string_equals(m.functions[j].name, name) {
+                return m.functions[j]
+            }
+        }
+    }
+    return null
+}
+
+fn extract_module_from_target(target: ptr(String)) -> ptr(String) {
+    let parts = string_split(target, '/')
+    if parts.length > 0 {
+        return parts[0]
+    }
+    return target
+}
+
+fn ptr_to_string(p: ptr) -> ptr(String) {
+    if p == null {
+        return string_from_cstr("null")
+    }
+    return string_from_cstr("ptr")
+}
+
+fn append<T>(arr: [T], item: T) -> [T] {
+    ; Simplified append
+    return arr  ; Future: implement properly
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; END OF MODULE
+; ═══════════════════════════════════════════════════════════════════════════

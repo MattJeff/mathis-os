@@ -1,0 +1,490 @@
+; ═══════════════════════════════════════════════════════════════════════════
+; LLML-MATHIS: String System
+; ═══════════════════════════════════════════════════════════════════════════
+;
+; AGI-Oriented String System:
+; - Strings are how AI communicates with humans
+; - Built-in tokenization for LLM processing
+; - Pattern matching for code understanding
+; - AI can search/navigate its own codebase via strings
+;
+; ═══════════════════════════════════════════════════════════════════════════
+
+; --- String Structure ---
+; Length-prefixed, UTF-8 compatible
+
+struct String {
+    length: u32,
+    capacity: u32,
+    hash: u32,      ; For fast comparison
+    data: [u8]      ; Flexible array member
+}
+
+; --- Constructors ---
+
+fn string_new() -> ptr(String) {
+    let s = alloc(16) as ptr(String)
+    s.length = 0
+    s.capacity = 0
+    s.hash = 0
+    return s
+}
+
+fn string_from(text: [u8], len: u32) -> ptr(String) {
+    let s = alloc(16 + len) as ptr(String)
+    s.length = len
+    s.capacity = len
+    s.hash = compute_hash(text, len)
+    memcpy(&s.data, text, len)
+    return s
+}
+
+fn string_from_cstr(cstr: ptr) -> ptr(String) {
+    let len = strlen(cstr)
+    return string_from(cstr, len)
+}
+
+; --- Basic Operations ---
+
+fn string_len(s: ptr(String)) -> u32 {
+    if s == null {
+        return 0
+    }
+    return s.length
+}
+
+fn string_is_empty(s: ptr(String)) -> bool {
+    return s == null or s.length == 0
+}
+
+fn string_equals(a: ptr(String), b: ptr(String)) -> bool {
+    if a == b {
+        return true
+    }
+    if a == null or b == null {
+        return false
+    }
+    if a.length != b.length {
+        return false
+    }
+    if a.hash != b.hash {
+        return false
+    }
+    return memcmp(&a.data, &b.data, a.length) == 0
+}
+
+fn string_concat(a: ptr(String), b: ptr(String)) -> ptr(String) {
+    let new_len = a.length + b.length
+    let s = alloc(16 + new_len) as ptr(String)
+    s.length = new_len
+    s.capacity = new_len
+    memcpy(&s.data, &a.data, a.length)
+    memcpy(&s.data + a.length, &b.data, b.length)
+    s.hash = compute_hash(&s.data, new_len)
+    return s
+}
+
+fn string_char_at(s: ptr(String), index: u32) -> u8 {
+    if index >= s.length {
+        return 0
+    }
+    return s.data[index]
+}
+
+fn string_substring(s: ptr(String), start: u32, end: u32) -> ptr(String) {
+    if start >= s.length {
+        return string_new()
+    }
+    if end > s.length {
+        end = s.length
+    }
+    if start >= end {
+        return string_new()
+    }
+    return string_from(&s.data + start, end - start)
+}
+
+; --- Search (for AI code navigation) ---
+
+fn string_contains(haystack: ptr(String), needle: ptr(String)) -> bool {
+    return string_find(haystack, needle, 0) >= 0
+}
+
+fn string_find(haystack: ptr(String), needle: ptr(String), start: u32) -> i32 {
+    if needle.length == 0 {
+        return start as i32
+    }
+    if needle.length > haystack.length {
+        return -1
+    }
+    
+    let end = haystack.length - needle.length + 1
+    for i in start..end {
+        var match = true
+        for j in 0..needle.length {
+            if haystack.data[i + j] != needle.data[j] {
+                match = false
+                break
+            }
+        }
+        if match {
+            return i as i32
+        }
+    }
+    return -1
+}
+
+fn string_find_all(haystack: ptr(String), needle: ptr(String)) -> [u32] {
+    ; AI uses this to find all occurrences in code
+    var results: [u32; 100]
+    var count: u32 = 0
+    var pos: i32 = 0
+    
+    loop {
+        pos = string_find(haystack, needle, pos as u32)
+        if pos < 0 {
+            break
+        }
+        if count < 100 {
+            results[count] = pos as u32
+            count = count + 1
+        }
+        pos = pos + 1
+    }
+    
+    return results[0..count]
+}
+
+fn string_starts_with(s: ptr(String), prefix: ptr(String)) -> bool {
+    if prefix.length > s.length {
+        return false
+    }
+    return memcmp(&s.data, &prefix.data, prefix.length) == 0
+}
+
+fn string_ends_with(s: ptr(String), suffix: ptr(String)) -> bool {
+    if suffix.length > s.length {
+        return false
+    }
+    let start = s.length - suffix.length
+    return memcmp(&s.data + start, &suffix.data, suffix.length) == 0
+}
+
+; --- Transformation ---
+
+fn string_to_upper(s: ptr(String)) -> ptr(String) {
+    let result = alloc(16 + s.length) as ptr(String)
+    result.length = s.length
+    result.capacity = s.length
+    
+    for i in 0..s.length {
+        let c = s.data[i]
+        if c >= 'a' and c <= 'z' {
+            result.data[i] = c - 32
+        } else {
+            result.data[i] = c
+        }
+    }
+    
+    result.hash = compute_hash(&result.data, result.length)
+    return result
+}
+
+fn string_to_lower(s: ptr(String)) -> ptr(String) {
+    let result = alloc(16 + s.length) as ptr(String)
+    result.length = s.length
+    result.capacity = s.length
+    
+    for i in 0..s.length {
+        let c = s.data[i]
+        if c >= 'A' and c <= 'Z' {
+            result.data[i] = c + 32
+        } else {
+            result.data[i] = c
+        }
+    }
+    
+    result.hash = compute_hash(&result.data, result.length)
+    return result
+}
+
+fn string_trim(s: ptr(String)) -> ptr(String) {
+    var start: u32 = 0
+    var end: u32 = s.length
+    
+    while start < end and is_whitespace(s.data[start]) {
+        start = start + 1
+    }
+    while end > start and is_whitespace(s.data[end - 1]) {
+        end = end - 1
+    }
+    
+    return string_substring(s, start, end)
+}
+
+fn is_whitespace(c: u8) -> bool {
+    return c == ' ' or c == '\t' or c == '\n' or c == '\r'
+}
+
+; --- Split/Join (for parsing) ---
+
+fn string_split(s: ptr(String), delimiter: u8) -> [ptr(String)] {
+    var results: [ptr(String); 100]
+    var count: u32 = 0
+    var start: u32 = 0
+    
+    for i in 0..s.length {
+        if s.data[i] == delimiter {
+            if i > start and count < 100 {
+                results[count] = string_substring(s, start, i)
+                count = count + 1
+            }
+            start = i + 1
+        }
+    }
+    
+    if start < s.length and count < 100 {
+        results[count] = string_substring(s, start, s.length)
+        count = count + 1
+    }
+    
+    return results[0..count]
+}
+
+fn string_split_lines(s: ptr(String)) -> [ptr(String)] {
+    return string_split(s, '\n')
+}
+
+fn string_split_words(s: ptr(String)) -> [ptr(String)] {
+    return string_split(s, ' ')
+}
+
+fn string_join(parts: [ptr(String)], delimiter: ptr(String)) -> ptr(String) {
+    if parts.length == 0 {
+        return string_new()
+    }
+    
+    ; Calculate total length
+    var total: u32 = 0
+    for i in 0..parts.length {
+        total = total + parts[i].length
+    }
+    total = total + delimiter.length * (parts.length - 1)
+    
+    ; Build result
+    let result = alloc(16 + total) as ptr(String)
+    result.length = total
+    result.capacity = total
+    
+    var pos: u32 = 0
+    for i in 0..parts.length {
+        if i > 0 {
+            memcpy(&result.data + pos, &delimiter.data, delimiter.length)
+            pos = pos + delimiter.length
+        }
+        memcpy(&result.data + pos, &parts[i].data, parts[i].length)
+        pos = pos + parts[i].length
+    }
+    
+    result.hash = compute_hash(&result.data, result.length)
+    return result
+}
+
+; --- LLM/AI Tokenization ---
+
+fn tokenize_for_llm(s: ptr(String)) -> [ptr(String)] {
+    ; Simple word-level tokenization for LLM processing
+    ; AI uses this to understand text
+    return string_split_words(string_to_lower(s))
+}
+
+fn tokenize_code(s: ptr(String)) -> [Token] {
+    ; Tokenize Mathis source code
+    ; AI uses this to understand its own code
+    var tokens: [Token; 1000]
+    var count: u32 = 0
+    var pos: u32 = 0
+    
+    while pos < s.length and count < 1000 {
+        ; Skip whitespace
+        while pos < s.length and is_whitespace(s.data[pos]) {
+            pos = pos + 1
+        }
+        
+        if pos >= s.length {
+            break
+        }
+        
+        let c = s.data[pos]
+        
+        ; Identifier or keyword
+        if is_alpha(c) or c == '_' {
+            let start = pos
+            while pos < s.length and (is_alnum(s.data[pos]) or s.data[pos] == '_') {
+                pos = pos + 1
+            }
+            tokens[count] = Token {
+                type: TOKEN_IDENT,
+                text: string_substring(s, start, pos),
+                line: 0,
+                col: start
+            }
+            count = count + 1
+            continue
+        }
+        
+        ; Number
+        if is_digit(c) {
+            let start = pos
+            while pos < s.length and is_digit(s.data[pos]) {
+                pos = pos + 1
+            }
+            tokens[count] = Token {
+                type: TOKEN_NUMBER,
+                text: string_substring(s, start, pos),
+                line: 0,
+                col: start
+            }
+            count = count + 1
+            continue
+        }
+        
+        ; String literal
+        if c == '"' {
+            let start = pos
+            pos = pos + 1
+            while pos < s.length and s.data[pos] != '"' {
+                pos = pos + 1
+            }
+            pos = pos + 1  ; Skip closing quote
+            tokens[count] = Token {
+                type: TOKEN_STRING,
+                text: string_substring(s, start, pos),
+                line: 0,
+                col: start
+            }
+            count = count + 1
+            continue
+        }
+        
+        ; Symbol
+        tokens[count] = Token {
+            type: TOKEN_SYMBOL,
+            text: string_substring(s, pos, pos + 1),
+            line: 0,
+            col: pos
+        }
+        count = count + 1
+        pos = pos + 1
+    }
+    
+    return tokens[0..count]
+}
+
+; --- Token Types ---
+
+const TOKEN_IDENT  = 1
+const TOKEN_NUMBER = 2
+const TOKEN_STRING = 3
+const TOKEN_SYMBOL = 4
+
+struct Token {
+    type: u8,
+    text: ptr(String),
+    line: u32,
+    col: u32
+}
+
+; --- Character Classification ---
+
+fn is_alpha(c: u8) -> bool {
+    return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z')
+}
+
+fn is_digit(c: u8) -> bool {
+    return c >= '0' and c <= '9'
+}
+
+fn is_alnum(c: u8) -> bool {
+    return is_alpha(c) or is_digit(c)
+}
+
+; --- Hash Function ---
+
+fn compute_hash(data: ptr, len: u32) -> u32 {
+    ; FNV-1a hash
+    var hash: u32 = 2166136261
+    for i in 0..len {
+        hash = hash xor load_byte(data + i)
+        hash = hash * 16777619
+    }
+    return hash
+}
+
+; --- AI Code Navigation ---
+
+fn find_function_in_code(code: ptr(String), func_name: ptr(String)) -> i32 {
+    ; AI uses this to navigate to function definitions
+    let pattern = string_concat(string_from_cstr("fn "), func_name)
+    return string_find(code, pattern, 0)
+}
+
+fn find_all_functions(code: ptr(String)) -> [ptr(String)] {
+    ; AI uses this to list all functions in a module
+    var functions: [ptr(String); 100]
+    var count: u32 = 0
+    
+    let lines = string_split_lines(code)
+    for i in 0..lines.length {
+        if string_starts_with(lines[i], string_from_cstr("fn ")) {
+            if count < 100 {
+                ; Extract function name
+                let after_fn = string_substring(lines[i], 3, lines[i].length)
+                let parts = string_split(after_fn, '(')
+                if parts.length > 0 {
+                    functions[count] = string_trim(parts[0])
+                    count = count + 1
+                }
+            }
+        }
+    }
+    
+    return functions[0..count]
+}
+
+fn find_struct_in_code(code: ptr(String), struct_name: ptr(String)) -> i32 {
+    let pattern = string_concat(string_from_cstr("struct "), struct_name)
+    return string_find(code, pattern, 0)
+}
+
+fn count_lines(code: ptr(String)) -> u32 {
+    var count: u32 = 1
+    for i in 0..code.length {
+        if code.data[i] == '\n' {
+            count = count + 1
+        }
+    }
+    return count
+}
+
+; --- C-String Helpers ---
+
+fn strlen(s: ptr) -> u32 {
+    var len: u32 = 0
+    while load_byte(s + len) != 0 {
+        len = len + 1
+    }
+    return len
+}
+
+fn string_to_cstr(s: ptr(String)) -> ptr {
+    ; Allocate with null terminator
+    let result = alloc(s.length + 1)
+    memcpy(result, &s.data, s.length)
+    store_byte(result + s.length, 0)
+    return result
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; END OF MODULE
+; ═══════════════════════════════════════════════════════════════════════════
