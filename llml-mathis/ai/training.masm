@@ -1,0 +1,585 @@
+; ═══════════════════════════════════════════════════════════════════════════
+; LLML-MATHIS: Training Library
+; ═══════════════════════════════════════════════════════════════════════════
+;
+; AGI Core: Neural network training
+;
+; Features:
+; - Loss functions
+; - Optimizers (SGD, Adam)
+; - Learning rate schedulers
+; - Training loops
+; - Checkpointing
+;
+; ═══════════════════════════════════════════════════════════════════════════
+
+; --- Loss Functions ---
+
+enum LossType {
+    MSE,
+    CROSS_ENTROPY,
+    BINARY_CROSS_ENTROPY,
+    NLL,
+    L1,
+    HUBER
+}
+
+struct Loss {
+    type: LossType,
+    reduction: u8,      ; 0=none, 1=mean, 2=sum
+    
+    ; Cached for backward
+    predictions: ptr(Tensor),
+    targets: ptr(Tensor),
+    loss_value: f32
+}
+
+fn loss_new(type: LossType) -> ptr(Loss) {
+    let l = gc_alloc(sizeof(Loss)) as ptr(Loss)
+    l.type = type
+    l.reduction = 1  ; mean by default
+    return l
+}
+
+fn mse_loss(predictions: ptr(Tensor), targets: ptr(Tensor)) -> f32 {
+    var sum: f32 = 0.0
+    for i in 0..predictions.size {
+        let diff = predictions.data[i] - targets.data[i]
+        sum = sum + diff * diff
+    }
+    return sum / (predictions.size as f32)
+}
+
+fn mse_backward(predictions: ptr(Tensor), targets: ptr(Tensor)) -> ptr(Tensor) {
+    let grad = tensor_new(predictions.shape[0..predictions.ndim], predictions.ndim)
+    let scale = 2.0 / (predictions.size as f32)
+    
+    for i in 0..predictions.size {
+        grad.data[i] = (predictions.data[i] - targets.data[i]) * scale
+    }
+    
+    return grad
+}
+
+fn cross_entropy_loss(logits: ptr(Tensor), targets: ptr(Tensor)) -> f32 {
+    ; targets are class indices
+    ; logits are raw scores (not softmaxed)
+    
+    let batch_size = logits.shape[0]
+    let num_classes = logits.shape[1]
+    var total_loss: f32 = 0.0
+    
+    for b in 0..batch_size {
+        ; Apply softmax
+        var max_logit: f32 = logits.data[b * num_classes]
+        for c in 1..num_classes {
+            if logits.data[b * num_classes + c] > max_logit {
+                max_logit = logits.data[b * num_classes + c]
+            }
+        }
+        
+        var sum_exp: f32 = 0.0
+        for c in 0..num_classes {
+            sum_exp = sum_exp + exp_f((logits.data[b * num_classes + c] - max_logit) as f64) as f32
+        }
+        
+        let target_class = targets.data[b] as u32
+        let log_prob = (logits.data[b * num_classes + target_class] - max_logit) - ln(sum_exp as f64) as f32
+        total_loss = total_loss - log_prob
+    }
+    
+    return total_loss / (batch_size as f32)
+}
+
+fn cross_entropy_backward(logits: ptr(Tensor), targets: ptr(Tensor)) -> ptr(Tensor) {
+    let batch_size = logits.shape[0]
+    let num_classes = logits.shape[1]
+    let grad = tensor_new(logits.shape[0..logits.ndim], logits.ndim)
+    
+    for b in 0..batch_size {
+        ; Compute softmax probabilities
+        var max_logit: f32 = logits.data[b * num_classes]
+        for c in 1..num_classes {
+            if logits.data[b * num_classes + c] > max_logit {
+                max_logit = logits.data[b * num_classes + c]
+            }
+        }
+        
+        var sum_exp: f32 = 0.0
+        for c in 0..num_classes {
+            grad.data[b * num_classes + c] = exp_f((logits.data[b * num_classes + c] - max_logit) as f64) as f32
+            sum_exp = sum_exp + grad.data[b * num_classes + c]
+        }
+        
+        let target_class = targets.data[b] as u32
+        for c in 0..num_classes {
+            grad.data[b * num_classes + c] = grad.data[b * num_classes + c] / sum_exp
+            if c == target_class {
+                grad.data[b * num_classes + c] = grad.data[b * num_classes + c] - 1.0
+            }
+        }
+    }
+    
+    ; Average over batch
+    let scale = 1.0 / (batch_size as f32)
+    for i in 0..grad.size {
+        grad.data[i] = grad.data[i] * scale
+    }
+    
+    return grad
+}
+
+fn binary_cross_entropy_loss(predictions: ptr(Tensor), targets: ptr(Tensor)) -> f32 {
+    var sum: f32 = 0.0
+    let eps: f32 = 1e-7
+    
+    for i in 0..predictions.size {
+        let p = clamp_f(predictions.data[i] as f64, eps as f64, (1.0 - eps) as f64) as f32
+        let t = targets.data[i]
+        sum = sum - (t * ln(p as f64) as f32 + (1.0 - t) * ln((1.0 - p) as f64) as f32)
+    }
+    
+    return sum / (predictions.size as f32)
+}
+
+fn l1_loss(predictions: ptr(Tensor), targets: ptr(Tensor)) -> f32 {
+    var sum: f32 = 0.0
+    for i in 0..predictions.size {
+        sum = sum + abs_f((predictions.data[i] - targets.data[i]) as f64) as f32
+    }
+    return sum / (predictions.size as f32)
+}
+
+; --- Optimizers ---
+
+enum OptimizerType {
+    SGD,
+    ADAM,
+    ADAMW,
+    RMSPROP
+}
+
+struct Optimizer {
+    type: OptimizerType,
+    learning_rate: f32,
+    
+    ; SGD momentum
+    momentum: f32,
+    velocities: [ptr(Tensor); 128],
+    
+    ; Adam
+    beta1: f32,
+    beta2: f32,
+    epsilon: f32,
+    m: [ptr(Tensor); 128],      ; First moment
+    v: [ptr(Tensor); 128],      ; Second moment
+    t: u32,                     ; Timestep
+    
+    ; Weight decay
+    weight_decay: f32,
+    
+    ; Parameter references
+    params: [ptr(Tensor); 128],
+    grads: [ptr(Tensor); 128],
+    param_count: u32
+}
+
+fn sgd_new(lr: f32, momentum: f32) -> ptr(Optimizer) {
+    let opt = gc_alloc(sizeof(Optimizer)) as ptr(Optimizer)
+    opt.type = OptimizerType::SGD
+    opt.learning_rate = lr
+    opt.momentum = momentum
+    opt.weight_decay = 0.0
+    opt.param_count = 0
+    return opt
+}
+
+fn adam_new(lr: f32) -> ptr(Optimizer) {
+    let opt = gc_alloc(sizeof(Optimizer)) as ptr(Optimizer)
+    opt.type = OptimizerType::ADAM
+    opt.learning_rate = lr
+    opt.beta1 = 0.9
+    opt.beta2 = 0.999
+    opt.epsilon = 1e-8
+    opt.weight_decay = 0.0
+    opt.t = 0
+    opt.param_count = 0
+    return opt
+}
+
+fn adamw_new(lr: f32, weight_decay: f32) -> ptr(Optimizer) {
+    let opt = adam_new(lr)
+    opt.type = OptimizerType::ADAMW
+    opt.weight_decay = weight_decay
+    return opt
+}
+
+fn optimizer_add_param(opt: ptr(Optimizer), param: ptr(Tensor), grad: ptr(Tensor)) {
+    if opt.param_count >= 128 {
+        return
+    }
+    
+    opt.params[opt.param_count] = param
+    opt.grads[opt.param_count] = grad
+    
+    ; Initialize optimizer state
+    if opt.type == OptimizerType::SGD and opt.momentum > 0.0 {
+        opt.velocities[opt.param_count] = tensor_zeros(param.shape[0..param.ndim], param.ndim)
+    }
+    
+    if opt.type == OptimizerType::ADAM or opt.type == OptimizerType::ADAMW {
+        opt.m[opt.param_count] = tensor_zeros(param.shape[0..param.ndim], param.ndim)
+        opt.v[opt.param_count] = tensor_zeros(param.shape[0..param.ndim], param.ndim)
+    }
+    
+    opt.param_count = opt.param_count + 1
+}
+
+fn optimizer_step(opt: ptr(Optimizer)) {
+    opt.t = opt.t + 1
+    
+    match opt.type {
+        OptimizerType::SGD => sgd_step(opt),
+        OptimizerType::ADAM | OptimizerType::ADAMW => adam_step(opt),
+        _ => {}
+    }
+}
+
+fn sgd_step(opt: ptr(Optimizer)) {
+    for i in 0..opt.param_count {
+        let param = opt.params[i]
+        let grad = opt.grads[i]
+        
+        if opt.momentum > 0.0 {
+            let v = opt.velocities[i]
+            for j in 0..param.size {
+                v.data[j] = opt.momentum * v.data[j] + grad.data[j]
+                param.data[j] = param.data[j] - opt.learning_rate * v.data[j]
+            }
+        } else {
+            for j in 0..param.size {
+                param.data[j] = param.data[j] - opt.learning_rate * grad.data[j]
+            }
+        }
+        
+        ; Weight decay
+        if opt.weight_decay > 0.0 {
+            for j in 0..param.size {
+                param.data[j] = param.data[j] - opt.learning_rate * opt.weight_decay * param.data[j]
+            }
+        }
+    }
+}
+
+fn adam_step(opt: ptr(Optimizer)) {
+    let bias_correction1 = 1.0 - pow_f(opt.beta1 as f64, opt.t as f64) as f32
+    let bias_correction2 = 1.0 - pow_f(opt.beta2 as f64, opt.t as f64) as f32
+    
+    for i in 0..opt.param_count {
+        let param = opt.params[i]
+        let grad = opt.grads[i]
+        let m = opt.m[i]
+        let v = opt.v[i]
+        
+        for j in 0..param.size {
+            ; Update biased first moment
+            m.data[j] = opt.beta1 * m.data[j] + (1.0 - opt.beta1) * grad.data[j]
+            
+            ; Update biased second moment
+            v.data[j] = opt.beta2 * v.data[j] + (1.0 - opt.beta2) * grad.data[j] * grad.data[j]
+            
+            ; Bias-corrected estimates
+            let m_hat = m.data[j] / bias_correction1
+            let v_hat = v.data[j] / bias_correction2
+            
+            ; AdamW: Apply weight decay before update
+            if opt.type == OptimizerType::ADAMW and opt.weight_decay > 0.0 {
+                param.data[j] = param.data[j] - opt.learning_rate * opt.weight_decay * param.data[j]
+            }
+            
+            ; Update parameter
+            param.data[j] = param.data[j] - opt.learning_rate * m_hat / (sqrt(v_hat as f64) as f32 + opt.epsilon)
+        }
+    }
+}
+
+fn optimizer_zero_grad(opt: ptr(Optimizer)) {
+    for i in 0..opt.param_count {
+        let grad = opt.grads[i]
+        for j in 0..grad.size {
+            grad.data[j] = 0.0
+        }
+    }
+}
+
+; --- Learning Rate Schedulers ---
+
+enum SchedulerType {
+    CONSTANT,
+    STEP,
+    EXPONENTIAL,
+    COSINE,
+    LINEAR_WARMUP,
+    COSINE_WARMUP
+}
+
+struct Scheduler {
+    type: SchedulerType,
+    optimizer: ptr(Optimizer),
+    base_lr: f32,
+    
+    ; Step scheduler
+    step_size: u32,
+    gamma: f32,
+    
+    ; Warmup
+    warmup_steps: u32,
+    
+    ; Total steps
+    total_steps: u32,
+    current_step: u32,
+    
+    ; Bounds
+    min_lr: f32
+}
+
+fn scheduler_step(sched: ptr(Scheduler)) -> ptr(Scheduler) {
+    let opt = gc_alloc(sizeof(Scheduler)) as ptr(Scheduler)
+    opt.type = SchedulerType::STEP
+    opt.step_size = 10
+    opt.gamma = 0.1
+    return opt
+}
+
+fn cosine_scheduler(total_steps: u32, min_lr: f32) -> ptr(Scheduler) {
+    let sched = gc_alloc(sizeof(Scheduler)) as ptr(Scheduler)
+    sched.type = SchedulerType::COSINE
+    sched.total_steps = total_steps
+    sched.min_lr = min_lr
+    sched.current_step = 0
+    return sched
+}
+
+fn warmup_cosine_scheduler(warmup_steps: u32, total_steps: u32) -> ptr(Scheduler) {
+    let sched = gc_alloc(sizeof(Scheduler)) as ptr(Scheduler)
+    sched.type = SchedulerType::COSINE_WARMUP
+    sched.warmup_steps = warmup_steps
+    sched.total_steps = total_steps
+    sched.current_step = 0
+    sched.min_lr = 0.0
+    return sched
+}
+
+fn scheduler_get_lr(sched: ptr(Scheduler)) -> f32 {
+    let base_lr = sched.optimizer.learning_rate
+    
+    match sched.type {
+        SchedulerType::CONSTANT => {
+            return base_lr
+        }
+        SchedulerType::STEP => {
+            let num_decays = sched.current_step / sched.step_size
+            return base_lr * pow_f(sched.gamma as f64, num_decays as f64) as f32
+        }
+        SchedulerType::EXPONENTIAL => {
+            return base_lr * pow_f(sched.gamma as f64, sched.current_step as f64) as f32
+        }
+        SchedulerType::COSINE => {
+            let progress = (sched.current_step as f32) / (sched.total_steps as f32)
+            return sched.min_lr + (base_lr - sched.min_lr) * (1.0 + cos(PI * progress as f64) as f32) / 2.0
+        }
+        SchedulerType::COSINE_WARMUP => {
+            if sched.current_step < sched.warmup_steps {
+                ; Linear warmup
+                return base_lr * (sched.current_step as f32) / (sched.warmup_steps as f32)
+            } else {
+                ; Cosine decay
+                let progress = ((sched.current_step - sched.warmup_steps) as f32) / 
+                               ((sched.total_steps - sched.warmup_steps) as f32)
+                return sched.min_lr + (base_lr - sched.min_lr) * (1.0 + cos(PI * progress as f64) as f32) / 2.0
+            }
+        }
+        _ => return base_lr
+    }
+}
+
+fn scheduler_update(sched: ptr(Scheduler)) {
+    sched.current_step = sched.current_step + 1
+    sched.optimizer.learning_rate = scheduler_get_lr(sched)
+}
+
+; --- Training Loop ---
+
+struct Trainer {
+    model: ptr(Model),
+    optimizer: ptr(Optimizer),
+    scheduler: ptr(Scheduler),
+    
+    ; Training state
+    epoch: u32,
+    global_step: u32,
+    
+    ; Metrics
+    train_loss: f32,
+    val_loss: f32,
+    best_val_loss: f32,
+    
+    ; Callbacks
+    on_epoch_end: fn(ptr(Trainer)),
+    on_batch_end: fn(ptr(Trainer), u32, f32)
+}
+
+fn trainer_new(model: ptr(Model), optimizer: ptr(Optimizer)) -> ptr(Trainer) {
+    let t = gc_alloc(sizeof(Trainer)) as ptr(Trainer)
+    t.model = model
+    t.optimizer = optimizer
+    t.scheduler = null
+    t.epoch = 0
+    t.global_step = 0
+    t.train_loss = 0.0
+    t.val_loss = 0.0
+    t.best_val_loss = 1e10
+    return t
+}
+
+fn train_epoch(trainer: ptr(Trainer), data: [ptr(Tensor)], labels: [ptr(Tensor)], batch_size: u32) -> f32 {
+    model_train(trainer.model)
+    
+    let num_samples = data.length as u32
+    let num_batches = (num_samples + batch_size - 1) / batch_size
+    var total_loss: f32 = 0.0
+    
+    for batch_idx in 0..num_batches {
+        let start = batch_idx * batch_size
+        let end = min_u32(start + batch_size, num_samples)
+        
+        ; Get batch data
+        let batch_data = data[start]  ; Simplified
+        let batch_labels = labels[start]
+        
+        ; Forward pass
+        optimizer_zero_grad(trainer.optimizer)
+        let output = model_forward(trainer.model, batch_data)
+        
+        ; Compute loss
+        let loss = cross_entropy_loss(output, batch_labels)
+        total_loss = total_loss + loss
+        
+        ; Backward pass
+        let grad = cross_entropy_backward(output, batch_labels)
+        backward_pass(trainer.model, grad)
+        
+        ; Update weights
+        optimizer_step(trainer.optimizer)
+        
+        if trainer.scheduler != null {
+            scheduler_update(trainer.scheduler)
+        }
+        
+        trainer.global_step = trainer.global_step + 1
+        
+        if trainer.on_batch_end != null {
+            trainer.on_batch_end(trainer, batch_idx, loss)
+        }
+    }
+    
+    trainer.train_loss = total_loss / (num_batches as f32)
+    trainer.epoch = trainer.epoch + 1
+    
+    if trainer.on_epoch_end != null {
+        trainer.on_epoch_end(trainer)
+    }
+    
+    return trainer.train_loss
+}
+
+fn backward_pass(model: ptr(Model), grad_output: ptr(Tensor)) {
+    var grad = grad_output
+    
+    ; Backward through layers in reverse
+    var i = model.layer_count as i32 - 1
+    while i >= 0 {
+        let layer = model.layers[i]
+        
+        match layer.type {
+            LayerType::LINEAR => grad = linear_backward(layer, grad),
+            LayerType::RELU_LAYER => grad = relu_backward(layer, grad),
+            _ => {}
+        }
+        
+        i = i - 1
+    }
+}
+
+fn evaluate(trainer: ptr(Trainer), data: [ptr(Tensor)], labels: [ptr(Tensor)]) -> f32 {
+    model_eval(trainer.model)
+    
+    var total_loss: f32 = 0.0
+    var correct: u32 = 0
+    var total: u32 = 0
+    
+    for i in 0..data.length {
+        let output = model_forward(trainer.model, data[i])
+        total_loss = total_loss + cross_entropy_loss(output, labels[i])
+        
+        ; Accuracy
+        let predicted = tensor_argmax(output)
+        if predicted == labels[i].data[0] as u32 {
+            correct = correct + 1
+        }
+        total = total + 1
+    }
+    
+    trainer.val_loss = total_loss / (data.length as f32)
+    
+    if trainer.val_loss < trainer.best_val_loss {
+        trainer.best_val_loss = trainer.val_loss
+    }
+    
+    return (correct as f32) / (total as f32)
+}
+
+; --- Checkpointing ---
+
+fn save_checkpoint(trainer: ptr(Trainer), path: ptr(String)) {
+    ; Serialize model parameters
+    var data = string_from_cstr("MATHIS_CHECKPOINT\n")
+    data = string_concat(data, string_from_cstr("epoch: "))
+    data = string_concat(data, int_to_string(trainer.epoch))
+    data = string_concat(data, string_from_cstr("\n"))
+    
+    ; Save each layer's weights
+    for i in 0..trainer.model.layer_count {
+        let layer = trainer.model.layers[i]
+        if layer.weights != null {
+            ; Would serialize tensor data
+        }
+    }
+    
+    file_write_all(path, data)
+}
+
+fn load_checkpoint(trainer: ptr(Trainer), path: ptr(String)) -> bool {
+    let data = file_read_all(path)
+    if data == null {
+        return false
+    }
+    
+    if not string_starts_with(data, string_from_cstr("MATHIS_CHECKPOINT")) {
+        return false
+    }
+    
+    ; Would deserialize and load weights
+    return true
+}
+
+; --- Helpers ---
+
+fn min_u32(a: u32, b: u32) -> u32 {
+    if a < b { return a }
+    return b
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; END OF MODULE
+; ═══════════════════════════════════════════════════════════════════════════

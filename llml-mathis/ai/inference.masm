@@ -1,0 +1,525 @@
+; ═══════════════════════════════════════════════════════════════════════════
+; LLML-MATHIS: Inference Engine
+; ═══════════════════════════════════════════════════════════════════════════
+;
+; AGI Core: Fast neural network inference
+;
+; Features:
+; - Optimized inference
+; - Text generation (LLM)
+; - Sampling strategies
+; - KV-cache for transformers
+; - Model quantization
+;
+; ═══════════════════════════════════════════════════════════════════════════
+
+; --- Inference Configuration ---
+
+struct InferenceConfig {
+    batch_size: u32,
+    max_seq_len: u32,
+    use_kv_cache: bool,
+    quantized: bool,
+    
+    ; Sampling
+    temperature: f32,
+    top_k: u32,
+    top_p: f32,
+    repetition_penalty: f32,
+    
+    ; Generation
+    max_new_tokens: u32,
+    stop_tokens: [u32; 8],
+    stop_token_count: u32
+}
+
+fn default_inference_config() -> InferenceConfig {
+    return InferenceConfig {
+        batch_size: 1,
+        max_seq_len: 2048,
+        use_kv_cache: true,
+        quantized: false,
+        temperature: 1.0,
+        top_k: 50,
+        top_p: 0.9,
+        repetition_penalty: 1.0,
+        max_new_tokens: 256,
+        stop_token_count: 0
+    }
+}
+
+; --- Inference Engine ---
+
+struct InferenceEngine {
+    model: ptr(Model),
+    config: InferenceConfig,
+    
+    ; KV Cache
+    kv_cache: ptr(KVCache),
+    
+    ; Tokenizer reference
+    tokenizer: ptr(Tokenizer),
+    
+    ; Statistics
+    tokens_generated: u64,
+    total_time_ms: u64
+}
+
+fn inference_engine_new(model: ptr(Model), config: InferenceConfig) -> ptr(InferenceEngine) {
+    let engine = gc_alloc(sizeof(InferenceEngine)) as ptr(InferenceEngine)
+    engine.model = model
+    engine.config = config
+    engine.tokens_generated = 0
+    engine.total_time_ms = 0
+    
+    if config.use_kv_cache {
+        engine.kv_cache = kv_cache_new(config.max_seq_len, 768, 12)  ; Example dims
+    }
+    
+    return engine
+}
+
+; --- KV Cache (for Transformer efficiency) ---
+
+struct KVCache {
+    keys: [ptr(Tensor); 32],      ; Per layer
+    values: [ptr(Tensor); 32],
+    num_layers: u32,
+    seq_len: u32,
+    max_seq_len: u32,
+    head_dim: u32
+}
+
+fn kv_cache_new(max_seq_len: u32, hidden_dim: u32, num_layers: u32) -> ptr(KVCache) {
+    let cache = gc_alloc(sizeof(KVCache)) as ptr(KVCache)
+    cache.num_layers = num_layers
+    cache.max_seq_len = max_seq_len
+    cache.seq_len = 0
+    cache.head_dim = hidden_dim / 12  ; Assuming 12 heads
+    
+    for i in 0..num_layers {
+        cache.keys[i] = tensor_zeros([max_seq_len, hidden_dim], 2)
+        cache.values[i] = tensor_zeros([max_seq_len, hidden_dim], 2)
+    }
+    
+    return cache
+}
+
+fn kv_cache_update(cache: ptr(KVCache), layer: u32, new_k: ptr(Tensor), new_v: ptr(Tensor)) {
+    ; Append new K, V to cache
+    let pos = cache.seq_len
+    let hidden = new_k.shape[1]
+    
+    for d in 0..hidden {
+        cache.keys[layer].data[pos * hidden + d] = new_k.data[d]
+        cache.values[layer].data[pos * hidden + d] = new_v.data[d]
+    }
+}
+
+fn kv_cache_get(cache: ptr(KVCache), layer: u32) -> (ptr(Tensor), ptr(Tensor)) {
+    ; Return cached K, V up to current seq_len
+    let k = tensor_new([cache.seq_len, cache.keys[layer].shape[1]], 2)
+    let v = tensor_new([cache.seq_len, cache.values[layer].shape[1]], 2)
+    
+    let size = cache.seq_len * cache.keys[layer].shape[1]
+    for i in 0..size {
+        k.data[i] = cache.keys[layer].data[i]
+        v.data[i] = cache.values[layer].data[i]
+    }
+    
+    return (k, v)
+}
+
+fn kv_cache_clear(cache: ptr(KVCache)) {
+    cache.seq_len = 0
+}
+
+; --- Text Generation ---
+
+fn generate(engine: ptr(InferenceEngine), prompt_tokens: [u32]) -> [u32] {
+    let start_time = get_timestamp()
+    model_eval(engine.model)
+    
+    var tokens: [u32; 4096]
+    var token_count: u32 = 0
+    
+    ; Copy prompt
+    for i in 0..prompt_tokens.length {
+        tokens[token_count] = prompt_tokens[i]
+        token_count = token_count + 1
+    }
+    
+    ; Clear KV cache for new generation
+    if engine.kv_cache != null {
+        kv_cache_clear(engine.kv_cache)
+    }
+    
+    ; Generate tokens
+    for _ in 0..engine.config.max_new_tokens {
+        ; Get next token logits
+        let logits = forward_with_cache(engine, tokens[0..token_count])
+        
+        ; Sample next token
+        let next_token = sample_token(logits, engine.config, tokens[0..token_count])
+        
+        ; Check stop condition
+        if is_stop_token(next_token, engine.config) {
+            break
+        }
+        
+        ; Append token
+        tokens[token_count] = next_token
+        token_count = token_count + 1
+        engine.tokens_generated = engine.tokens_generated + 1
+        
+        if token_count >= 4096 {
+            break
+        }
+    }
+    
+    engine.total_time_ms = engine.total_time_ms + (get_timestamp() - start_time)
+    
+    return tokens[prompt_tokens.length as u32..token_count]
+}
+
+fn forward_with_cache(engine: ptr(InferenceEngine), tokens: [u32]) -> ptr(Tensor) {
+    ; Convert tokens to embeddings
+    let seq_len = tokens.length as u32
+    let input = tensor_new([1, seq_len], 2)
+    
+    for i in 0..seq_len {
+        input.data[i] = tokens[i] as f32
+    }
+    
+    ; Forward through model
+    let output = model_forward(engine.model, input)
+    
+    ; Return logits for last position
+    let vocab_size = output.shape[output.ndim - 1]
+    let last_logits = tensor_new([vocab_size], 1)
+    
+    let offset = (seq_len - 1) * vocab_size
+    for i in 0..vocab_size {
+        last_logits.data[i] = output.data[offset + i]
+    }
+    
+    return last_logits
+}
+
+; --- Sampling Strategies ---
+
+fn sample_token(logits: ptr(Tensor), config: InferenceConfig, context: [u32]) -> u32 {
+    ; Apply temperature
+    if config.temperature != 1.0 {
+        for i in 0..logits.size {
+            logits.data[i] = logits.data[i] / config.temperature
+        }
+    }
+    
+    ; Apply repetition penalty
+    if config.repetition_penalty != 1.0 {
+        for i in 0..context.length {
+            let token = context[i]
+            if token < logits.size {
+                logits.data[token] = logits.data[token] / config.repetition_penalty
+            }
+        }
+    }
+    
+    ; Top-K filtering
+    if config.top_k > 0 and config.top_k < logits.size {
+        top_k_filter(logits, config.top_k)
+    }
+    
+    ; Top-P (nucleus) filtering
+    if config.top_p < 1.0 {
+        top_p_filter(logits, config.top_p)
+    }
+    
+    ; Convert to probabilities
+    let probs = tensor_softmax(logits)
+    
+    ; Sample from distribution
+    return multinomial_sample(probs)
+}
+
+fn top_k_filter(logits: ptr(Tensor), k: u32) {
+    ; Find k-th largest value
+    var values: [f32; 1000]
+    for i in 0..logits.size {
+        values[i] = logits.data[i]
+    }
+    
+    ; Partial sort to find threshold
+    for i in 0..k {
+        var max_idx = i
+        for j in (i + 1)..logits.size {
+            if values[j] > values[max_idx] {
+                max_idx = j
+            }
+        }
+        let tmp = values[i]
+        values[i] = values[max_idx]
+        values[max_idx] = tmp
+    }
+    
+    let threshold = values[k - 1]
+    
+    ; Filter
+    for i in 0..logits.size {
+        if logits.data[i] < threshold {
+            logits.data[i] = -1e10
+        }
+    }
+}
+
+fn top_p_filter(logits: ptr(Tensor), p: f32) {
+    let probs = tensor_softmax(logits)
+    
+    ; Sort indices by probability
+    var indices: [u32; 1000]
+    for i in 0..probs.size {
+        indices[i] = i
+    }
+    
+    ; Sort descending by prob
+    for i in 0..probs.size {
+        for j in (i + 1)..probs.size {
+            if probs.data[indices[j]] > probs.data[indices[i]] {
+                let tmp = indices[i]
+                indices[i] = indices[j]
+                indices[j] = tmp
+            }
+        }
+    }
+    
+    ; Find cutoff
+    var cumsum: f32 = 0.0
+    var cutoff_idx: u32 = probs.size
+    
+    for i in 0..probs.size {
+        cumsum = cumsum + probs.data[indices[i]]
+        if cumsum > p {
+            cutoff_idx = i + 1
+            break
+        }
+    }
+    
+    ; Filter tokens below cutoff
+    for i in cutoff_idx..probs.size {
+        logits.data[indices[i]] = -1e10
+    }
+}
+
+fn multinomial_sample(probs: ptr(Tensor)) -> u32 {
+    let r = random_f64() as f32
+    var cumsum: f32 = 0.0
+    
+    for i in 0..probs.size {
+        cumsum = cumsum + probs.data[i]
+        if cumsum > r {
+            return i
+        }
+    }
+    
+    return probs.size - 1
+}
+
+fn greedy_sample(logits: ptr(Tensor)) -> u32 {
+    return tensor_argmax(logits)
+}
+
+fn beam_search(engine: ptr(InferenceEngine), prompt: [u32], beam_width: u32) -> [u32] {
+    ; Simplified beam search
+    struct Beam {
+        tokens: [u32; 256],
+        length: u32,
+        score: f32
+    }
+    
+    var beams: [Beam; 16]
+    var beam_count: u32 = 1
+    
+    ; Initialize with prompt
+    for i in 0..prompt.length {
+        beams[0].tokens[i] = prompt[i]
+    }
+    beams[0].length = prompt.length as u32
+    beams[0].score = 0.0
+    
+    for _ in 0..engine.config.max_new_tokens {
+        var new_beams: [Beam; 64]
+        var new_count: u32 = 0
+        
+        for b in 0..beam_count {
+            let logits = forward_with_cache(engine, beams[b].tokens[0..beams[b].length])
+            let probs = tensor_softmax(logits)
+            
+            ; Get top-k tokens
+            for k in 0..beam_width {
+                let token = find_kth_largest(probs, k)
+                let score = beams[b].score + ln(probs.data[token] as f64 + 1e-10) as f32
+                
+                if new_count < 64 {
+                    new_beams[new_count] = beams[b]
+                    new_beams[new_count].tokens[new_beams[new_count].length] = token
+                    new_beams[new_count].length = new_beams[new_count].length + 1
+                    new_beams[new_count].score = score
+                    new_count = new_count + 1
+                }
+            }
+        }
+        
+        ; Keep top beams
+        sort_beams(&new_beams, new_count)
+        beam_count = if new_count < beam_width { new_count } else { beam_width }
+        for i in 0..beam_count {
+            beams[i] = new_beams[i]
+        }
+    }
+    
+    ; Return best beam
+    return beams[0].tokens[prompt.length as u32..beams[0].length]
+}
+
+fn find_kth_largest(t: ptr(Tensor), k: u32) -> u32 {
+    var indices: [u32; 1000]
+    for i in 0..t.size {
+        indices[i] = i
+    }
+    
+    ; Partial sort
+    for i in 0..(k + 1) {
+        var max_idx = i
+        for j in (i + 1)..t.size {
+            if t.data[indices[j]] > t.data[indices[max_idx]] {
+                max_idx = j
+            }
+        }
+        let tmp = indices[i]
+        indices[i] = indices[max_idx]
+        indices[max_idx] = tmp
+    }
+    
+    return indices[k]
+}
+
+fn sort_beams(beams: ptr([Beam; 64]), count: u32) {
+    ; Sort by score descending
+    for i in 0..count {
+        for j in (i + 1)..count {
+            if (*beams)[j].score > (*beams)[i].score {
+                let tmp = (*beams)[i]
+                (*beams)[i] = (*beams)[j]
+                (*beams)[j] = tmp
+            }
+        }
+    }
+}
+
+fn is_stop_token(token: u32, config: InferenceConfig) -> bool {
+    for i in 0..config.stop_token_count {
+        if config.stop_tokens[i] == token {
+            return true
+        }
+    }
+    return false
+}
+
+; --- Tokenizer (Simple) ---
+
+struct Tokenizer {
+    vocab: ptr(Map),
+    reverse_vocab: [ptr(String); 32000],
+    vocab_size: u32,
+    
+    ; Special tokens
+    pad_token: u32,
+    eos_token: u32,
+    bos_token: u32,
+    unk_token: u32
+}
+
+fn tokenizer_new() -> ptr(Tokenizer) {
+    let t = gc_alloc(sizeof(Tokenizer)) as ptr(Tokenizer)
+    t.vocab = map_new()
+    t.vocab_size = 0
+    t.pad_token = 0
+    t.eos_token = 1
+    t.bos_token = 2
+    t.unk_token = 3
+    return t
+}
+
+fn tokenize(t: ptr(Tokenizer), text: ptr(String)) -> [u32] {
+    var tokens: [u32; 4096]
+    var count: u32 = 0
+    
+    ; Simple whitespace tokenization
+    let words = string_split_words(text)
+    
+    for i in 0..words.length {
+        let word = words[i]
+        let value = map_get(t.vocab, word)
+        
+        if is_none(value) {
+            tokens[count] = t.unk_token
+        } else {
+            tokens[count] = to_int(value) as u32
+        }
+        count = count + 1
+    }
+    
+    return tokens[0..count]
+}
+
+fn detokenize(t: ptr(Tokenizer), tokens: [u32]) -> ptr(String) {
+    var result = string_new()
+    
+    for i in 0..tokens.length {
+        let token = tokens[i]
+        if token < t.vocab_size {
+            result = string_concat(result, t.reverse_vocab[token])
+            result = string_concat(result, string_from_cstr(" "))
+        }
+    }
+    
+    return result
+}
+
+; --- High-Level API ---
+
+fn chat(engine: ptr(InferenceEngine), user_message: ptr(String)) -> ptr(String) {
+    ; Format as chat
+    var prompt = string_from_cstr("User: ")
+    prompt = string_concat(prompt, user_message)
+    prompt = string_concat(prompt, string_from_cstr("\nAssistant: "))
+    
+    ; Tokenize
+    let tokens = tokenize(engine.tokenizer, prompt)
+    
+    ; Generate
+    let output_tokens = generate(engine, tokens)
+    
+    ; Detokenize
+    return detokenize(engine.tokenizer, output_tokens)
+}
+
+fn complete(engine: ptr(InferenceEngine), prompt: ptr(String)) -> ptr(String) {
+    let tokens = tokenize(engine.tokenizer, prompt)
+    let output_tokens = generate(engine, tokens)
+    return detokenize(engine.tokenizer, output_tokens)
+}
+
+; --- Performance Stats ---
+
+fn get_tokens_per_second(engine: ptr(InferenceEngine)) -> f32 {
+    if engine.total_time_ms == 0 {
+        return 0.0
+    }
+    return (engine.tokens_generated as f32) / (engine.total_time_ms as f32 / 1000.0)
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; END OF MODULE
+; ═══════════════════════════════════════════════════════════════════════════
