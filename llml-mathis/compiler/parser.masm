@@ -1,0 +1,857 @@
+; ═══════════════════════════════════════════════════════════════════════════
+; LLML-MATHIS: Parser (AST Builder)
+; ═══════════════════════════════════════════════════════════════════════════
+;
+; AGI-Oriented Parser:
+; - Recursive descent parser
+; - Builds Abstract Syntax Tree
+; - AI can analyze and transform AST
+; - Self-parsing capability
+;
+; ═══════════════════════════════════════════════════════════════════════════
+
+; --- AST Node Types ---
+
+enum NodeType {
+    ; Declarations
+    PROGRAM,
+    FUNCTION_DECL,
+    STRUCT_DECL,
+    ENUM_DECL,
+    VAR_DECL,
+    CONST_DECL,
+    
+    ; Statements
+    BLOCK,
+    EXPR_STMT,
+    IF_STMT,
+    WHILE_STMT,
+    FOR_STMT,
+    LOOP_STMT,
+    RETURN_STMT,
+    BREAK_STMT,
+    CONTINUE_STMT,
+    MATCH_STMT,
+    
+    ; Expressions
+    BINARY_EXPR,
+    UNARY_EXPR,
+    CALL_EXPR,
+    INDEX_EXPR,
+    FIELD_EXPR,
+    ASSIGN_EXPR,
+    
+    ; Literals
+    INT_LITERAL,
+    FLOAT_LITERAL,
+    STRING_LITERAL,
+    BOOL_LITERAL,
+    NONE_LITERAL,
+    ARRAY_LITERAL,
+    
+    ; Other
+    IDENTIFIER,
+    TYPE_EXPR,
+    PARAM,
+    FIELD,
+    MATCH_ARM,
+    
+    ; AI-specific
+    AI_EXPR
+}
+
+; --- AST Node ---
+
+struct ASTNode {
+    type: NodeType,
+    line: u32,
+    column: u32,
+    
+    ; Value (for literals)
+    int_value: i64,
+    float_value: f64,
+    string_value: ptr(String),
+    
+    ; Name (for identifiers, functions, etc.)
+    name: ptr(String),
+    
+    ; Type info
+    type_name: ptr(String),
+    
+    ; Children
+    children: [ptr(ASTNode); 16],
+    child_count: u32,
+    
+    ; For binary/unary expressions
+    operator: TokenType,
+    
+    ; Parent reference
+    parent: ptr(ASTNode)
+}
+
+; --- Parser State ---
+
+struct Parser {
+    tokens: [Token; 10000],
+    token_count: u32,
+    current: u32,
+    
+    ; Output
+    ast: ptr(ASTNode),
+    
+    ; Errors
+    errors: [ptr(String); 100],
+    error_count: u32,
+    
+    ; Panic mode for error recovery
+    panic_mode: bool
+}
+
+var parser: Parser
+
+; --- Initialization ---
+
+fn parser_init(tokens: [Token], count: u32) {
+    for i in 0..count {
+        parser.tokens[i] = tokens[i]
+    }
+    parser.token_count = count
+    parser.current = 0
+    parser.error_count = 0
+    parser.panic_mode = false
+}
+
+fn parse(tokens: [Token]) -> ptr(ASTNode) {
+    parser_init(tokens, tokens.length as u32)
+    return parse_program()
+}
+
+; --- Parsing Functions ---
+
+fn parse_program() -> ptr(ASTNode) {
+    let program = create_node(NodeType::PROGRAM)
+    
+    while not is_at_end_p() {
+        let decl = parse_declaration()
+        if decl != null {
+            add_child(program, decl)
+        }
+    }
+    
+    return program
+}
+
+fn parse_declaration() -> ptr(ASTNode) {
+    if match_p(TokenType::KW_FN) {
+        return parse_function()
+    }
+    if match_p(TokenType::KW_STRUCT) {
+        return parse_struct()
+    }
+    if match_p(TokenType::KW_ENUM) {
+        return parse_enum()
+    }
+    if match_p(TokenType::KW_LET) {
+        return parse_var_decl(false)
+    }
+    if match_p(TokenType::KW_VAR) {
+        return parse_var_decl(true)
+    }
+    if match_p(TokenType::KW_CONST) {
+        return parse_const_decl()
+    }
+    
+    return parse_statement()
+}
+
+fn parse_function() -> ptr(ASTNode) {
+    let node = create_node(NodeType::FUNCTION_DECL)
+    
+    ; Name
+    expect(TokenType::IDENT, "Expected function name")
+    node.name = previous().lexeme
+    
+    ; Parameters
+    expect(TokenType::LPAREN, "Expected '(' after function name")
+    
+    while not check(TokenType::RPAREN) {
+        let param = parse_param()
+        add_child(node, param)
+        
+        if not match_p(TokenType::COMMA) {
+            break
+        }
+    }
+    
+    expect(TokenType::RPAREN, "Expected ')' after parameters")
+    
+    ; Return type
+    if match_p(TokenType::ARROW) {
+        node.type_name = parse_type()
+    }
+    
+    ; Body
+    expect(TokenType::LBRACE, "Expected '{' before function body")
+    let body = parse_block()
+    add_child(node, body)
+    
+    return node
+}
+
+fn parse_param() -> ptr(ASTNode) {
+    let node = create_node(NodeType::PARAM)
+    
+    expect(TokenType::IDENT, "Expected parameter name")
+    node.name = previous().lexeme
+    
+    expect(TokenType::COLON, "Expected ':' after parameter name")
+    node.type_name = parse_type()
+    
+    return node
+}
+
+fn parse_struct() -> ptr(ASTNode) {
+    let node = create_node(NodeType::STRUCT_DECL)
+    
+    expect(TokenType::IDENT, "Expected struct name")
+    node.name = previous().lexeme
+    
+    expect(TokenType::LBRACE, "Expected '{' after struct name")
+    
+    while not check(TokenType::RBRACE) and not is_at_end_p() {
+        let field = parse_field()
+        add_child(node, field)
+        
+        match_p(TokenType::COMMA)  ; Optional comma
+    }
+    
+    expect(TokenType::RBRACE, "Expected '}' after struct fields")
+    
+    return node
+}
+
+fn parse_field() -> ptr(ASTNode) {
+    let node = create_node(NodeType::FIELD)
+    
+    expect(TokenType::IDENT, "Expected field name")
+    node.name = previous().lexeme
+    
+    expect(TokenType::COLON, "Expected ':' after field name")
+    node.type_name = parse_type()
+    
+    return node
+}
+
+fn parse_enum() -> ptr(ASTNode) {
+    let node = create_node(NodeType::ENUM_DECL)
+    
+    expect(TokenType::IDENT, "Expected enum name")
+    node.name = previous().lexeme
+    
+    expect(TokenType::LBRACE, "Expected '{' after enum name")
+    
+    while not check(TokenType::RBRACE) and not is_at_end_p() {
+        expect(TokenType::IDENT, "Expected variant name")
+        let variant = create_node(NodeType::IDENTIFIER)
+        variant.name = previous().lexeme
+        add_child(node, variant)
+        
+        match_p(TokenType::COMMA)
+    }
+    
+    expect(TokenType::RBRACE, "Expected '}' after enum variants")
+    
+    return node
+}
+
+fn parse_var_decl(mutable: bool) -> ptr(ASTNode) {
+    let node = create_node(NodeType::VAR_DECL)
+    
+    expect(TokenType::IDENT, "Expected variable name")
+    node.name = previous().lexeme
+    
+    ; Optional type
+    if match_p(TokenType::COLON) {
+        node.type_name = parse_type()
+    }
+    
+    ; Initializer
+    if match_p(TokenType::ASSIGN) {
+        let init = parse_expression()
+        add_child(node, init)
+    }
+    
+    return node
+}
+
+fn parse_const_decl() -> ptr(ASTNode) {
+    let node = create_node(NodeType::CONST_DECL)
+    
+    expect(TokenType::IDENT, "Expected constant name")
+    node.name = previous().lexeme
+    
+    if match_p(TokenType::COLON) {
+        node.type_name = parse_type()
+    }
+    
+    expect(TokenType::ASSIGN, "Expected '=' in constant declaration")
+    let init = parse_expression()
+    add_child(node, init)
+    
+    return node
+}
+
+fn parse_type() -> ptr(String) {
+    ; Simplified type parsing
+    if match_p(TokenType::IDENT) or 
+       match_p(TokenType::KW_I8) or match_p(TokenType::KW_I16) or
+       match_p(TokenType::KW_I32) or match_p(TokenType::KW_I64) or
+       match_p(TokenType::KW_U8) or match_p(TokenType::KW_U16) or
+       match_p(TokenType::KW_U32) or match_p(TokenType::KW_U64) or
+       match_p(TokenType::KW_F32) or match_p(TokenType::KW_F64) or
+       match_p(TokenType::KW_BOOL) or match_p(TokenType::KW_STRING_TYPE) {
+        return previous().lexeme
+    }
+    
+    error("Expected type")
+    return string_from_cstr("unknown")
+}
+
+; --- Statements ---
+
+fn parse_statement() -> ptr(ASTNode) {
+    if match_p(TokenType::KW_IF) {
+        return parse_if()
+    }
+    if match_p(TokenType::KW_WHILE) {
+        return parse_while()
+    }
+    if match_p(TokenType::KW_FOR) {
+        return parse_for()
+    }
+    if match_p(TokenType::KW_LOOP) {
+        return parse_loop()
+    }
+    if match_p(TokenType::KW_RETURN) {
+        return parse_return()
+    }
+    if match_p(TokenType::KW_BREAK) {
+        return create_node(NodeType::BREAK_STMT)
+    }
+    if match_p(TokenType::KW_CONTINUE) {
+        return create_node(NodeType::CONTINUE_STMT)
+    }
+    if match_p(TokenType::KW_MATCH) {
+        return parse_match()
+    }
+    if match_p(TokenType::LBRACE) {
+        return parse_block()
+    }
+    
+    return parse_expression_statement()
+}
+
+fn parse_block() -> ptr(ASTNode) {
+    let node = create_node(NodeType::BLOCK)
+    
+    while not check(TokenType::RBRACE) and not is_at_end_p() {
+        let stmt = parse_declaration()
+        if stmt != null {
+            add_child(node, stmt)
+        }
+    }
+    
+    expect(TokenType::RBRACE, "Expected '}' after block")
+    
+    return node
+}
+
+fn parse_if() -> ptr(ASTNode) {
+    let node = create_node(NodeType::IF_STMT)
+    
+    ; Condition
+    let condition = parse_expression()
+    add_child(node, condition)
+    
+    ; Then branch
+    expect(TokenType::LBRACE, "Expected '{' after if condition")
+    let then_branch = parse_block()
+    add_child(node, then_branch)
+    
+    ; Else branch
+    if match_p(TokenType::KW_ELSE) {
+        if match_p(TokenType::KW_IF) {
+            let else_if = parse_if()
+            add_child(node, else_if)
+        } else {
+            expect(TokenType::LBRACE, "Expected '{' after else")
+            let else_branch = parse_block()
+            add_child(node, else_branch)
+        }
+    }
+    
+    return node
+}
+
+fn parse_while() -> ptr(ASTNode) {
+    let node = create_node(NodeType::WHILE_STMT)
+    
+    let condition = parse_expression()
+    add_child(node, condition)
+    
+    expect(TokenType::LBRACE, "Expected '{' after while condition")
+    let body = parse_block()
+    add_child(node, body)
+    
+    return node
+}
+
+fn parse_for() -> ptr(ASTNode) {
+    let node = create_node(NodeType::FOR_STMT)
+    
+    expect(TokenType::IDENT, "Expected loop variable")
+    node.name = previous().lexeme
+    
+    expect(TokenType::KW_IN, "Expected 'in' in for loop")
+    
+    let range = parse_expression()
+    add_child(node, range)
+    
+    expect(TokenType::LBRACE, "Expected '{' after for range")
+    let body = parse_block()
+    add_child(node, body)
+    
+    return node
+}
+
+fn parse_loop() -> ptr(ASTNode) {
+    let node = create_node(NodeType::LOOP_STMT)
+    
+    expect(TokenType::LBRACE, "Expected '{' after loop")
+    let body = parse_block()
+    add_child(node, body)
+    
+    return node
+}
+
+fn parse_return() -> ptr(ASTNode) {
+    let node = create_node(NodeType::RETURN_STMT)
+    
+    if not check(TokenType::RBRACE) and not check(TokenType::SEMICOLON) {
+        let value = parse_expression()
+        add_child(node, value)
+    }
+    
+    return node
+}
+
+fn parse_match() -> ptr(ASTNode) {
+    let node = create_node(NodeType::MATCH_STMT)
+    
+    let expr = parse_expression()
+    add_child(node, expr)
+    
+    expect(TokenType::LBRACE, "Expected '{' after match expression")
+    
+    while not check(TokenType::RBRACE) and not is_at_end_p() {
+        let arm = parse_match_arm()
+        add_child(node, arm)
+    }
+    
+    expect(TokenType::RBRACE, "Expected '}' after match arms")
+    
+    return node
+}
+
+fn parse_match_arm() -> ptr(ASTNode) {
+    let node = create_node(NodeType::MATCH_ARM)
+    
+    ; Pattern
+    let pattern = parse_expression()
+    add_child(node, pattern)
+    
+    expect(TokenType::FAT_ARROW, "Expected '=>' in match arm")
+    
+    ; Body
+    if match_p(TokenType::LBRACE) {
+        let body = parse_block()
+        add_child(node, body)
+    } else {
+        let expr = parse_expression()
+        add_child(node, expr)
+        match_p(TokenType::COMMA)
+    }
+    
+    return node
+}
+
+fn parse_expression_statement() -> ptr(ASTNode) {
+    let node = create_node(NodeType::EXPR_STMT)
+    let expr = parse_expression()
+    add_child(node, expr)
+    return node
+}
+
+; --- Expressions (Precedence Climbing) ---
+
+fn parse_expression() -> ptr(ASTNode) {
+    return parse_assignment()
+}
+
+fn parse_assignment() -> ptr(ASTNode) {
+    let left = parse_or()
+    
+    if match_p(TokenType::ASSIGN) or match_p(TokenType::PLUS_ASSIGN) or
+       match_p(TokenType::MINUS_ASSIGN) or match_p(TokenType::STAR_ASSIGN) or
+       match_p(TokenType::SLASH_ASSIGN) {
+        let op = previous().type
+        let right = parse_assignment()
+        
+        let node = create_node(NodeType::ASSIGN_EXPR)
+        node.operator = op
+        add_child(node, left)
+        add_child(node, right)
+        return node
+    }
+    
+    return left
+}
+
+fn parse_or() -> ptr(ASTNode) {
+    var left = parse_and()
+    
+    while match_p(TokenType::KW_OR) {
+        let right = parse_and()
+        let node = create_node(NodeType::BINARY_EXPR)
+        node.operator = TokenType::KW_OR
+        add_child(node, left)
+        add_child(node, right)
+        left = node
+    }
+    
+    return left
+}
+
+fn parse_and() -> ptr(ASTNode) {
+    var left = parse_equality()
+    
+    while match_p(TokenType::KW_AND) {
+        let right = parse_equality()
+        let node = create_node(NodeType::BINARY_EXPR)
+        node.operator = TokenType::KW_AND
+        add_child(node, left)
+        add_child(node, right)
+        left = node
+    }
+    
+    return left
+}
+
+fn parse_equality() -> ptr(ASTNode) {
+    var left = parse_comparison()
+    
+    while match_p(TokenType::EQ) or match_p(TokenType::NE) {
+        let op = previous().type
+        let right = parse_comparison()
+        let node = create_node(NodeType::BINARY_EXPR)
+        node.operator = op
+        add_child(node, left)
+        add_child(node, right)
+        left = node
+    }
+    
+    return left
+}
+
+fn parse_comparison() -> ptr(ASTNode) {
+    var left = parse_term()
+    
+    while match_p(TokenType::LT) or match_p(TokenType::LE) or
+          match_p(TokenType::GT) or match_p(TokenType::GE) {
+        let op = previous().type
+        let right = parse_term()
+        let node = create_node(NodeType::BINARY_EXPR)
+        node.operator = op
+        add_child(node, left)
+        add_child(node, right)
+        left = node
+    }
+    
+    return left
+}
+
+fn parse_term() -> ptr(ASTNode) {
+    var left = parse_factor()
+    
+    while match_p(TokenType::PLUS) or match_p(TokenType::MINUS) {
+        let op = previous().type
+        let right = parse_factor()
+        let node = create_node(NodeType::BINARY_EXPR)
+        node.operator = op
+        add_child(node, left)
+        add_child(node, right)
+        left = node
+    }
+    
+    return left
+}
+
+fn parse_factor() -> ptr(ASTNode) {
+    var left = parse_unary()
+    
+    while match_p(TokenType::STAR) or match_p(TokenType::SLASH) or match_p(TokenType::PERCENT) {
+        let op = previous().type
+        let right = parse_unary()
+        let node = create_node(NodeType::BINARY_EXPR)
+        node.operator = op
+        add_child(node, left)
+        add_child(node, right)
+        left = node
+    }
+    
+    return left
+}
+
+fn parse_unary() -> ptr(ASTNode) {
+    if match_p(TokenType::MINUS) or match_p(TokenType::KW_NOT) or match_p(TokenType::TILDE) {
+        let op = previous().type
+        let right = parse_unary()
+        let node = create_node(NodeType::UNARY_EXPR)
+        node.operator = op
+        add_child(node, right)
+        return node
+    }
+    
+    return parse_call()
+}
+
+fn parse_call() -> ptr(ASTNode) {
+    var expr = parse_primary()
+    
+    loop {
+        if match_p(TokenType::LPAREN) {
+            expr = finish_call(expr)
+        } else if match_p(TokenType::DOT) {
+            expect(TokenType::IDENT, "Expected property name")
+            let node = create_node(NodeType::FIELD_EXPR)
+            node.name = previous().lexeme
+            add_child(node, expr)
+            expr = node
+        } else if match_p(TokenType::LBRACKET) {
+            let index = parse_expression()
+            expect(TokenType::RBRACKET, "Expected ']' after index")
+            let node = create_node(NodeType::INDEX_EXPR)
+            add_child(node, expr)
+            add_child(node, index)
+            expr = node
+        } else {
+            break
+        }
+    }
+    
+    return expr
+}
+
+fn finish_call(callee: ptr(ASTNode)) -> ptr(ASTNode) {
+    let node = create_node(NodeType::CALL_EXPR)
+    add_child(node, callee)
+    
+    if not check(TokenType::RPAREN) {
+        loop {
+            let arg = parse_expression()
+            add_child(node, arg)
+            if not match_p(TokenType::COMMA) {
+                break
+            }
+        }
+    }
+    
+    expect(TokenType::RPAREN, "Expected ')' after arguments")
+    return node
+}
+
+fn parse_primary() -> ptr(ASTNode) {
+    if match_p(TokenType::INTEGER) {
+        let node = create_node(NodeType::INT_LITERAL)
+        node.int_value = previous().int_value
+        return node
+    }
+    
+    if match_p(TokenType::FLOAT) {
+        let node = create_node(NodeType::FLOAT_LITERAL)
+        node.float_value = previous().float_value
+        return node
+    }
+    
+    if match_p(TokenType::STRING) {
+        let node = create_node(NodeType::STRING_LITERAL)
+        node.string_value = previous().lexeme
+        return node
+    }
+    
+    if match_p(TokenType::TRUE) {
+        let node = create_node(NodeType::BOOL_LITERAL)
+        node.int_value = 1
+        return node
+    }
+    
+    if match_p(TokenType::FALSE) {
+        let node = create_node(NodeType::BOOL_LITERAL)
+        node.int_value = 0
+        return node
+    }
+    
+    if match_p(TokenType::NONE) {
+        return create_node(NodeType::NONE_LITERAL)
+    }
+    
+    if match_p(TokenType::IDENT) {
+        let node = create_node(NodeType::IDENTIFIER)
+        node.name = previous().lexeme
+        return node
+    }
+    
+    if match_p(TokenType::LPAREN) {
+        let expr = parse_expression()
+        expect(TokenType::RPAREN, "Expected ')' after expression")
+        return expr
+    }
+    
+    if match_p(TokenType::LBRACKET) {
+        return parse_array_literal()
+    }
+    
+    error("Expected expression")
+    return create_node(NodeType::NONE_LITERAL)
+}
+
+fn parse_array_literal() -> ptr(ASTNode) {
+    let node = create_node(NodeType::ARRAY_LITERAL)
+    
+    if not check(TokenType::RBRACKET) {
+        loop {
+            let elem = parse_expression()
+            add_child(node, elem)
+            if not match_p(TokenType::COMMA) {
+                break
+            }
+        }
+    }
+    
+    expect(TokenType::RBRACKET, "Expected ']' after array elements")
+    return node
+}
+
+; --- Helper Functions ---
+
+fn create_node(type: NodeType) -> ptr(ASTNode) {
+    let node = gc_alloc(sizeof(ASTNode)) as ptr(ASTNode)
+    node.type = type
+    node.line = peek_p().line
+    node.column = peek_p().column
+    node.child_count = 0
+    node.parent = null
+    return node
+}
+
+fn add_child(parent: ptr(ASTNode), child: ptr(ASTNode)) {
+    if child == null { return }
+    if parent.child_count < 16 {
+        parent.children[parent.child_count] = child
+        parent.child_count = parent.child_count + 1
+        child.parent = parent
+    }
+}
+
+fn is_at_end_p() -> bool {
+    return peek_p().type == TokenType::EOF
+}
+
+fn peek_p() -> Token {
+    return parser.tokens[parser.current]
+}
+
+fn previous() -> Token {
+    return parser.tokens[parser.current - 1]
+}
+
+fn advance_p() -> Token {
+    if not is_at_end_p() {
+        parser.current = parser.current + 1
+    }
+    return previous()
+}
+
+fn check(type: TokenType) -> bool {
+    return peek_p().type == type
+}
+
+fn match_p(type: TokenType) -> bool {
+    if check(type) {
+        advance_p()
+        return true
+    }
+    return false
+}
+
+fn expect(type: TokenType, message: string) {
+    if check(type) {
+        advance_p()
+        return
+    }
+    error(message)
+}
+
+fn error(message: string) {
+    if parser.error_count < 100 {
+        parser.errors[parser.error_count] = string_concat(
+            string_from_cstr("Line "),
+            string_concat(
+                int_to_string(peek_p().line),
+                string_concat(string_from_cstr(": "), string_from_cstr(message))
+            )
+        )
+        parser.error_count = parser.error_count + 1
+    }
+    parser.panic_mode = true
+}
+
+fn get_parser_errors() -> [ptr(String)] {
+    return parser.errors[0..parser.error_count]
+}
+
+; --- AI AST Analysis ---
+
+fn ai_count_nodes(node: ptr(ASTNode)) -> u32 {
+    if node == null { return 0 }
+    
+    var count: u32 = 1
+    for i in 0..node.child_count {
+        count = count + ai_count_nodes(node.children[i])
+    }
+    return count
+}
+
+fn ai_get_functions(ast: ptr(ASTNode)) -> [ptr(ASTNode)] {
+    var functions: [ptr(ASTNode); 100]
+    var count: u32 = 0
+    ai_find_nodes(ast, NodeType::FUNCTION_DECL, &functions, &count, 100)
+    return functions[0..count]
+}
+
+fn ai_find_nodes(node: ptr(ASTNode), type: NodeType, results: ptr([ptr(ASTNode)]), count: ptr(u32), max: u32) {
+    if node == null { return }
+    
+    if node.type == type and *count < max {
+        (*results)[*count] = node
+        *count = *count + 1
+    }
+    
+    for i in 0..node.child_count {
+        ai_find_nodes(node.children[i], type, results, count, max)
+    }
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; END OF MODULE
+; ═══════════════════════════════════════════════════════════════════════════

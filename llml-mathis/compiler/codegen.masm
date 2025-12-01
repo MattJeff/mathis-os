@@ -1,0 +1,732 @@
+; ═══════════════════════════════════════════════════════════════════════════
+; LLML-MATHIS: Code Generator
+; ═══════════════════════════════════════════════════════════════════════════
+;
+; AGI-Oriented Code Generation:
+; - AST to bytecode compilation
+; - Generates Mathis VM bytecode
+; - AI can modify generated code
+; - Self-compilation capability
+;
+; ═══════════════════════════════════════════════════════════════════════════
+
+; --- Bytecode Structure ---
+
+struct Bytecode {
+    code: [u8; 65536],      ; Max 64KB of bytecode
+    code_size: u32,
+    
+    ; Constant pool
+    constants: [i64; 1024],
+    constant_count: u32,
+    
+    ; String pool
+    strings: [ptr(String); 256],
+    string_count: u32,
+    
+    ; Function table
+    functions: [FunctionEntry; 256],
+    function_count: u32,
+    
+    ; Debug info
+    line_info: [LineInfo; 4096],
+    line_count: u32
+}
+
+struct FunctionEntry {
+    name: ptr(String),
+    offset: u32,
+    param_count: u8,
+    local_count: u8
+}
+
+struct LineInfo {
+    bytecode_offset: u32,
+    source_line: u32
+}
+
+; --- Compiler State ---
+
+struct Compiler {
+    bytecode: Bytecode,
+    
+    ; Scope tracking
+    scope_depth: u32,
+    locals: [Local; 256],
+    local_count: u32,
+    
+    ; Loop tracking (for break/continue)
+    loop_starts: [u32; 16],
+    loop_ends: [u32; 16],
+    loop_depth: u32,
+    
+    ; Current function
+    current_function: ptr(String),
+    
+    ; Errors
+    errors: [ptr(String); 100],
+    error_count: u32
+}
+
+struct Local {
+    name: ptr(String),
+    depth: u32,
+    slot: u8
+}
+
+var compiler: Compiler
+
+; --- Initialization ---
+
+fn compiler_init() {
+    compiler.bytecode.code_size = 0
+    compiler.bytecode.constant_count = 0
+    compiler.bytecode.string_count = 0
+    compiler.bytecode.function_count = 0
+    compiler.bytecode.line_count = 0
+    compiler.scope_depth = 0
+    compiler.local_count = 0
+    compiler.loop_depth = 0
+    compiler.error_count = 0
+}
+
+fn compile(ast: ptr(ASTNode)) -> Bytecode {
+    compiler_init()
+    
+    ; Write MBC header
+    write_header()
+    
+    ; Compile program
+    compile_node(ast)
+    
+    ; Add HALT at end
+    emit(OP_HALT)
+    
+    return compiler.bytecode
+}
+
+fn write_header() {
+    ; Magic: MASM
+    emit_byte('M')
+    emit_byte('A')
+    emit_byte('S')
+    emit_byte('M')
+    
+    ; Version
+    emit_u32(0x00000001)
+    
+    ; Flags
+    emit_u32(0x00000000)
+    
+    ; Entry point offset (will be patched)
+    emit_u32(0x00000040)
+    
+    ; Pad to 0x40
+    while compiler.bytecode.code_size < 0x40 {
+        emit_byte(0)
+    }
+}
+
+; --- Code Emission ---
+
+fn emit(opcode: u8) {
+    emit_byte(opcode)
+}
+
+fn emit_byte(b: u8) {
+    if compiler.bytecode.code_size < 65536 {
+        compiler.bytecode.code[compiler.bytecode.code_size] = b
+        compiler.bytecode.code_size = compiler.bytecode.code_size + 1
+    }
+}
+
+fn emit_u16(value: u16) {
+    emit_byte((value & 0xFF) as u8)
+    emit_byte(((value >> 8) & 0xFF) as u8)
+}
+
+fn emit_u32(value: u32) {
+    emit_byte((value & 0xFF) as u8)
+    emit_byte(((value >> 8) & 0xFF) as u8)
+    emit_byte(((value >> 16) & 0xFF) as u8)
+    emit_byte(((value >> 24) & 0xFF) as u8)
+}
+
+fn emit_i64(value: i64) {
+    for i in 0..8 {
+        emit_byte(((value >> (i * 8)) & 0xFF) as u8)
+    }
+}
+
+fn current_offset() -> u32 {
+    return compiler.bytecode.code_size
+}
+
+fn patch_u16(offset: u32, value: u16) {
+    compiler.bytecode.code[offset] = (value & 0xFF) as u8
+    compiler.bytecode.code[offset + 1] = ((value >> 8) & 0xFF) as u8
+}
+
+; --- Node Compilation ---
+
+fn compile_node(node: ptr(ASTNode)) {
+    if node == null { return }
+    
+    ; Record line info
+    add_line_info(node.line)
+    
+    match node.type {
+        NodeType::PROGRAM => compile_program(node),
+        NodeType::FUNCTION_DECL => compile_function(node),
+        NodeType::VAR_DECL => compile_var_decl(node),
+        NodeType::CONST_DECL => compile_const_decl(node),
+        NodeType::BLOCK => compile_block(node),
+        NodeType::IF_STMT => compile_if(node),
+        NodeType::WHILE_STMT => compile_while(node),
+        NodeType::FOR_STMT => compile_for(node),
+        NodeType::LOOP_STMT => compile_loop(node),
+        NodeType::RETURN_STMT => compile_return(node),
+        NodeType::BREAK_STMT => compile_break(),
+        NodeType::CONTINUE_STMT => compile_continue(),
+        NodeType::EXPR_STMT => compile_expr_stmt(node),
+        NodeType::BINARY_EXPR => compile_binary(node),
+        NodeType::UNARY_EXPR => compile_unary(node),
+        NodeType::CALL_EXPR => compile_call(node),
+        NodeType::ASSIGN_EXPR => compile_assign(node),
+        NodeType::INDEX_EXPR => compile_index(node),
+        NodeType::FIELD_EXPR => compile_field(node),
+        NodeType::INT_LITERAL => compile_int_literal(node),
+        NodeType::FLOAT_LITERAL => compile_float_literal(node),
+        NodeType::STRING_LITERAL => compile_string_literal(node),
+        NodeType::BOOL_LITERAL => compile_bool_literal(node),
+        NodeType::NONE_LITERAL => emit(OP_CONST_NONE),
+        NodeType::IDENTIFIER => compile_identifier(node),
+        NodeType::ARRAY_LITERAL => compile_array_literal(node),
+        _ => { }
+    }
+}
+
+fn compile_program(node: ptr(ASTNode)) {
+    for i in 0..node.child_count {
+        compile_node(node.children[i])
+    }
+}
+
+fn compile_function(node: ptr(ASTNode)) {
+    ; Record function entry
+    let func_offset = current_offset()
+    add_function_entry(node.name, func_offset, node.child_count as u8 - 1)
+    
+    ; Jump over function body (will be patched)
+    emit(OP_JUMP)
+    let jump_offset = current_offset()
+    emit_u16(0)
+    
+    ; Function start
+    let func_start = current_offset()
+    
+    ; Setup local scope
+    begin_scope()
+    compiler.current_function = node.name
+    
+    ; Compile parameters (add as locals)
+    for i in 0..(node.child_count - 1) {
+        let param = node.children[i]
+        if param.type == NodeType::PARAM {
+            add_local(param.name)
+        }
+    }
+    
+    ; Compile body (last child)
+    let body = node.children[node.child_count - 1]
+    compile_node(body)
+    
+    ; Implicit return
+    emit(OP_CONST_NONE)
+    emit(OP_RET)
+    
+    end_scope()
+    
+    ; Patch jump to skip function
+    let end_offset = current_offset() - 0x40
+    patch_u16(jump_offset, end_offset as u16)
+}
+
+fn compile_var_decl(node: ptr(ASTNode)) {
+    if node.child_count > 0 {
+        ; Has initializer
+        compile_node(node.children[0])
+    } else {
+        ; Default to none
+        emit(OP_CONST_NONE)
+    }
+    
+    if compiler.scope_depth > 0 {
+        ; Local variable
+        add_local(node.name)
+        let slot = compiler.local_count - 1
+        emit(OP_SET_LOCAL)
+        emit_byte(slot as u8)
+    } else {
+        ; Global variable
+        let idx = add_global(node.name)
+        emit(OP_SET_GLOBAL)
+        emit_u16(idx)
+    }
+}
+
+fn compile_const_decl(node: ptr(ASTNode)) {
+    ; Same as var for now
+    compile_var_decl(node)
+}
+
+fn compile_block(node: ptr(ASTNode)) {
+    begin_scope()
+    for i in 0..node.child_count {
+        compile_node(node.children[i])
+    }
+    end_scope()
+}
+
+fn compile_if(node: ptr(ASTNode)) {
+    ; Condition
+    compile_node(node.children[0])
+    
+    ; Jump if false
+    emit(OP_JUMP_IF_FALSE)
+    let else_jump = current_offset()
+    emit_u16(0)
+    
+    ; Then branch
+    compile_node(node.children[1])
+    
+    ; Jump over else
+    emit(OP_JUMP)
+    let end_jump = current_offset()
+    emit_u16(0)
+    
+    ; Patch else jump
+    patch_u16(else_jump, (current_offset() - 0x40) as u16)
+    
+    ; Else branch
+    if node.child_count > 2 {
+        compile_node(node.children[2])
+    }
+    
+    ; Patch end jump
+    patch_u16(end_jump, (current_offset() - 0x40) as u16)
+}
+
+fn compile_while(node: ptr(ASTNode)) {
+    let loop_start = current_offset() - 0x40
+    
+    ; Track for break/continue
+    push_loop(loop_start)
+    
+    ; Condition
+    compile_node(node.children[0])
+    
+    ; Jump if false
+    emit(OP_JUMP_IF_FALSE)
+    let exit_jump = current_offset()
+    emit_u16(0)
+    
+    ; Body
+    compile_node(node.children[1])
+    
+    ; Loop back
+    emit(OP_JUMP)
+    emit_u16(loop_start as u16)
+    
+    ; Patch exit
+    patch_u16(exit_jump, (current_offset() - 0x40) as u16)
+    
+    pop_loop()
+}
+
+fn compile_for(node: ptr(ASTNode)) {
+    begin_scope()
+    
+    ; Initialize loop variable
+    add_local(node.name)
+    let var_slot = compiler.local_count - 1
+    
+    ; Get range (assuming it's a Range expression)
+    ; For now, push 0 as start
+    emit(OP_CONST_SMALL)
+    emit_byte(0)
+    emit(OP_SET_LOCAL)
+    emit_byte(var_slot as u8)
+    
+    let loop_start = current_offset() - 0x40
+    push_loop(loop_start)
+    
+    ; Check condition (var < end)
+    emit(OP_GET_LOCAL)
+    emit_byte(var_slot as u8)
+    compile_node(node.children[0])  ; Range end
+    emit(OP_LT)
+    
+    ; Exit if done
+    emit(OP_JUMP_IF_FALSE)
+    let exit_jump = current_offset()
+    emit_u16(0)
+    
+    ; Body
+    compile_node(node.children[1])
+    
+    ; Increment
+    emit(OP_GET_LOCAL)
+    emit_byte(var_slot as u8)
+    emit(OP_CONST_SMALL)
+    emit_byte(1)
+    emit(OP_ADD)
+    emit(OP_SET_LOCAL)
+    emit_byte(var_slot as u8)
+    
+    ; Loop back
+    emit(OP_JUMP)
+    emit_u16(loop_start as u16)
+    
+    ; Patch exit
+    patch_u16(exit_jump, (current_offset() - 0x40) as u16)
+    
+    pop_loop()
+    end_scope()
+}
+
+fn compile_loop(node: ptr(ASTNode)) {
+    let loop_start = current_offset() - 0x40
+    push_loop(loop_start)
+    
+    ; Body
+    compile_node(node.children[0])
+    
+    ; Loop back unconditionally
+    emit(OP_JUMP)
+    emit_u16(loop_start as u16)
+    
+    pop_loop()
+}
+
+fn compile_return(node: ptr(ASTNode)) {
+    if node.child_count > 0 {
+        compile_node(node.children[0])
+    } else {
+        emit(OP_CONST_NONE)
+    }
+    emit(OP_RET)
+}
+
+fn compile_break() {
+    if compiler.loop_depth > 0 {
+        emit(OP_JUMP)
+        ; Will need to patch later
+        emit_u16(0)
+    }
+}
+
+fn compile_continue() {
+    if compiler.loop_depth > 0 {
+        emit(OP_JUMP)
+        emit_u16(compiler.loop_starts[compiler.loop_depth - 1] as u16)
+    }
+}
+
+fn compile_expr_stmt(node: ptr(ASTNode)) {
+    compile_node(node.children[0])
+    emit(OP_POP)  ; Discard result
+}
+
+fn compile_binary(node: ptr(ASTNode)) {
+    compile_node(node.children[0])
+    compile_node(node.children[1])
+    
+    match node.operator {
+        TokenType::PLUS => emit(OP_ADD),
+        TokenType::MINUS => emit(OP_SUB),
+        TokenType::STAR => emit(OP_MUL),
+        TokenType::SLASH => emit(OP_DIV),
+        TokenType::PERCENT => emit(OP_MOD),
+        TokenType::EQ => emit(OP_EQ),
+        TokenType::NE => emit(OP_NE),
+        TokenType::LT => emit(OP_LT),
+        TokenType::LE => emit(OP_LE),
+        TokenType::GT => emit(OP_GT),
+        TokenType::GE => emit(OP_GE),
+        TokenType::KW_AND => emit(OP_AND),
+        TokenType::KW_OR => emit(OP_OR),
+        TokenType::AMPERSAND => emit(OP_BIT_AND),
+        TokenType::PIPE => emit(OP_BIT_OR),
+        TokenType::CARET => emit(OP_BIT_XOR),
+        TokenType::LSHIFT => emit(OP_SHL),
+        TokenType::RSHIFT => emit(OP_SHR),
+        _ => { }
+    }
+}
+
+fn compile_unary(node: ptr(ASTNode)) {
+    compile_node(node.children[0])
+    
+    match node.operator {
+        TokenType::MINUS => emit(OP_NEG),
+        TokenType::KW_NOT => emit(OP_NOT),
+        TokenType::TILDE => emit(OP_BIT_NOT),
+        _ => { }
+    }
+}
+
+fn compile_call(node: ptr(ASTNode)) {
+    ; Arguments
+    for i in 1..node.child_count {
+        compile_node(node.children[i])
+    }
+    
+    ; Function reference
+    let callee = node.children[0]
+    if callee.type == NodeType::IDENTIFIER {
+        ; Look up function
+        let func_idx = find_function(callee.name)
+        if func_idx >= 0 {
+            emit(OP_CALL)
+            let entry = compiler.bytecode.functions[func_idx]
+            emit_u16((entry.offset - 0x40) as u16)
+        } else {
+            ; Built-in or unknown
+            compile_builtin_call(callee.name, node.child_count - 1)
+        }
+    }
+}
+
+fn compile_builtin_call(name: ptr(String), arg_count: u32) {
+    if string_equals(name, string_from_cstr("print")) {
+        emit(OP_PRINT)
+    } else if string_equals(name, string_from_cstr("ai_call")) {
+        emit(OP_AI_CALL)
+        emit_u16(0)
+    } else if string_equals(name, string_from_cstr("ai_decide")) {
+        emit(OP_AI_DECIDE)
+    } else {
+        ; Unknown function - syscall
+        emit(OP_SYSCALL)
+        emit_u16(0)
+    }
+}
+
+fn compile_assign(node: ptr(ASTNode)) {
+    let target = node.children[0]
+    
+    ; Compile value
+    compile_node(node.children[1])
+    
+    ; Compound assignment
+    if node.operator != TokenType::ASSIGN {
+        compile_node(target)
+        match node.operator {
+            TokenType::PLUS_ASSIGN => emit(OP_ADD),
+            TokenType::MINUS_ASSIGN => emit(OP_SUB),
+            TokenType::STAR_ASSIGN => emit(OP_MUL),
+            TokenType::SLASH_ASSIGN => emit(OP_DIV),
+            _ => { }
+        }
+    }
+    
+    ; Store
+    if target.type == NodeType::IDENTIFIER {
+        let slot = find_local(target.name)
+        if slot >= 0 {
+            emit(OP_SET_LOCAL)
+            emit_byte(slot as u8)
+        } else {
+            let idx = add_global(target.name)
+            emit(OP_SET_GLOBAL)
+            emit_u16(idx)
+        }
+    }
+}
+
+fn compile_index(node: ptr(ASTNode)) {
+    compile_node(node.children[0])  ; Array
+    compile_node(node.children[1])  ; Index
+    emit(OP_INDEX)
+}
+
+fn compile_field(node: ptr(ASTNode)) {
+    compile_node(node.children[0])  ; Object
+    ; Field access - simplified
+    emit(OP_GET_FIELD)
+    emit_u16(0)  ; Field index
+}
+
+fn compile_int_literal(node: ptr(ASTNode)) {
+    let value = node.int_value
+    if value >= -128 and value <= 127 {
+        emit(OP_CONST_SMALL)
+        emit_byte(value as u8)
+    } else {
+        emit(OP_CONST_I64)
+        emit_i64(value)
+    }
+}
+
+fn compile_float_literal(node: ptr(ASTNode)) {
+    emit(OP_CONST_F64)
+    emit_i64(node.float_value as i64)  ; Bit cast
+}
+
+fn compile_string_literal(node: ptr(ASTNode)) {
+    let idx = add_string(node.string_value)
+    emit(OP_CONST_STR)
+    emit_u16(idx)
+}
+
+fn compile_bool_literal(node: ptr(ASTNode)) {
+    if node.int_value != 0 {
+        emit(OP_CONST_TRUE)
+    } else {
+        emit(OP_CONST_FALSE)
+    }
+}
+
+fn compile_identifier(node: ptr(ASTNode)) {
+    let slot = find_local(node.name)
+    if slot >= 0 {
+        emit(OP_GET_LOCAL)
+        emit_byte(slot as u8)
+    } else {
+        let idx = add_global(node.name)
+        emit(OP_GET_GLOBAL)
+        emit_u16(idx)
+    }
+}
+
+fn compile_array_literal(node: ptr(ASTNode)) {
+    for i in 0..node.child_count {
+        compile_node(node.children[i])
+    }
+    emit(OP_MAKE_LIST)
+    emit_u16(node.child_count as u16)
+}
+
+; --- Scope Management ---
+
+fn begin_scope() {
+    compiler.scope_depth = compiler.scope_depth + 1
+}
+
+fn end_scope() {
+    compiler.scope_depth = compiler.scope_depth - 1
+    
+    ; Pop locals from this scope
+    while compiler.local_count > 0 and 
+          compiler.locals[compiler.local_count - 1].depth > compiler.scope_depth {
+        emit(OP_POP)
+        compiler.local_count = compiler.local_count - 1
+    }
+}
+
+fn add_local(name: ptr(String)) {
+    if compiler.local_count < 256 {
+        compiler.locals[compiler.local_count] = Local {
+            name: name,
+            depth: compiler.scope_depth,
+            slot: compiler.local_count as u8
+        }
+        compiler.local_count = compiler.local_count + 1
+    }
+}
+
+fn find_local(name: ptr(String)) -> i32 {
+    var i = compiler.local_count as i32 - 1
+    while i >= 0 {
+        if string_equals(compiler.locals[i].name, name) {
+            return compiler.locals[i].slot as i32
+        }
+        i = i - 1
+    }
+    return -1
+}
+
+var global_count: u32 = 0
+var global_names: [ptr(String); 256]
+
+fn add_global(name: ptr(String)) -> u16 {
+    ; Check if already exists
+    for i in 0..global_count {
+        if string_equals(global_names[i], name) {
+            return i as u16
+        }
+    }
+    
+    if global_count < 256 {
+        global_names[global_count] = name
+        global_count = global_count + 1
+        return (global_count - 1) as u16
+    }
+    return 0
+}
+
+; --- Loop Tracking ---
+
+fn push_loop(start: u32) {
+    if compiler.loop_depth < 16 {
+        compiler.loop_starts[compiler.loop_depth] = start
+        compiler.loop_depth = compiler.loop_depth + 1
+    }
+}
+
+fn pop_loop() {
+    if compiler.loop_depth > 0 {
+        compiler.loop_depth = compiler.loop_depth - 1
+    }
+}
+
+; --- Function Table ---
+
+fn add_function_entry(name: ptr(String), offset: u32, params: u8) {
+    if compiler.bytecode.function_count < 256 {
+        compiler.bytecode.functions[compiler.bytecode.function_count] = FunctionEntry {
+            name: name,
+            offset: offset,
+            param_count: params,
+            local_count: 0
+        }
+        compiler.bytecode.function_count = compiler.bytecode.function_count + 1
+    }
+}
+
+fn find_function(name: ptr(String)) -> i32 {
+    for i in 0..compiler.bytecode.function_count {
+        if string_equals(compiler.bytecode.functions[i].name, name) {
+            return i as i32
+        }
+    }
+    return -1
+}
+
+; --- Constant Pool ---
+
+fn add_string(s: ptr(String)) -> u16 {
+    if compiler.bytecode.string_count < 256 {
+        compiler.bytecode.strings[compiler.bytecode.string_count] = s
+        compiler.bytecode.string_count = compiler.bytecode.string_count + 1
+        return (compiler.bytecode.string_count - 1) as u16
+    }
+    return 0
+}
+
+; --- Debug Info ---
+
+fn add_line_info(line: u32) {
+    if compiler.bytecode.line_count < 4096 {
+        compiler.bytecode.line_info[compiler.bytecode.line_count] = LineInfo {
+            bytecode_offset: current_offset(),
+            source_line: line
+        }
+        compiler.bytecode.line_count = compiler.bytecode.line_count + 1
+    }
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; END OF MODULE
+; ═══════════════════════════════════════════════════════════════════════════

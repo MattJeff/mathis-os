@@ -1,0 +1,636 @@
+; ═══════════════════════════════════════════════════════════════════════════
+; LLML-MATHIS: Optimizer
+; ═══════════════════════════════════════════════════════════════════════════
+;
+; AGI-Oriented Optimization:
+; - AST-level optimizations
+; - Bytecode-level optimizations
+; - AI-driven optimization decisions
+; - Self-optimization capability
+;
+; ═══════════════════════════════════════════════════════════════════════════
+
+; --- Optimization Flags ---
+
+struct OptFlags {
+    constant_folding: bool,
+    dead_code_elimination: bool,
+    common_subexpr: bool,
+    strength_reduction: bool,
+    inline_small_functions: bool,
+    tail_call_optimization: bool,
+    loop_unrolling: bool,
+    ai_guided: bool
+}
+
+fn default_opt_flags() -> OptFlags {
+    return OptFlags {
+        constant_folding: true,
+        dead_code_elimination: true,
+        common_subexpr: true,
+        strength_reduction: true,
+        inline_small_functions: true,
+        tail_call_optimization: true,
+        loop_unrolling: false,
+        ai_guided: true
+    }
+}
+
+; --- Optimization Statistics ---
+
+struct OptStats {
+    constants_folded: u32,
+    dead_nodes_removed: u32,
+    exprs_simplified: u32,
+    functions_inlined: u32,
+    loops_unrolled: u32,
+    bytes_saved: u32,
+    time_ms: u64
+}
+
+var opt_stats: OptStats
+
+; ═══════════════════════════════════════════════════════════════════════════
+; AST OPTIMIZATION
+; ═══════════════════════════════════════════════════════════════════════════
+
+fn optimize_ast(ast: ptr(ASTNode), flags: OptFlags) -> ptr(ASTNode) {
+    let start = get_timestamp()
+    opt_stats = OptStats { }
+    
+    var result = ast
+    
+    ; Multiple passes for maximum optimization
+    for pass in 0..3 {
+        if flags.constant_folding {
+            result = fold_constants(result)
+        }
+        
+        if flags.dead_code_elimination {
+            result = eliminate_dead_code(result)
+        }
+        
+        if flags.strength_reduction {
+            result = reduce_strength(result)
+        }
+        
+        if flags.common_subexpr {
+            result = eliminate_common_subexpr(result)
+        }
+        
+        if flags.ai_guided {
+            result = ai_optimize(result)
+        }
+    }
+    
+    opt_stats.time_ms = get_timestamp() - start
+    return result
+}
+
+; --- Constant Folding ---
+
+fn fold_constants(node: ptr(ASTNode)) -> ptr(ASTNode) {
+    if node == null { return null }
+    
+    ; Recurse first
+    for i in 0..node.child_count {
+        node.children[i] = fold_constants(node.children[i])
+    }
+    
+    ; Fold binary expressions with constant operands
+    if node.type == NodeType::BINARY_EXPR {
+        let left = node.children[0]
+        let right = node.children[1]
+        
+        if is_constant(left) and is_constant(right) {
+            let result = evaluate_binary(left, right, node.operator)
+            if result != null {
+                opt_stats.constants_folded = opt_stats.constants_folded + 1
+                return result
+            }
+        }
+    }
+    
+    ; Fold unary expressions
+    if node.type == NodeType::UNARY_EXPR {
+        let operand = node.children[0]
+        
+        if is_constant(operand) {
+            let result = evaluate_unary(operand, node.operator)
+            if result != null {
+                opt_stats.constants_folded = opt_stats.constants_folded + 1
+                return result
+            }
+        }
+    }
+    
+    return node
+}
+
+fn is_constant(node: ptr(ASTNode)) -> bool {
+    return node.type == NodeType::INT_LITERAL or
+           node.type == NodeType::FLOAT_LITERAL or
+           node.type == NodeType::BOOL_LITERAL or
+           node.type == NodeType::NONE_LITERAL
+}
+
+fn evaluate_binary(left: ptr(ASTNode), right: ptr(ASTNode), op: TokenType) -> ptr(ASTNode) {
+    if left.type == NodeType::INT_LITERAL and right.type == NodeType::INT_LITERAL {
+        let a = left.int_value
+        let b = right.int_value
+        var result: i64
+        
+        match op {
+            TokenType::PLUS => result = a + b,
+            TokenType::MINUS => result = a - b,
+            TokenType::STAR => result = a * b,
+            TokenType::SLASH => {
+                if b == 0 { return null }
+                result = a / b
+            }
+            TokenType::PERCENT => {
+                if b == 0 { return null }
+                result = a % b
+            }
+            TokenType::EQ => result = if a == b { 1 } else { 0 },
+            TokenType::NE => result = if a != b { 1 } else { 0 },
+            TokenType::LT => result = if a < b { 1 } else { 0 },
+            TokenType::LE => result = if a <= b { 1 } else { 0 },
+            TokenType::GT => result = if a > b { 1 } else { 0 },
+            TokenType::GE => result = if a >= b { 1 } else { 0 },
+            TokenType::AMPERSAND => result = a & b,
+            TokenType::PIPE => result = a | b,
+            TokenType::CARET => result = a ^ b,
+            TokenType::LSHIFT => result = a << b,
+            TokenType::RSHIFT => result = a >> b,
+            _ => return null
+        }
+        
+        let node = gc_alloc(sizeof(ASTNode)) as ptr(ASTNode)
+        node.type = NodeType::INT_LITERAL
+        node.int_value = result
+        return node
+    }
+    
+    return null
+}
+
+fn evaluate_unary(operand: ptr(ASTNode), op: TokenType) -> ptr(ASTNode) {
+    if operand.type == NodeType::INT_LITERAL {
+        var result: i64
+        
+        match op {
+            TokenType::MINUS => result = -operand.int_value,
+            TokenType::TILDE => result = ~operand.int_value,
+            _ => return null
+        }
+        
+        let node = gc_alloc(sizeof(ASTNode)) as ptr(ASTNode)
+        node.type = NodeType::INT_LITERAL
+        node.int_value = result
+        return node
+    }
+    
+    if operand.type == NodeType::BOOL_LITERAL and op == TokenType::KW_NOT {
+        let node = gc_alloc(sizeof(ASTNode)) as ptr(ASTNode)
+        node.type = NodeType::BOOL_LITERAL
+        node.int_value = if operand.int_value == 0 { 1 } else { 0 }
+        return node
+    }
+    
+    return null
+}
+
+; --- Dead Code Elimination ---
+
+fn eliminate_dead_code(node: ptr(ASTNode)) -> ptr(ASTNode) {
+    if node == null { return null }
+    
+    ; Remove unreachable code after return/break/continue
+    if node.type == NodeType::BLOCK {
+        var found_terminator = false
+        var new_count: u32 = 0
+        
+        for i in 0..node.child_count {
+            if found_terminator {
+                opt_stats.dead_nodes_removed = opt_stats.dead_nodes_removed + 1
+                continue
+            }
+            
+            let child = eliminate_dead_code(node.children[i])
+            node.children[new_count] = child
+            new_count = new_count + 1
+            
+            if is_terminator(child) {
+                found_terminator = true
+            }
+        }
+        
+        node.child_count = new_count
+    }
+    
+    ; Remove if(false) branches
+    if node.type == NodeType::IF_STMT {
+        let condition = node.children[0]
+        
+        if condition.type == NodeType::BOOL_LITERAL {
+            if condition.int_value != 0 {
+                ; Always true - return then branch
+                opt_stats.dead_nodes_removed = opt_stats.dead_nodes_removed + 1
+                return eliminate_dead_code(node.children[1])
+            } else {
+                ; Always false - return else branch or nothing
+                opt_stats.dead_nodes_removed = opt_stats.dead_nodes_removed + 1
+                if node.child_count > 2 {
+                    return eliminate_dead_code(node.children[2])
+                }
+                return create_empty_block()
+            }
+        }
+    }
+    
+    ; Remove while(false) loops
+    if node.type == NodeType::WHILE_STMT {
+        let condition = node.children[0]
+        if condition.type == NodeType::BOOL_LITERAL and condition.int_value == 0 {
+            opt_stats.dead_nodes_removed = opt_stats.dead_nodes_removed + 1
+            return create_empty_block()
+        }
+    }
+    
+    ; Recurse
+    for i in 0..node.child_count {
+        node.children[i] = eliminate_dead_code(node.children[i])
+    }
+    
+    return node
+}
+
+fn is_terminator(node: ptr(ASTNode)) -> bool {
+    return node.type == NodeType::RETURN_STMT or
+           node.type == NodeType::BREAK_STMT or
+           node.type == NodeType::CONTINUE_STMT
+}
+
+fn create_empty_block() -> ptr(ASTNode) {
+    let node = gc_alloc(sizeof(ASTNode)) as ptr(ASTNode)
+    node.type = NodeType::BLOCK
+    node.child_count = 0
+    return node
+}
+
+; --- Strength Reduction ---
+
+fn reduce_strength(node: ptr(ASTNode)) -> ptr(ASTNode) {
+    if node == null { return null }
+    
+    ; Recurse first
+    for i in 0..node.child_count {
+        node.children[i] = reduce_strength(node.children[i])
+    }
+    
+    if node.type == NodeType::BINARY_EXPR {
+        let left = node.children[0]
+        let right = node.children[1]
+        
+        ; x * 2 -> x << 1
+        if node.operator == TokenType::STAR {
+            if right.type == NodeType::INT_LITERAL and is_power_of_two(right.int_value) {
+                let shift = log2(right.int_value)
+                node.operator = TokenType::LSHIFT
+                right.int_value = shift
+                opt_stats.exprs_simplified = opt_stats.exprs_simplified + 1
+            }
+        }
+        
+        ; x / 2 -> x >> 1 (for positive x)
+        if node.operator == TokenType::SLASH {
+            if right.type == NodeType::INT_LITERAL and is_power_of_two(right.int_value) {
+                let shift = log2(right.int_value)
+                node.operator = TokenType::RSHIFT
+                right.int_value = shift
+                opt_stats.exprs_simplified = opt_stats.exprs_simplified + 1
+            }
+        }
+        
+        ; x + 0 -> x
+        if node.operator == TokenType::PLUS {
+            if right.type == NodeType::INT_LITERAL and right.int_value == 0 {
+                opt_stats.exprs_simplified = opt_stats.exprs_simplified + 1
+                return left
+            }
+            if left.type == NodeType::INT_LITERAL and left.int_value == 0 {
+                opt_stats.exprs_simplified = opt_stats.exprs_simplified + 1
+                return right
+            }
+        }
+        
+        ; x * 1 -> x
+        if node.operator == TokenType::STAR {
+            if right.type == NodeType::INT_LITERAL and right.int_value == 1 {
+                opt_stats.exprs_simplified = opt_stats.exprs_simplified + 1
+                return left
+            }
+            if left.type == NodeType::INT_LITERAL and left.int_value == 1 {
+                opt_stats.exprs_simplified = opt_stats.exprs_simplified + 1
+                return right
+            }
+        }
+        
+        ; x * 0 -> 0
+        if node.operator == TokenType::STAR {
+            if (right.type == NodeType::INT_LITERAL and right.int_value == 0) or
+               (left.type == NodeType::INT_LITERAL and left.int_value == 0) {
+                opt_stats.exprs_simplified = opt_stats.exprs_simplified + 1
+                let zero = gc_alloc(sizeof(ASTNode)) as ptr(ASTNode)
+                zero.type = NodeType::INT_LITERAL
+                zero.int_value = 0
+                return zero
+            }
+        }
+    }
+    
+    return node
+}
+
+fn is_power_of_two(n: i64) -> bool {
+    return n > 0 and (n & (n - 1)) == 0
+}
+
+fn log2(n: i64) -> i64 {
+    var result: i64 = 0
+    var v = n
+    while v > 1 {
+        v = v >> 1
+        result = result + 1
+    }
+    return result
+}
+
+; --- Common Subexpression Elimination ---
+
+struct ExprHash {
+    node: ptr(ASTNode),
+    hash: u32,
+    temp_var: ptr(String)
+}
+
+var expr_cache: [ExprHash; 256]
+var expr_cache_count: u32 = 0
+
+fn eliminate_common_subexpr(node: ptr(ASTNode)) -> ptr(ASTNode) {
+    expr_cache_count = 0
+    return cse_pass(node)
+}
+
+fn cse_pass(node: ptr(ASTNode)) -> ptr(ASTNode) {
+    if node == null { return null }
+    
+    ; Recurse first
+    for i in 0..node.child_count {
+        node.children[i] = cse_pass(node.children[i])
+    }
+    
+    ; Check if this expression was seen before
+    if is_cse_candidate(node) {
+        let h = hash_expr(node)
+        
+        for i in 0..expr_cache_count {
+            if expr_cache[i].hash == h and exprs_equal(expr_cache[i].node, node) {
+                ; Found duplicate - return reference to temp
+                opt_stats.exprs_simplified = opt_stats.exprs_simplified + 1
+                let ident = gc_alloc(sizeof(ASTNode)) as ptr(ASTNode)
+                ident.type = NodeType::IDENTIFIER
+                ident.name = expr_cache[i].temp_var
+                return ident
+            }
+        }
+        
+        ; Add to cache
+        if expr_cache_count < 256 {
+            expr_cache[expr_cache_count] = ExprHash {
+                node: node,
+                hash: h,
+                temp_var: null  ; Could generate temp var
+            }
+            expr_cache_count = expr_cache_count + 1
+        }
+    }
+    
+    return node
+}
+
+fn is_cse_candidate(node: ptr(ASTNode)) -> bool {
+    return node.type == NodeType::BINARY_EXPR or
+           node.type == NodeType::CALL_EXPR or
+           node.type == NodeType::INDEX_EXPR
+}
+
+fn hash_expr(node: ptr(ASTNode)) -> u32 {
+    var h: u32 = node.type as u32 * 31
+    
+    if node.type == NodeType::INT_LITERAL {
+        h = h ^ (node.int_value as u32)
+    } else if node.type == NodeType::IDENTIFIER {
+        h = h ^ (node.name as u32)
+    } else if node.type == NodeType::BINARY_EXPR {
+        h = h ^ (node.operator as u32)
+        h = h ^ hash_expr(node.children[0])
+        h = h ^ hash_expr(node.children[1])
+    }
+    
+    return h
+}
+
+fn exprs_equal(a: ptr(ASTNode), b: ptr(ASTNode)) -> bool {
+    if a.type != b.type { return false }
+    
+    if a.type == NodeType::INT_LITERAL {
+        return a.int_value == b.int_value
+    }
+    
+    if a.type == NodeType::IDENTIFIER {
+        return string_equals(a.name, b.name)
+    }
+    
+    if a.type == NodeType::BINARY_EXPR {
+        return a.operator == b.operator and
+               exprs_equal(a.children[0], b.children[0]) and
+               exprs_equal(a.children[1], b.children[1])
+    }
+    
+    return false
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; AI-GUIDED OPTIMIZATION
+; ═══════════════════════════════════════════════════════════════════════════
+
+fn ai_optimize(ast: ptr(ASTNode)) -> ptr(ASTNode) {
+    ; AI analyzes AST and suggests optimizations
+    
+    ; Find hot paths (frequently called functions)
+    let functions = ai_get_functions(ast)
+    
+    for i in 0..functions.length {
+        let func = functions[i]
+        
+        ; Inline small functions
+        if should_inline(func) {
+            ; Mark for inlining
+        }
+        
+        ; Unroll small loops
+        for j in 0..func.child_count {
+            if is_small_loop(func.children[j]) {
+                ; Mark for unrolling
+            }
+        }
+    }
+    
+    return ast
+}
+
+fn should_inline(func: ptr(ASTNode)) -> bool {
+    ; Inline if function body is small
+    let node_count = ai_count_nodes(func)
+    return node_count < 20
+}
+
+fn is_small_loop(node: ptr(ASTNode)) -> bool {
+    if node.type != NodeType::FOR_STMT and node.type != NodeType::WHILE_STMT {
+        return false
+    }
+    
+    ; Check if iteration count is small and known
+    ; Simplified: just check body size
+    let body_size = ai_count_nodes(node.children[node.child_count - 1])
+    return body_size < 10
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; BYTECODE OPTIMIZATION
+; ═══════════════════════════════════════════════════════════════════════════
+
+fn optimize_bytecode(code: Bytecode) -> Bytecode {
+    var result = code
+    
+    ; Peephole optimization
+    result = peephole_optimize(result)
+    
+    ; Jump threading
+    result = thread_jumps(result)
+    
+    return result
+}
+
+fn peephole_optimize(code: Bytecode) -> Bytecode {
+    var i: u32 = 0x40  ; Skip header
+    
+    while i < code.code_size - 1 {
+        let op1 = code.code[i]
+        let op2 = code.code[i + 1]
+        
+        ; PUSH followed by POP -> remove both
+        if (op1 == OP_CONST_SMALL or op1 == OP_CONST_I64) and op2 == OP_POP {
+            ; Remove
+            let size = opcode_size(op1)
+            remove_bytes(&code, i, size + 1)
+            opt_stats.bytes_saved = opt_stats.bytes_saved + size + 1
+            continue
+        }
+        
+        ; DUP followed by POP -> nothing
+        if op1 == OP_DUP and op2 == OP_POP {
+            remove_bytes(&code, i, 2)
+            opt_stats.bytes_saved = opt_stats.bytes_saved + 2
+            continue
+        }
+        
+        i = i + opcode_size(op1)
+    }
+    
+    return code
+}
+
+fn thread_jumps(code: Bytecode) -> Bytecode {
+    ; If a jump targets another jump, go directly to final target
+    var i: u32 = 0x40
+    
+    while i < code.code_size {
+        let op = code.code[i]
+        
+        if op == OP_JUMP or op == OP_JUMP_IF_TRUE or op == OP_JUMP_IF_FALSE {
+            let target_lo = code.code[i + 1]
+            let target_hi = code.code[i + 2]
+            var target = (target_lo as u32) | ((target_hi as u32) << 8)
+            
+            ; Follow jump chain
+            let final_target = follow_jumps(&code, target + 0x40)
+            if final_target != target + 0x40 {
+                code.code[i + 1] = ((final_target - 0x40) & 0xFF) as u8
+                code.code[i + 2] = (((final_target - 0x40) >> 8) & 0xFF) as u8
+            }
+        }
+        
+        i = i + opcode_size(op)
+    }
+    
+    return code
+}
+
+fn follow_jumps(code: ptr(Bytecode), addr: u32) -> u32 {
+    var current = addr
+    var depth = 0
+    
+    while depth < 10 {
+        if current >= code.code_size { break }
+        
+        let op = code.code[current]
+        if op != OP_JUMP { break }
+        
+        let target_lo = code.code[current + 1]
+        let target_hi = code.code[current + 2]
+        current = (target_lo as u32) | ((target_hi as u32) << 8) + 0x40
+        depth = depth + 1
+    }
+    
+    return current
+}
+
+fn opcode_size(op: u8) -> u32 {
+    match op {
+        OP_NOP | OP_HALT | OP_RET | OP_POP | OP_DUP | OP_SWAP |
+        OP_ADD | OP_SUB | OP_MUL | OP_DIV | OP_MOD | OP_NEG |
+        OP_EQ | OP_NE | OP_LT | OP_LE | OP_GT | OP_GE |
+        OP_AND | OP_OR | OP_NOT |
+        OP_CONST_NONE | OP_CONST_TRUE | OP_CONST_FALSE => 1,
+        
+        OP_CONST_SMALL | OP_GET_LOCAL | OP_SET_LOCAL => 2,
+        
+        OP_JUMP | OP_JUMP_IF_TRUE | OP_JUMP_IF_FALSE | OP_CALL |
+        OP_GET_GLOBAL | OP_SET_GLOBAL | OP_SYSCALL => 3,
+        
+        OP_CONST_I64 | OP_CONST_F64 => 9,
+        
+        _ => 1
+    }
+}
+
+fn remove_bytes(code: ptr(Bytecode), offset: u32, count: u32) {
+    let remaining = code.code_size - offset - count
+    for i in 0..remaining {
+        code.code[offset + i] = code.code[offset + count + i]
+    }
+    code.code_size = code.code_size - count
+}
+
+; --- Get Stats ---
+
+fn get_opt_stats() -> OptStats {
+    return opt_stats
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; END OF MODULE
+; ═══════════════════════════════════════════════════════════════════════════

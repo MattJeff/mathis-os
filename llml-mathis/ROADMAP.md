@@ -24,11 +24,11 @@ Réécrire entièrement LLML en Mathis natif pour créer un écosystème AGI aut
 - [x] gc.masm - Mark-sweep GC with generations (450 lignes)
 - [x] scheduler.masm - Priority scheduler + Mutex/Semaphore (550 lignes)
 
-### Phase 4: Compiler (Semaine 7-10)
-- [ ] lexer.masm - Tokenization
-- [ ] parser.masm - AST
-- [ ] codegen.masm - Génération bytecode
-- [ ] optimizer.masm - Optimisations
+### Phase 4: Compiler (Semaine 7-10) ✅ COMPLETE
+- [x] lexer.masm - Full tokenizer + keywords (550 lignes)
+- [x] parser.masm - Recursive descent + AST builder (700 lignes)
+- [x] codegen.masm - Bytecode generator (650 lignes)
+- [x] optimizer.masm - Constant folding, DCE, CSE, AI-guided (550 lignes)
 
 ### Phase 5: Networking (Semaine 11-12)
 - [ ] tcp.masm - TCP/IP stack

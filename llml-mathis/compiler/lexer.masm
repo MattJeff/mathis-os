@@ -1,0 +1,641 @@
+; ═══════════════════════════════════════════════════════════════════════════
+; LLML-MATHIS: Lexer (Tokenizer)
+; ═══════════════════════════════════════════════════════════════════════════
+;
+; AGI-Oriented Lexer:
+; - Tokenizes Mathis source code
+; - AI can analyze token patterns
+; - Self-aware: can tokenize its own source
+;
+; ═══════════════════════════════════════════════════════════════════════════
+
+; --- Token Types ---
+
+enum TokenType {
+    EOF,
+    ERROR,
+    
+    ; Literals
+    INTEGER,
+    FLOAT,
+    STRING,
+    CHAR,
+    TRUE,
+    FALSE,
+    NONE,
+    
+    ; Identifiers & Keywords
+    IDENT,
+    
+    ; Keywords
+    KW_FN,
+    KW_LET,
+    KW_VAR,
+    KW_CONST,
+    KW_IF,
+    KW_ELSE,
+    KW_WHILE,
+    KW_FOR,
+    KW_IN,
+    KW_LOOP,
+    KW_BREAK,
+    KW_CONTINUE,
+    KW_RETURN,
+    KW_STRUCT,
+    KW_ENUM,
+    KW_MATCH,
+    KW_USE,
+    KW_AS,
+    KW_AND,
+    KW_OR,
+    KW_NOT,
+    KW_AI,
+    
+    ; Types
+    KW_I8, KW_I16, KW_I32, KW_I64,
+    KW_U8, KW_U16, KW_U32, KW_U64,
+    KW_F32, KW_F64,
+    KW_BOOL, KW_STRING_TYPE, KW_PTR,
+    
+    ; Operators
+    PLUS,           ; +
+    MINUS,          ; -
+    STAR,           ; *
+    SLASH,          ; /
+    PERCENT,        ; %
+    AMPERSAND,      ; &
+    PIPE,           ; |
+    CARET,          ; ^
+    TILDE,          ; ~
+    LSHIFT,         ; <<
+    RSHIFT,         ; >>
+    
+    ; Comparison
+    EQ,             ; ==
+    NE,             ; !=
+    LT,             ; <
+    LE,             ; <=
+    GT,             ; >
+    GE,             ; >=
+    
+    ; Assignment
+    ASSIGN,         ; =
+    PLUS_ASSIGN,    ; +=
+    MINUS_ASSIGN,   ; -=
+    STAR_ASSIGN,    ; *=
+    SLASH_ASSIGN,   ; /=
+    
+    ; Delimiters
+    LPAREN,         ; (
+    RPAREN,         ; )
+    LBRACKET,       ; [
+    RBRACKET,       ; ]
+    LBRACE,         ; {
+    RBRACE,         ; }
+    COMMA,          ; ,
+    DOT,            ; .
+    COLON,          ; :
+    SEMICOLON,      ; ;
+    ARROW,          ; ->
+    FAT_ARROW,      ; =>
+    DOUBLE_COLON,   ; ::
+    RANGE,          ; ..
+    
+    ; Comments
+    COMMENT,
+    DOC_COMMENT
+}
+
+; --- Token Structure ---
+
+struct Token {
+    type: TokenType,
+    lexeme: ptr(String),
+    line: u32,
+    column: u32,
+    
+    ; Literal values
+    int_value: i64,
+    float_value: f64
+}
+
+; --- Lexer State ---
+
+struct Lexer {
+    source: ptr(String),
+    pos: u32,
+    line: u32,
+    column: u32,
+    
+    ; Token buffer
+    tokens: [Token; 10000],
+    token_count: u32,
+    
+    ; Errors
+    errors: [ptr(String); 100],
+    error_count: u32
+}
+
+var lexer: Lexer
+
+; --- Keywords Table ---
+
+struct Keyword {
+    text: ptr(String),
+    token_type: TokenType
+}
+
+var keywords: [Keyword; 50]
+var keyword_count: u32 = 0
+
+fn init_keywords() {
+    add_keyword("fn", TokenType::KW_FN)
+    add_keyword("let", TokenType::KW_LET)
+    add_keyword("var", TokenType::KW_VAR)
+    add_keyword("const", TokenType::KW_CONST)
+    add_keyword("if", TokenType::KW_IF)
+    add_keyword("else", TokenType::KW_ELSE)
+    add_keyword("while", TokenType::KW_WHILE)
+    add_keyword("for", TokenType::KW_FOR)
+    add_keyword("in", TokenType::KW_IN)
+    add_keyword("loop", TokenType::KW_LOOP)
+    add_keyword("break", TokenType::KW_BREAK)
+    add_keyword("continue", TokenType::KW_CONTINUE)
+    add_keyword("return", TokenType::KW_RETURN)
+    add_keyword("struct", TokenType::KW_STRUCT)
+    add_keyword("enum", TokenType::KW_ENUM)
+    add_keyword("match", TokenType::KW_MATCH)
+    add_keyword("use", TokenType::KW_USE)
+    add_keyword("as", TokenType::KW_AS)
+    add_keyword("and", TokenType::KW_AND)
+    add_keyword("or", TokenType::KW_OR)
+    add_keyword("not", TokenType::KW_NOT)
+    add_keyword("true", TokenType::TRUE)
+    add_keyword("false", TokenType::FALSE)
+    add_keyword("none", TokenType::NONE)
+    add_keyword("ai", TokenType::KW_AI)
+    
+    ; Types
+    add_keyword("i8", TokenType::KW_I8)
+    add_keyword("i16", TokenType::KW_I16)
+    add_keyword("i32", TokenType::KW_I32)
+    add_keyword("i64", TokenType::KW_I64)
+    add_keyword("u8", TokenType::KW_U8)
+    add_keyword("u16", TokenType::KW_U16)
+    add_keyword("u32", TokenType::KW_U32)
+    add_keyword("u64", TokenType::KW_U64)
+    add_keyword("f32", TokenType::KW_F32)
+    add_keyword("f64", TokenType::KW_F64)
+    add_keyword("bool", TokenType::KW_BOOL)
+    add_keyword("string", TokenType::KW_STRING_TYPE)
+    add_keyword("ptr", TokenType::KW_PTR)
+}
+
+fn add_keyword(text: string, type: TokenType) {
+    if keyword_count < 50 {
+        keywords[keyword_count] = Keyword {
+            text: string_from_cstr(text),
+            token_type: type
+        }
+        keyword_count = keyword_count + 1
+    }
+}
+
+fn lookup_keyword(text: ptr(String)) -> TokenType {
+    for i in 0..keyword_count {
+        if string_equals(keywords[i].text, text) {
+            return keywords[i].token_type
+        }
+    }
+    return TokenType::IDENT
+}
+
+; --- Lexer Functions ---
+
+fn lexer_init(source: ptr(String)) {
+    lexer.source = source
+    lexer.pos = 0
+    lexer.line = 1
+    lexer.column = 1
+    lexer.token_count = 0
+    lexer.error_count = 0
+    
+    if keyword_count == 0 {
+        init_keywords()
+    }
+}
+
+fn tokenize(source: ptr(String)) -> [Token] {
+    lexer_init(source)
+    
+    while not is_at_end() {
+        scan_token()
+    }
+    
+    ; Add EOF token
+    add_token(TokenType::EOF)
+    
+    return lexer.tokens[0..lexer.token_count]
+}
+
+fn scan_token() {
+    skip_whitespace()
+    
+    if is_at_end() { return }
+    
+    let c = advance()
+    
+    ; Single character tokens
+    match c {
+        '(' => add_token(TokenType::LPAREN),
+        ')' => add_token(TokenType::RPAREN),
+        '[' => add_token(TokenType::LBRACKET),
+        ']' => add_token(TokenType::RBRACKET),
+        '{' => add_token(TokenType::LBRACE),
+        '}' => add_token(TokenType::RBRACE),
+        ',' => add_token(TokenType::COMMA),
+        ';' => add_token(TokenType::SEMICOLON),
+        '~' => add_token(TokenType::TILDE),
+        
+        ; Two-character tokens
+        '+' => {
+            if match_char('=') { add_token(TokenType::PLUS_ASSIGN) }
+            else { add_token(TokenType::PLUS) }
+        }
+        '-' => {
+            if match_char('>') { add_token(TokenType::ARROW) }
+            else if match_char('=') { add_token(TokenType::MINUS_ASSIGN) }
+            else { add_token(TokenType::MINUS) }
+        }
+        '*' => {
+            if match_char('=') { add_token(TokenType::STAR_ASSIGN) }
+            else { add_token(TokenType::STAR) }
+        }
+        '/' => {
+            if match_char('/') { scan_comment() }
+            else if match_char('=') { add_token(TokenType::SLASH_ASSIGN) }
+            else { add_token(TokenType::SLASH) }
+        }
+        '%' => add_token(TokenType::PERCENT),
+        '&' => add_token(TokenType::AMPERSAND),
+        '|' => add_token(TokenType::PIPE),
+        '^' => add_token(TokenType::CARET),
+        
+        '=' => {
+            if match_char('=') { add_token(TokenType::EQ) }
+            else if match_char('>') { add_token(TokenType::FAT_ARROW) }
+            else { add_token(TokenType::ASSIGN) }
+        }
+        '!' => {
+            if match_char('=') { add_token(TokenType::NE) }
+            else { add_error("Unexpected '!'") }
+        }
+        '<' => {
+            if match_char('=') { add_token(TokenType::LE) }
+            else if match_char('<') { add_token(TokenType::LSHIFT) }
+            else { add_token(TokenType::LT) }
+        }
+        '>' => {
+            if match_char('=') { add_token(TokenType::GE) }
+            else if match_char('>') { add_token(TokenType::RSHIFT) }
+            else { add_token(TokenType::GT) }
+        }
+        ':' => {
+            if match_char(':') { add_token(TokenType::DOUBLE_COLON) }
+            else { add_token(TokenType::COLON) }
+        }
+        '.' => {
+            if match_char('.') { add_token(TokenType::RANGE) }
+            else { add_token(TokenType::DOT) }
+        }
+        
+        ; Literals
+        '"' => scan_string(),
+        '\'' => scan_char(),
+        
+        _ => {
+            if is_digit(c) {
+                scan_number(c)
+            } else if is_alpha(c) or c == '_' {
+                scan_identifier(c)
+            } else {
+                add_error("Unexpected character")
+            }
+        }
+    }
+}
+
+fn scan_string() {
+    let start = lexer.pos
+    
+    while not is_at_end() and peek() != '"' {
+        if peek() == '\n' {
+            lexer.line = lexer.line + 1
+            lexer.column = 1
+        }
+        if peek() == '\\' { advance() }  ; Escape
+        advance()
+    }
+    
+    if is_at_end() {
+        add_error("Unterminated string")
+        return
+    }
+    
+    advance()  ; Closing "
+    
+    let text = string_substring(lexer.source, start, lexer.pos - 1)
+    add_token_with_lexeme(TokenType::STRING, text)
+}
+
+fn scan_char() {
+    let c = advance()
+    if c == '\\' {
+        advance()  ; Escape sequence
+    }
+    
+    if not match_char('\'') {
+        add_error("Unterminated character literal")
+        return
+    }
+    
+    add_token(TokenType::CHAR)
+}
+
+fn scan_number(first: u8) {
+    let start = lexer.pos - 1
+    var is_float = false
+    
+    while is_digit(peek()) {
+        advance()
+    }
+    
+    ; Check for decimal
+    if peek() == '.' and is_digit(peek_next()) {
+        is_float = true
+        advance()  ; .
+        while is_digit(peek()) {
+            advance()
+        }
+    }
+    
+    ; Check for exponent
+    if peek() == 'e' or peek() == 'E' {
+        is_float = true
+        advance()
+        if peek() == '+' or peek() == '-' {
+            advance()
+        }
+        while is_digit(peek()) {
+            advance()
+        }
+    }
+    
+    let text = string_substring(lexer.source, start, lexer.pos)
+    
+    if is_float {
+        let token = add_token_with_lexeme(TokenType::FLOAT, text)
+        token.float_value = parse_float(text)
+    } else {
+        let token = add_token_with_lexeme(TokenType::INTEGER, text)
+        token.int_value = parse_int(text)
+    }
+}
+
+fn scan_identifier(first: u8) {
+    let start = lexer.pos - 1
+    
+    while is_alnum(peek()) or peek() == '_' {
+        advance()
+    }
+    
+    let text = string_substring(lexer.source, start, lexer.pos)
+    let type = lookup_keyword(text)
+    add_token_with_lexeme(type, text)
+}
+
+fn scan_comment() {
+    ; Doc comment?
+    var is_doc = false
+    if peek() == '/' {
+        advance()
+        is_doc = true
+    }
+    
+    let start = lexer.pos
+    
+    while not is_at_end() and peek() != '\n' {
+        advance()
+    }
+    
+    let text = string_substring(lexer.source, start, lexer.pos)
+    
+    if is_doc {
+        add_token_with_lexeme(TokenType::DOC_COMMENT, text)
+    }
+    ; Regular comments are skipped
+}
+
+; --- Helper Functions ---
+
+fn is_at_end() -> bool {
+    return lexer.pos >= lexer.source.length
+}
+
+fn peek() -> u8 {
+    if is_at_end() { return 0 }
+    return lexer.source.data[lexer.pos]
+}
+
+fn peek_next() -> u8 {
+    if lexer.pos + 1 >= lexer.source.length { return 0 }
+    return lexer.source.data[lexer.pos + 1]
+}
+
+fn advance() -> u8 {
+    let c = peek()
+    lexer.pos = lexer.pos + 1
+    lexer.column = lexer.column + 1
+    return c
+}
+
+fn match_char(expected: u8) -> bool {
+    if is_at_end() or peek() != expected {
+        return false
+    }
+    advance()
+    return true
+}
+
+fn skip_whitespace() {
+    while not is_at_end() {
+        let c = peek()
+        match c {
+            ' ' | '\t' | '\r' => {
+                advance()
+            }
+            '\n' => {
+                advance()
+                lexer.line = lexer.line + 1
+                lexer.column = 1
+            }
+            _ => return
+        }
+    }
+}
+
+fn is_digit(c: u8) -> bool {
+    return c >= '0' and c <= '9'
+}
+
+fn is_alpha(c: u8) -> bool {
+    return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z')
+}
+
+fn is_alnum(c: u8) -> bool {
+    return is_digit(c) or is_alpha(c)
+}
+
+; --- Token Creation ---
+
+fn add_token(type: TokenType) -> ptr(Token) {
+    return add_token_with_lexeme(type, null)
+}
+
+fn add_token_with_lexeme(type: TokenType, lexeme: ptr(String)) -> ptr(Token) {
+    if lexer.token_count >= 10000 {
+        return null
+    }
+    
+    let token = &lexer.tokens[lexer.token_count]
+    token.type = type
+    token.lexeme = lexeme
+    token.line = lexer.line
+    token.column = lexer.column
+    token.int_value = 0
+    token.float_value = 0.0
+    
+    lexer.token_count = lexer.token_count + 1
+    return token
+}
+
+fn add_error(msg: string) {
+    if lexer.error_count < 100 {
+        lexer.errors[lexer.error_count] = string_concat(
+            string_from_cstr("Line "),
+            string_concat(
+                int_to_string(lexer.line),
+                string_concat(
+                    string_from_cstr(": "),
+                    string_from_cstr(msg)
+                )
+            )
+        )
+        lexer.error_count = lexer.error_count + 1
+    }
+    add_token(TokenType::ERROR)
+}
+
+; --- Parsing Helpers ---
+
+fn parse_int(s: ptr(String)) -> i64 {
+    var result: i64 = 0
+    var negative = false
+    var i: u32 = 0
+    
+    if s.data[0] == '-' {
+        negative = true
+        i = 1
+    }
+    
+    while i < s.length {
+        let c = s.data[i]
+        if is_digit(c) {
+            result = result * 10 + (c - '0') as i64
+        }
+        i = i + 1
+    }
+    
+    return if negative { -result } else { result }
+}
+
+fn parse_float(s: ptr(String)) -> f64 {
+    ; Simplified float parsing
+    var result: f64 = 0.0
+    var decimal_place: f64 = 0.1
+    var in_decimal = false
+    
+    for i in 0..s.length {
+        let c = s.data[i]
+        if c == '.' {
+            in_decimal = true
+        } else if is_digit(c) {
+            if in_decimal {
+                result = result + (c - '0') as f64 * decimal_place
+                decimal_place = decimal_place * 0.1
+            } else {
+                result = result * 10.0 + (c - '0') as f64
+            }
+        }
+    }
+    
+    return result
+}
+
+; --- AI Integration ---
+
+fn ai_analyze_tokens(tokens: [Token]) -> TokenAnalysis {
+    var analysis = TokenAnalysis {
+        total: tokens.length as u32,
+        keywords: 0,
+        identifiers: 0,
+        literals: 0,
+        operators: 0,
+        complexity: 0.0
+    }
+    
+    for i in 0..tokens.length {
+        let t = tokens[i]
+        match t.type {
+            TokenType::IDENT => analysis.identifiers = analysis.identifiers + 1,
+            TokenType::INTEGER | TokenType::FLOAT | TokenType::STRING => 
+                analysis.literals = analysis.literals + 1,
+            TokenType::PLUS | TokenType::MINUS | TokenType::STAR | TokenType::SLASH =>
+                analysis.operators = analysis.operators + 1,
+            _ => {
+                if t.type as u8 >= TokenType::KW_FN as u8 and t.type as u8 <= TokenType::KW_AI as u8 {
+                    analysis.keywords = analysis.keywords + 1
+                }
+            }
+        }
+    }
+    
+    ; Calculate complexity
+    analysis.complexity = (analysis.keywords as f64 * 2.0 + 
+                          analysis.operators as f64 * 1.5 +
+                          analysis.identifiers as f64) / 
+                          max(1.0, analysis.total as f64)
+    
+    return analysis
+}
+
+struct TokenAnalysis {
+    total: u32,
+    keywords: u32,
+    identifiers: u32,
+    literals: u32,
+    operators: u32,
+    complexity: f64
+}
+
+fn get_lexer_errors() -> [ptr(String)] {
+    return lexer.errors[0..lexer.error_count]
+}
+
+fn has_errors() -> bool {
+    return lexer.error_count > 0
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; END OF MODULE
+; ═══════════════════════════════════════════════════════════════════════════
