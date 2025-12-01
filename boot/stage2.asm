@@ -50,7 +50,7 @@ no_lba:
     ; Fallback: Use CHS mode with multiple reads
     ; Floppy: 18 sectors/track, 2 heads
     ; Kernel starts at LBA 9 (sector 10 on track 0, head 0)
-    ; Need to read 32 sectors total (16KB kernel)
+    ; Need to read 48 sectors total (24KB kernel)
 
     ; Print '1' before Read 1
     mov ah, 0x0E
@@ -97,17 +97,35 @@ no_lba:
     mov al, '3'
     int 0x10
 
-    ; Read 3: 5 sectors from Track 1, Head 0, Sector 1 -> 0x13600
-    ; LBA 36-40 -> physical 0x13600-0x13FFF (5 sectors = 0xA00 bytes)
+    ; Read 3: 18 sectors from Track 1, Head 0, Sector 1 -> 0x13600
     mov ax, 0x1000
     mov es, ax
     mov bx, 0x3600          ; ES:BX = 0x1000:0x3600 = 0x13600
 
     mov ah, 0x02            ; Read sectors
-    mov al, 5               ; 5 sectors
+    mov al, 18              ; 18 sectors (full track)
     mov ch, 1               ; Cylinder 1
     mov cl, 1               ; Sector 1
     mov dh, 0               ; Head 0
+    mov dl, 0               ; Drive 0
+    int 0x13
+    jc disk_error
+
+    ; Print '4' before Read 4
+    mov ah, 0x0E
+    mov al, '4'
+    int 0x10
+
+    ; Read 4: 3 sectors from Track 1, Head 1, Sector 1 -> 0x15A00
+    mov ax, 0x1000
+    mov es, ax
+    mov bx, 0x5A00          ; ES:BX = 0x1000:0x5A00 = 0x15A00
+
+    mov ah, 0x02            ; Read sectors
+    mov al, 3               ; 3 sectors to complete 48 total
+    mov ch, 1               ; Cylinder 1
+    mov cl, 1               ; Sector 1
+    mov dh, 1               ; Head 1
     mov dl, 0               ; Drive 0
     int 0x13
     jc disk_error
@@ -119,13 +137,7 @@ no_lba:
     mov al, 'K'
     int 0x10
 
-    ; ═══════════════════════════════════════════════════════════════════
-    ; SWITCH TO VGA MODE 13h (320x200x256) - JARVIS GRAPHICS MODE
-    ; Must be done BEFORE entering protected mode (while BIOS is available)
-    ; ═══════════════════════════════════════════════════════════════════
-    mov ax, 0x0013      ; VGA Mode 13h: 320x200, 256 colors
-    int 0x10            ; Call BIOS video interrupt
-
+    ; Stay in text mode (kernel uses VGA text buffer at 0xB8000)
     jmp enable_a20
 
 disk_error:
@@ -161,7 +173,7 @@ enable_a20:
 dap:
     db 0x10                 ; Size of DAP (16 bytes)
     db 0                    ; Reserved
-    dw 32                   ; Number of sectors to read
+    dw 48                   ; Number of sectors to read
     dw 0x0000               ; Offset (destination)
     dw 0x1000               ; Segment (destination) = 0x1000:0 = 0x10000
     dq 9                    ; Starting LBA (sector 9 = kernel start)
