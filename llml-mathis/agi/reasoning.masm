@@ -1,0 +1,533 @@
+; ═══════════════════════════════════════════════════════════════════════════
+; LLML-MATHIS: AGI Reasoning Engine
+; ═══════════════════════════════════════════════════════════════════════════
+;
+; THE PINNACLE: Autonomous reasoning and decision making
+;
+; Features:
+; - Chain of Thought reasoning
+; - Logical inference
+; - Causal reasoning
+; - Planning and goal decomposition
+; - Hypothesis generation and testing
+;
+; ═══════════════════════════════════════════════════════════════════════════
+
+; --- Thought Representation ---
+
+enum ThoughtType {
+    OBSERVATION,        ; Raw input from environment
+    HYPOTHESIS,         ; Possible explanation
+    INFERENCE,          ; Logical deduction
+    QUESTION,           ; Something to investigate
+    PLAN,               ; Action to take
+    CONCLUSION,         ; Final answer
+    REFLECTION,         ; Meta-thought about thinking
+    DOUBT,              ; Uncertainty marker
+    INSIGHT             ; Novel connection
+}
+
+struct Thought {
+    id: u64,
+    type: ThoughtType,
+    content: ptr(String),
+    confidence: f32,        ; 0.0 - 1.0
+    
+    ; Reasoning chain
+    premises: [ptr(Thought); 8],
+    premise_count: u32,
+    
+    ; Evidence
+    supporting: [ptr(Thought); 8],
+    contradicting: [ptr(Thought); 8],
+    support_count: u32,
+    contra_count: u32,
+    
+    ; Metadata
+    created_at: u64,
+    source: ptr(String),    ; Where this thought came from
+    
+    ; For planning
+    sub_goals: [ptr(Thought); 8],
+    sub_goal_count: u32,
+    completed: bool
+}
+
+var next_thought_id: u64 = 1
+
+fn thought_new(type: ThoughtType, content: ptr(String)) -> ptr(Thought) {
+    let t = gc_alloc(sizeof(Thought)) as ptr(Thought)
+    t.id = next_thought_id
+    next_thought_id = next_thought_id + 1
+    t.type = type
+    t.content = content
+    t.confidence = 0.5
+    t.premise_count = 0
+    t.support_count = 0
+    t.contra_count = 0
+    t.sub_goal_count = 0
+    t.completed = false
+    t.created_at = get_timestamp()
+    return t
+}
+
+; --- Reasoning Engine ---
+
+struct ReasoningEngine {
+    ; Working memory
+    thoughts: [ptr(Thought); 1000],
+    thought_count: u32,
+    
+    ; Current focus
+    current_goal: ptr(Thought),
+    attention: [ptr(Thought); 10],
+    attention_count: u32,
+    
+    ; Knowledge base
+    facts: ptr(KnowledgeBase),
+    rules: [ptr(Rule); 256],
+    rule_count: u32,
+    
+    ; Inference history
+    inference_chain: [ptr(Thought); 100],
+    chain_length: u32,
+    
+    ; Configuration
+    max_depth: u32,
+    confidence_threshold: f32,
+    
+    ; Statistics
+    inferences_made: u64,
+    hypotheses_tested: u64,
+    conclusions_reached: u64
+}
+
+var reasoner: ReasoningEngine
+
+fn reasoning_init() {
+    reasoner.thought_count = 0
+    reasoner.attention_count = 0
+    reasoner.rule_count = 0
+    reasoner.chain_length = 0
+    reasoner.max_depth = 10
+    reasoner.confidence_threshold = 0.7
+    reasoner.facts = kb_new()
+    reasoner.inferences_made = 0
+    reasoner.hypotheses_tested = 0
+    reasoner.conclusions_reached = 0
+}
+
+; --- Logical Rules ---
+
+struct Rule {
+    name: ptr(String),
+    condition: ptr(Thought),
+    action: ptr(Thought),
+    confidence: f32
+}
+
+fn add_rule(name: string, condition: ptr(String), action: ptr(String)) {
+    if reasoner.rule_count >= 256 {
+        return
+    }
+    
+    let rule = gc_alloc(sizeof(Rule)) as ptr(Rule)
+    rule.name = string_from_cstr(name)
+    rule.condition = thought_new(ThoughtType::OBSERVATION, condition)
+    rule.action = thought_new(ThoughtType::INFERENCE, action)
+    rule.confidence = 0.9
+    
+    reasoner.rules[reasoner.rule_count] = rule
+    reasoner.rule_count = reasoner.rule_count + 1
+}
+
+; --- Chain of Thought ---
+
+fn think(input: ptr(String)) -> ptr(Thought) {
+    ; Start reasoning chain
+    let observation = thought_new(ThoughtType::OBSERVATION, input)
+    add_thought(observation)
+    focus_on(observation)
+    
+    ; Decompose into sub-questions
+    let questions = generate_questions(observation)
+    for i in 0..questions.length {
+        add_thought(questions[i])
+    }
+    
+    ; Generate hypotheses
+    let hypotheses = generate_hypotheses(observation)
+    for i in 0..hypotheses.length {
+        let h = hypotheses[i]
+        add_thought(h)
+        
+        ; Test each hypothesis
+        test_hypothesis(h)
+    }
+    
+    ; Apply inference rules
+    apply_rules()
+    
+    ; Draw conclusions
+    let conclusion = synthesize_conclusion()
+    
+    reasoner.conclusions_reached = reasoner.conclusions_reached + 1
+    return conclusion
+}
+
+fn generate_questions(observation: ptr(Thought)) -> [ptr(Thought)] {
+    var questions: [ptr(Thought); 10]
+    var count: u32 = 0
+    
+    ; What is this about?
+    questions[count] = thought_new(ThoughtType::QUESTION,
+        string_concat(string_from_cstr("What is the main subject of: "), observation.content))
+    count = count + 1
+    
+    ; Why is this important?
+    questions[count] = thought_new(ThoughtType::QUESTION,
+        string_concat(string_from_cstr("Why does this matter: "), observation.content))
+    count = count + 1
+    
+    ; What do I already know?
+    questions[count] = thought_new(ThoughtType::QUESTION,
+        string_from_cstr("What relevant knowledge do I have?"))
+    count = count + 1
+    
+    ; What are the implications?
+    questions[count] = thought_new(ThoughtType::QUESTION,
+        string_from_cstr("What follows from this?"))
+    count = count + 1
+    
+    return questions[0..count]
+}
+
+fn generate_hypotheses(observation: ptr(Thought)) -> [ptr(Thought)] {
+    var hypotheses: [ptr(Thought); 10]
+    var count: u32 = 0
+    
+    ; Look for patterns in knowledge base
+    let related = kb_semantic_search(reasoner.facts, observation.content, 5)
+    
+    for i in 0..related.length {
+        let h = thought_new(ThoughtType::HYPOTHESIS,
+            string_concat(string_from_cstr("Might be related to: "), related[i]))
+        h.confidence = 0.3  ; Low initial confidence
+        hypotheses[count] = h
+        count = count + 1
+    }
+    
+    ; Generate novel hypothesis
+    let novel = thought_new(ThoughtType::HYPOTHESIS,
+        string_concat(string_from_cstr("Novel interpretation: "), observation.content))
+    novel.confidence = 0.2
+    hypotheses[count] = novel
+    count = count + 1
+    
+    reasoner.hypotheses_tested = reasoner.hypotheses_tested + count as u64
+    
+    return hypotheses[0..count]
+}
+
+fn test_hypothesis(hypothesis: ptr(Thought)) {
+    ; Look for supporting evidence
+    let supports = find_supporting_evidence(hypothesis)
+    for i in 0..supports.length {
+        hypothesis.supporting[hypothesis.support_count] = supports[i]
+        hypothesis.support_count = hypothesis.support_count + 1
+        hypothesis.confidence = hypothesis.confidence + 0.1
+    }
+    
+    ; Look for contradicting evidence
+    let contras = find_contradicting_evidence(hypothesis)
+    for i in 0..contras.length {
+        hypothesis.contradicting[hypothesis.contra_count] = contras[i]
+        hypothesis.contra_count = hypothesis.contra_count + 1
+        hypothesis.confidence = hypothesis.confidence - 0.15
+    }
+    
+    ; Clamp confidence
+    hypothesis.confidence = clamp_f(hypothesis.confidence as f64, 0.0, 1.0) as f32
+}
+
+fn find_supporting_evidence(hypothesis: ptr(Thought)) -> [ptr(Thought)] {
+    var evidence: [ptr(Thought); 10]
+    var count: u32 = 0
+    
+    ; Search thoughts
+    for i in 0..reasoner.thought_count {
+        let t = reasoner.thoughts[i]
+        if t != hypothesis and thoughts_related(t, hypothesis) {
+            if t.type == ThoughtType::OBSERVATION or t.type == ThoughtType::INFERENCE {
+                if count < 10 {
+                    evidence[count] = t
+                    count = count + 1
+                }
+            }
+        }
+    }
+    
+    return evidence[0..count]
+}
+
+fn find_contradicting_evidence(hypothesis: ptr(Thought)) -> [ptr(Thought)] {
+    var evidence: [ptr(Thought); 10]
+    var count: u32 = 0
+    
+    ; Look for negations or conflicts
+    for i in 0..reasoner.thought_count {
+        let t = reasoner.thoughts[i]
+        if t != hypothesis and thoughts_contradict(t, hypothesis) {
+            if count < 10 {
+                evidence[count] = t
+                count = count + 1
+            }
+        }
+    }
+    
+    return evidence[0..count]
+}
+
+fn thoughts_related(a: ptr(Thought), b: ptr(Thought)) -> bool {
+    ; Simple keyword overlap check
+    let words_a = string_split_words(a.content)
+    let words_b = string_split_words(b.content)
+    
+    var overlap: u32 = 0
+    for i in 0..words_a.length {
+        for j in 0..words_b.length {
+            if string_equals(words_a[i], words_b[j]) {
+                overlap = overlap + 1
+            }
+        }
+    }
+    
+    return overlap >= 2
+}
+
+fn thoughts_contradict(a: ptr(Thought), b: ptr(Thought)) -> bool {
+    ; Check for negation words
+    let negations = ["not", "never", "false", "wrong", "incorrect", "impossible"]
+    
+    for i in 0..negations.length {
+        if string_contains(a.content, string_from_cstr(negations[i])) {
+            if thoughts_related(a, b) {
+                return true
+            }
+        }
+    }
+    
+    return false
+}
+
+fn apply_rules() {
+    var changed = true
+    var iterations: u32 = 0
+    
+    while changed and iterations < reasoner.max_depth {
+        changed = false
+        iterations = iterations + 1
+        
+        for i in 0..reasoner.rule_count {
+            let rule = reasoner.rules[i]
+            
+            ; Check if condition matches any thought
+            for j in 0..reasoner.thought_count {
+                let t = reasoner.thoughts[j]
+                
+                if matches_condition(t, rule.condition) {
+                    ; Apply rule
+                    let inference = thought_new(ThoughtType::INFERENCE, rule.action.content)
+                    inference.confidence = t.confidence * rule.confidence
+                    inference.premises[0] = t
+                    inference.premise_count = 1
+                    
+                    if not thought_exists(inference) {
+                        add_thought(inference)
+                        add_to_chain(inference)
+                        changed = true
+                        reasoner.inferences_made = reasoner.inferences_made + 1
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn matches_condition(thought: ptr(Thought), condition: ptr(Thought)) -> bool {
+    return string_contains(thought.content, condition.content)
+}
+
+fn thought_exists(thought: ptr(Thought)) -> bool {
+    for i in 0..reasoner.thought_count {
+        if string_equals(reasoner.thoughts[i].content, thought.content) {
+            return true
+        }
+    }
+    return false
+}
+
+fn synthesize_conclusion() -> ptr(Thought) {
+    ; Find highest confidence hypothesis/inference
+    var best: ptr(Thought) = null
+    var best_confidence: f32 = 0.0
+    
+    for i in 0..reasoner.thought_count {
+        let t = reasoner.thoughts[i]
+        if t.type == ThoughtType::HYPOTHESIS or t.type == ThoughtType::INFERENCE {
+            if t.confidence > best_confidence {
+                best_confidence = t.confidence
+                best = t
+            }
+        }
+    }
+    
+    if best == null or best_confidence < reasoner.confidence_threshold {
+        ; No confident conclusion
+        let uncertain = thought_new(ThoughtType::DOUBT,
+            string_from_cstr("I'm uncertain. Need more information."))
+        return uncertain
+    }
+    
+    ; Create conclusion
+    let conclusion = thought_new(ThoughtType::CONCLUSION, best.content)
+    conclusion.confidence = best_confidence
+    conclusion.premises[0] = best
+    conclusion.premise_count = 1
+    
+    return conclusion
+}
+
+; --- Planning ---
+
+fn plan(goal: ptr(String)) -> ptr(Thought) {
+    let goal_thought = thought_new(ThoughtType::PLAN, goal)
+    reasoner.current_goal = goal_thought
+    
+    ; Decompose goal into sub-goals
+    let sub_goals = decompose_goal(goal_thought)
+    
+    for i in 0..sub_goals.length {
+        goal_thought.sub_goals[goal_thought.sub_goal_count] = sub_goals[i]
+        goal_thought.sub_goal_count = goal_thought.sub_goal_count + 1
+    }
+    
+    return goal_thought
+}
+
+fn decompose_goal(goal: ptr(Thought)) -> [ptr(Thought)] {
+    var sub_goals: [ptr(Thought); 8]
+    var count: u32 = 0
+    
+    ; Simple decomposition: what needs to happen first?
+    sub_goals[count] = thought_new(ThoughtType::PLAN,
+        string_concat(string_from_cstr("First, understand: "), goal.content))
+    count = count + 1
+    
+    sub_goals[count] = thought_new(ThoughtType::PLAN,
+        string_concat(string_from_cstr("Then, find relevant info for: "), goal.content))
+    count = count + 1
+    
+    sub_goals[count] = thought_new(ThoughtType::PLAN,
+        string_concat(string_from_cstr("Finally, act on: "), goal.content))
+    count = count + 1
+    
+    return sub_goals[0..count]
+}
+
+fn execute_plan(plan: ptr(Thought)) -> bool {
+    for i in 0..plan.sub_goal_count {
+        let sub = plan.sub_goals[i]
+        
+        if not sub.completed {
+            ; Try to complete sub-goal
+            let result = think(sub.content)
+            
+            if result.type == ThoughtType::CONCLUSION {
+                sub.completed = true
+            } else {
+                ; Sub-goal failed, plan cannot complete
+                return false
+            }
+        }
+    }
+    
+    plan.completed = true
+    return true
+}
+
+; --- Working Memory ---
+
+fn add_thought(thought: ptr(Thought)) {
+    if reasoner.thought_count < 1000 {
+        reasoner.thoughts[reasoner.thought_count] = thought
+        reasoner.thought_count = reasoner.thought_count + 1
+    } else {
+        ; Forget oldest low-confidence thought
+        forget_weakest()
+        reasoner.thoughts[reasoner.thought_count] = thought
+        reasoner.thought_count = reasoner.thought_count + 1
+    }
+}
+
+fn forget_weakest() {
+    var weakest_idx: u32 = 0
+    var weakest_conf: f32 = reasoner.thoughts[0].confidence
+    
+    for i in 1..reasoner.thought_count {
+        if reasoner.thoughts[i].confidence < weakest_conf {
+            weakest_conf = reasoner.thoughts[i].confidence
+            weakest_idx = i
+        }
+    }
+    
+    ; Remove by shifting
+    for i in weakest_idx..(reasoner.thought_count - 1) {
+        reasoner.thoughts[i] = reasoner.thoughts[i + 1]
+    }
+    reasoner.thought_count = reasoner.thought_count - 1
+}
+
+fn focus_on(thought: ptr(Thought)) {
+    ; Shift attention
+    if reasoner.attention_count >= 10 {
+        for i in 0..9 {
+            reasoner.attention[i] = reasoner.attention[i + 1]
+        }
+        reasoner.attention_count = 9
+    }
+    
+    reasoner.attention[reasoner.attention_count] = thought
+    reasoner.attention_count = reasoner.attention_count + 1
+}
+
+fn add_to_chain(thought: ptr(Thought)) {
+    if reasoner.chain_length < 100 {
+        reasoner.inference_chain[reasoner.chain_length] = thought
+        reasoner.chain_length = reasoner.chain_length + 1
+    }
+}
+
+fn get_chain_of_thought() -> ptr(String) {
+    var result = string_from_cstr("Chain of Thought:\n")
+    
+    for i in 0..reasoner.chain_length {
+        let t = reasoner.inference_chain[i]
+        result = string_concat(result, string_from_cstr("  → "))
+        result = string_concat(result, t.content)
+        result = string_concat(result, string_from_cstr("\n"))
+    }
+    
+    return result
+}
+
+fn clear_reasoning() {
+    reasoner.thought_count = 0
+    reasoner.attention_count = 0
+    reasoner.chain_length = 0
+    reasoner.current_goal = null
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; END OF MODULE
+; ═══════════════════════════════════════════════════════════════════════════

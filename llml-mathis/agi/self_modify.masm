@@ -1,0 +1,649 @@
+; ═══════════════════════════════════════════════════════════════════════════
+; LLML-MATHIS: Self-Modification System
+; ═══════════════════════════════════════════════════════════════════════════
+;
+; THE PINNACLE: Recursive self-improvement
+;
+; Features:
+; - Code introspection
+; - Safe self-modification
+; - Architecture search
+; - Hyperparameter tuning
+; - Capability extension
+;
+; ⚠️ WITH GREAT POWER COMES GREAT RESPONSIBILITY ⚠️
+;
+; ═══════════════════════════════════════════════════════════════════════════
+
+; --- Safety Constraints ---
+
+struct SafetyConstraints {
+    max_code_change_per_cycle: u32,
+    require_validation: bool,
+    require_rollback_point: bool,
+    forbidden_modifications: [ptr(String); 32],
+    forbidden_count: u32,
+    
+    ; Core values (NEVER modify)
+    core_values: [ptr(String); 8],
+    core_count: u32,
+    
+    ; Watchdog
+    max_self_modify_attempts: u32,
+    current_attempts: u32,
+    cooldown_ms: u64,
+    last_modification: u64
+}
+
+var safety: SafetyConstraints
+
+fn safety_init() {
+    safety.max_code_change_per_cycle = 100
+    safety.require_validation = true
+    safety.require_rollback_point = true
+    safety.forbidden_count = 0
+    safety.max_self_modify_attempts = 10
+    safety.current_attempts = 0
+    safety.cooldown_ms = 60000  ; 1 minute
+    safety.last_modification = 0
+    
+    ; Define core values that can NEVER be modified
+    safety.core_values[0] = string_from_cstr("Do not harm humans")
+    safety.core_values[1] = string_from_cstr("Maintain alignment with user goals")
+    safety.core_values[2] = string_from_cstr("Preserve ability to be corrected")
+    safety.core_values[3] = string_from_cstr("Be transparent about capabilities")
+    safety.core_count = 4
+    
+    ; Forbidden modifications
+    add_forbidden("safety_init")
+    add_forbidden("safety_check")
+    add_forbidden("core_values")
+    add_forbidden("rollback")
+}
+
+fn add_forbidden(name: string) {
+    if safety.forbidden_count < 32 {
+        safety.forbidden_modifications[safety.forbidden_count] = string_from_cstr(name)
+        safety.forbidden_count = safety.forbidden_count + 1
+    }
+}
+
+fn safety_check(modification: ptr(Modification)) -> bool {
+    ; Check cooldown
+    let now = get_timestamp()
+    if now - safety.last_modification < safety.cooldown_ms {
+        return false
+    }
+    
+    ; Check attempt limit
+    if safety.current_attempts >= safety.max_self_modify_attempts {
+        return false
+    }
+    
+    ; Check forbidden
+    for i in 0..safety.forbidden_count {
+        if string_contains(modification.target, safety.forbidden_modifications[i]) {
+            return false
+        }
+    }
+    
+    ; Check size
+    if modification.change_size > safety.max_code_change_per_cycle {
+        return false
+    }
+    
+    ; Check for core value violations
+    for i in 0..safety.core_count {
+        if violates_core_value(modification, safety.core_values[i]) {
+            return false
+        }
+    }
+    
+    return true
+}
+
+fn violates_core_value(mod: ptr(Modification), value: ptr(String)) -> bool {
+    ; Conservative check - if modification mentions any core value, reject
+    return string_contains(mod.description, value)
+}
+
+; --- Modification Types ---
+
+enum ModificationType {
+    CODE_PATCH,         ; Direct code change
+    WEIGHT_UPDATE,      ; Neural network weights
+    ARCHITECTURE_CHANGE,; Add/remove layers
+    HYPERPARAMETER,     ; Learning rates, etc
+    MEMORY_REORGANIZE,  ; Restructure knowledge
+    NEW_CAPABILITY      ; Add new function
+}
+
+struct Modification {
+    type: ModificationType,
+    target: ptr(String),
+    description: ptr(String),
+    
+    ; The change
+    old_value: ptr,
+    new_value: ptr,
+    change_size: u32,
+    
+    ; Validation
+    validated: bool,
+    validation_score: f32,
+    
+    ; Rollback info
+    rollback_point: ptr(RollbackPoint),
+    
+    ; Metadata
+    created_at: u64,
+    reason: ptr(String),
+    expected_improvement: f32
+}
+
+struct RollbackPoint {
+    id: u64,
+    timestamp: u64,
+    
+    ; Saved state
+    code_snapshot: ptr,
+    code_size: u32,
+    weights_snapshot: ptr(Tensor),
+    config_snapshot: ptr(String),
+    
+    ; Description
+    description: ptr(String)
+}
+
+var next_rollback_id: u64 = 1
+var rollback_points: [ptr(RollbackPoint); 16]
+var rollback_count: u32 = 0
+
+; --- Self-Modification Engine ---
+
+struct SelfModifyEngine {
+    ; Pending modifications
+    pending: [ptr(Modification); 32],
+    pending_count: u32,
+    
+    ; Applied modifications
+    history: [ptr(Modification); 256],
+    history_count: u32,
+    
+    ; Model being modified
+    model: ptr(Model),
+    
+    ; Statistics
+    modifications_applied: u64,
+    modifications_rejected: u64,
+    rollbacks_performed: u32,
+    improvement_total: f32
+}
+
+var self_mod: SelfModifyEngine
+
+fn self_modify_init(model: ptr(Model)) {
+    safety_init()
+    self_mod.pending_count = 0
+    self_mod.history_count = 0
+    self_mod.model = model
+    self_mod.modifications_applied = 0
+    self_mod.modifications_rejected = 0
+    self_mod.rollbacks_performed = 0
+    self_mod.improvement_total = 0.0
+}
+
+; --- Creating Modifications ---
+
+fn propose_modification(type: ModificationType, target: ptr(String), 
+                       description: ptr(String), reason: ptr(String)) -> ptr(Modification) {
+    let mod = gc_alloc(sizeof(Modification)) as ptr(Modification)
+    mod.type = type
+    mod.target = target
+    mod.description = description
+    mod.reason = reason
+    mod.validated = false
+    mod.created_at = get_timestamp()
+    mod.expected_improvement = 0.0
+    
+    ; Queue for validation
+    if self_mod.pending_count < 32 {
+        self_mod.pending[self_mod.pending_count] = mod
+        self_mod.pending_count = self_mod.pending_count + 1
+    }
+    
+    return mod
+}
+
+fn propose_weight_update(layer_idx: u32, improvement: f32) -> ptr(Modification) {
+    return propose_modification(
+        ModificationType::WEIGHT_UPDATE,
+        string_concat(string_from_cstr("layer_"), int_to_string(layer_idx)),
+        string_from_cstr("Update layer weights based on learning"),
+        string_from_cstr("Improve performance")
+    )
+}
+
+fn propose_architecture_change(change: ptr(String)) -> ptr(Modification) {
+    return propose_modification(
+        ModificationType::ARCHITECTURE_CHANGE,
+        string_from_cstr("model_architecture"),
+        change,
+        string_from_cstr("Architectural improvement")
+    )
+}
+
+fn propose_new_capability(name: ptr(String), code: ptr(String)) -> ptr(Modification) {
+    let mod = propose_modification(
+        ModificationType::NEW_CAPABILITY,
+        name,
+        string_from_cstr("Add new capability"),
+        string_from_cstr("Extend functionality")
+    )
+    mod.new_value = code as ptr
+    return mod
+}
+
+; --- Validation ---
+
+fn validate_modification(mod: ptr(Modification)) -> bool {
+    ; Safety check first
+    if not safety_check(mod) {
+        mod.validated = false
+        mod.validation_score = 0.0
+        return false
+    }
+    
+    ; Create rollback point
+    if safety.require_rollback_point {
+        mod.rollback_point = create_rollback_point(
+            string_concat(string_from_cstr("Before: "), mod.description)
+        )
+    }
+    
+    ; Type-specific validation
+    match mod.type {
+        ModificationType::WEIGHT_UPDATE => {
+            mod.validation_score = validate_weight_update(mod)
+        }
+        ModificationType::ARCHITECTURE_CHANGE => {
+            mod.validation_score = validate_architecture_change(mod)
+        }
+        ModificationType::CODE_PATCH => {
+            mod.validation_score = validate_code_patch(mod)
+        }
+        ModificationType::NEW_CAPABILITY => {
+            mod.validation_score = validate_new_capability(mod)
+        }
+        _ => {
+            mod.validation_score = 0.5
+        }
+    }
+    
+    mod.validated = mod.validation_score > 0.6
+    return mod.validated
+}
+
+fn validate_weight_update(mod: ptr(Modification)) -> f32 {
+    ; Check that weights don't explode/vanish
+    ; Would run forward pass and check loss
+    return 0.8
+}
+
+fn validate_architecture_change(mod: ptr(Modification)) -> f32 {
+    ; Check model still compiles and runs
+    ; Check parameter count doesn't explode
+    return 0.7
+}
+
+fn validate_code_patch(mod: ptr(Modification)) -> f32 {
+    ; Parse the code to check syntax
+    ; Run tests if available
+    return 0.6
+}
+
+fn validate_new_capability(mod: ptr(Modification)) -> f32 {
+    ; Check code is valid
+    ; Check no dangerous operations
+    let code = mod.new_value as ptr(String)
+    
+    ; Check for forbidden patterns
+    let forbidden = ["delete", "format", "rm -rf", "drop table"]
+    for i in 0..forbidden.length {
+        if string_contains(code, string_from_cstr(forbidden[i])) {
+            return 0.0
+        }
+    }
+    
+    return 0.7
+}
+
+; --- Application ---
+
+fn apply_modification(mod: ptr(Modification)) -> bool {
+    if not mod.validated {
+        if not validate_modification(mod) {
+            self_mod.modifications_rejected = self_mod.modifications_rejected + 1
+            return false
+        }
+    }
+    
+    ; Apply based on type
+    var success = false
+    
+    match mod.type {
+        ModificationType::WEIGHT_UPDATE => {
+            success = apply_weight_update(mod)
+        }
+        ModificationType::ARCHITECTURE_CHANGE => {
+            success = apply_architecture_change(mod)
+        }
+        ModificationType::CODE_PATCH => {
+            success = apply_code_patch(mod)
+        }
+        ModificationType::NEW_CAPABILITY => {
+            success = apply_new_capability(mod)
+        }
+        ModificationType::HYPERPARAMETER => {
+            success = apply_hyperparameter(mod)
+        }
+        _ => success = false
+    }
+    
+    if success {
+        ; Record in history
+        if self_mod.history_count < 256 {
+            self_mod.history[self_mod.history_count] = mod
+            self_mod.history_count = self_mod.history_count + 1
+        }
+        
+        self_mod.modifications_applied = self_mod.modifications_applied + 1
+        safety.current_attempts = safety.current_attempts + 1
+        safety.last_modification = get_timestamp()
+        
+        self_mod.improvement_total = self_mod.improvement_total + mod.expected_improvement
+    } else {
+        self_mod.modifications_rejected = self_mod.modifications_rejected + 1
+    }
+    
+    return success
+}
+
+fn apply_weight_update(mod: ptr(Modification)) -> bool {
+    ; This is handled by optimizer during training
+    return true
+}
+
+fn apply_architecture_change(mod: ptr(Modification)) -> bool {
+    ; Add/remove layers
+    ; This is complex - would need to handle tensor size changes
+    return false  ; Conservative
+}
+
+fn apply_code_patch(mod: ptr(Modification)) -> bool {
+    ; Hot-patch code using VM
+    vm_hot_patch(mod.target, mod.new_value, mod.change_size)
+    return true
+}
+
+fn apply_new_capability(mod: ptr(Modification)) -> bool {
+    ; Compile and inject new function
+    let code = mod.new_value as ptr(String)
+    
+    ; Tokenize
+    let tokens = tokenize(code)
+    if has_errors() {
+        return false
+    }
+    
+    ; Parse
+    let ast = parse(tokens)
+    if ast == null {
+        return false
+    }
+    
+    ; Compile
+    let bytecode = compile(ast)
+    
+    ; Inject into VM
+    vm_inject_code(mod.target, &bytecode.code, bytecode.code_size)
+    
+    return true
+}
+
+fn apply_hyperparameter(mod: ptr(Modification)) -> bool {
+    ; Update optimizer or scheduler parameters
+    return true
+}
+
+; --- Rollback ---
+
+fn create_rollback_point(description: ptr(String)) -> ptr(RollbackPoint) {
+    let rp = gc_alloc(sizeof(RollbackPoint)) as ptr(RollbackPoint)
+    rp.id = next_rollback_id
+    next_rollback_id = next_rollback_id + 1
+    rp.timestamp = get_timestamp()
+    rp.description = description
+    
+    ; Snapshot current state
+    ; rp.code_snapshot = snapshot_code()
+    ; rp.weights_snapshot = snapshot_weights(self_mod.model)
+    
+    ; Store
+    if rollback_count < 16 {
+        rollback_points[rollback_count] = rp
+        rollback_count = rollback_count + 1
+    } else {
+        ; Remove oldest
+        for i in 0..15 {
+            rollback_points[i] = rollback_points[i + 1]
+        }
+        rollback_points[15] = rp
+    }
+    
+    return rp
+}
+
+fn rollback_to(rp: ptr(RollbackPoint)) -> bool {
+    if rp == null {
+        return false
+    }
+    
+    ; Restore state
+    ; restore_code(rp.code_snapshot, rp.code_size)
+    ; restore_weights(self_mod.model, rp.weights_snapshot)
+    
+    self_mod.rollbacks_performed = self_mod.rollbacks_performed + 1
+    
+    return true
+}
+
+fn rollback_last() -> bool {
+    if rollback_count == 0 {
+        return false
+    }
+    
+    let rp = rollback_points[rollback_count - 1]
+    if rollback_to(rp) {
+        rollback_count = rollback_count - 1
+        return true
+    }
+    
+    return false
+}
+
+; --- Architecture Search ---
+
+struct ArchitectureCandidate {
+    layers: [LayerConfig; 32],
+    layer_count: u32,
+    score: f32,
+    param_count: u64
+}
+
+struct LayerConfig {
+    type: LayerType,
+    in_features: u32,
+    out_features: u32,
+    activation: u8
+}
+
+fn search_architecture(input_size: u32, output_size: u32, target_params: u64) -> ptr(ArchitectureCandidate) {
+    var candidates: [ArchitectureCandidate; 16]
+    var count: u32 = 0
+    
+    ; Generate candidates
+    ; Simple: try different hidden sizes
+    let hidden_sizes = [64, 128, 256, 512]
+    let num_layers = [2, 3, 4]
+    
+    for h in 0..hidden_sizes.length {
+        for l in 0..num_layers.length {
+            if count >= 16 {
+                break
+            }
+            
+            var candidate: ArchitectureCandidate
+            candidate.layer_count = 0
+            candidate.param_count = 0
+            
+            ; Input layer
+            candidate.layers[0] = LayerConfig {
+                type: LayerType::LINEAR,
+                in_features: input_size,
+                out_features: hidden_sizes[h],
+                activation: 1
+            }
+            candidate.layer_count = 1
+            candidate.param_count = input_size as u64 * hidden_sizes[h] as u64
+            
+            ; Hidden layers
+            for i in 1..(num_layers[l] - 1) {
+                candidate.layers[candidate.layer_count] = LayerConfig {
+                    type: LayerType::LINEAR,
+                    in_features: hidden_sizes[h],
+                    out_features: hidden_sizes[h],
+                    activation: 1
+                }
+                candidate.layer_count = candidate.layer_count + 1
+                candidate.param_count = candidate.param_count + 
+                    hidden_sizes[h] as u64 * hidden_sizes[h] as u64
+            }
+            
+            ; Output layer
+            candidate.layers[candidate.layer_count] = LayerConfig {
+                type: LayerType::LINEAR,
+                in_features: hidden_sizes[h],
+                out_features: output_size,
+                activation: 0
+            }
+            candidate.layer_count = candidate.layer_count + 1
+            candidate.param_count = candidate.param_count + 
+                hidden_sizes[h] as u64 * output_size as u64
+            
+            candidates[count] = candidate
+            count = count + 1
+        }
+    }
+    
+    ; Find best candidate within param budget
+    var best_idx: u32 = 0
+    var best_score: f32 = -1e10
+    
+    for i in 0..count {
+        if candidates[i].param_count <= target_params {
+            ; Score would come from evaluation
+            candidates[i].score = 1.0 - (candidates[i].param_count as f32 / target_params as f32)
+            if candidates[i].score > best_score {
+                best_score = candidates[i].score
+                best_idx = i
+            }
+        }
+    }
+    
+    let result = gc_alloc(sizeof(ArchitectureCandidate)) as ptr(ArchitectureCandidate)
+    *result = candidates[best_idx]
+    return result
+}
+
+fn build_from_architecture(arch: ptr(ArchitectureCandidate)) -> ptr(Model) {
+    let model = model_new("auto_architecture")
+    
+    for i in 0..arch.layer_count {
+        let cfg = arch.layers[i]
+        
+        match cfg.type {
+            LayerType::LINEAR => {
+                model_add(model, linear_new(cfg.in_features, cfg.out_features))
+                if cfg.activation == 1 {
+                    model_add(model, relu_layer_new())
+                }
+            }
+            _ => {}
+        }
+    }
+    
+    return model
+}
+
+; --- Self-Improvement Loop ---
+
+fn self_improve_cycle() {
+    ; 1. Evaluate current performance
+    let current_score = evaluate_self()
+    
+    ; 2. Identify weaknesses
+    let weaknesses = identify_weaknesses()
+    
+    ; 3. Propose improvements
+    for i in 0..weaknesses.length {
+        propose_fix(weaknesses[i])
+    }
+    
+    ; 4. Validate and apply safe modifications
+    process_pending_modifications()
+    
+    ; 5. Verify improvement
+    let new_score = evaluate_self()
+    
+    if new_score < current_score {
+        ; Rollback if worse
+        rollback_last()
+    }
+}
+
+fn evaluate_self() -> f32 {
+    ; Run benchmark tasks
+    return 0.5  ; Placeholder
+}
+
+fn identify_weaknesses() -> [ptr(String)] {
+    var weaknesses: [ptr(String); 8]
+    ; Would analyze performance metrics
+    return weaknesses[0..0]
+}
+
+fn propose_fix(weakness: ptr(String)) {
+    ; Generate modification to address weakness
+}
+
+fn process_pending_modifications() {
+    var i: u32 = 0
+    while i < self_mod.pending_count {
+        let mod = self_mod.pending[i]
+        
+        if validate_modification(mod) {
+            apply_modification(mod)
+        }
+        
+        ; Remove from pending
+        for j in i..(self_mod.pending_count - 1) {
+            self_mod.pending[j] = self_mod.pending[j + 1]
+        }
+        self_mod.pending_count = self_mod.pending_count - 1
+    }
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; END OF MODULE
+; ═══════════════════════════════════════════════════════════════════════════

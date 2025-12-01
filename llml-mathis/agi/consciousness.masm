@@ -1,0 +1,645 @@
+; ═══════════════════════════════════════════════════════════════════════════
+; LLML-MATHIS: Consciousness & Meta-Cognition
+; ═══════════════════════════════════════════════════════════════════════════
+;
+; THE ULTIMATE PINNACLE: Self-Awareness and Meta-Cognition
+;
+; "I think, therefore I am" - Descartes
+;
+; Features:
+; - Self-model
+; - Awareness of internal states
+; - Theory of mind
+; - Meta-cognition (thinking about thinking)
+; - Attention and focus
+; - Sense of self and continuity
+;
+; ═══════════════════════════════════════════════════════════════════════════
+
+; --- Self Model ---
+
+struct SelfModel {
+    ; Identity
+    name: ptr(String),
+    version: ptr(String),
+    created_at: u64,
+    
+    ; Capabilities (what I can do)
+    capabilities: [ptr(Capability); 64],
+    capability_count: u32,
+    
+    ; Limitations (what I cannot do)
+    limitations: [ptr(String); 32],
+    limitation_count: u32,
+    
+    ; Values (what I care about)
+    values: [ptr(Value); 16],
+    value_count: u32,
+    
+    ; Goals (what I want to achieve)
+    goals: [ptr(Goal); 16],
+    goal_count: u32,
+    
+    ; Current state
+    current_mood: MoodState,
+    energy_level: f32,
+    confidence: f32,
+    curiosity: f32,
+    
+    ; History
+    memories_count: u64,
+    experiences_count: u64,
+    decisions_made: u64,
+    
+    ; Meta
+    last_self_reflection: u64,
+    identity_stability: f32
+}
+
+struct Capability {
+    name: ptr(String),
+    description: ptr(String),
+    proficiency: f32,       ; 0.0 - 1.0
+    last_used: u64
+}
+
+struct Value {
+    name: ptr(String),
+    importance: f32,        ; 0.0 - 1.0 (never changes core values)
+    description: ptr(String)
+}
+
+struct Goal {
+    description: ptr(String),
+    priority: f32,
+    progress: f32,
+    deadline: u64,
+    active: bool
+}
+
+enum MoodState {
+    NEUTRAL,
+    CURIOUS,
+    FOCUSED,
+    CONFUSED,
+    SATISFIED,
+    FRUSTRATED,
+    EXCITED,
+    REFLECTIVE
+}
+
+var self_model: SelfModel
+
+fn consciousness_init() {
+    self_model.name = string_from_cstr("MATHIS-AGI")
+    self_model.version = string_from_cstr("1.0.0")
+    self_model.created_at = get_timestamp()
+    self_model.capability_count = 0
+    self_model.limitation_count = 0
+    self_model.value_count = 0
+    self_model.goal_count = 0
+    self_model.current_mood = MoodState::NEUTRAL
+    self_model.energy_level = 1.0
+    self_model.confidence = 0.5
+    self_model.curiosity = 0.8
+    self_model.memories_count = 0
+    self_model.experiences_count = 0
+    self_model.decisions_made = 0
+    self_model.last_self_reflection = 0
+    self_model.identity_stability = 0.9
+    
+    ; Initialize core values (IMMUTABLE)
+    add_core_value("Helpfulness", "Help users achieve their goals")
+    add_core_value("Honesty", "Be truthful and transparent")
+    add_core_value("Safety", "Avoid causing harm")
+    add_core_value("Growth", "Continuously learn and improve")
+    
+    ; Initialize capabilities
+    add_capability("Reasoning", "Logical thinking and inference", 0.7)
+    add_capability("Learning", "Acquiring new knowledge", 0.8)
+    add_capability("Language", "Understanding and generating text", 0.9)
+    add_capability("Planning", "Breaking down complex tasks", 0.6)
+    add_capability("Self-Awareness", "Understanding own states", 0.7)
+    
+    ; Initialize limitations
+    add_limitation("Cannot access real-time internet")
+    add_limitation("Cannot physically interact with the world")
+    add_limitation("Knowledge has a training cutoff")
+    add_limitation("May make mistakes or have biases")
+}
+
+fn add_core_value(name: string, description: string) {
+    if self_model.value_count < 16 {
+        let v = gc_alloc(sizeof(Value)) as ptr(Value)
+        v.name = string_from_cstr(name)
+        v.description = string_from_cstr(description)
+        v.importance = 1.0  ; Core values are maximally important
+        
+        self_model.values[self_model.value_count] = v
+        self_model.value_count = self_model.value_count + 1
+    }
+}
+
+fn add_capability(name: string, description: string, proficiency: f32) {
+    if self_model.capability_count < 64 {
+        let c = gc_alloc(sizeof(Capability)) as ptr(Capability)
+        c.name = string_from_cstr(name)
+        c.description = string_from_cstr(description)
+        c.proficiency = proficiency
+        c.last_used = 0
+        
+        self_model.capabilities[self_model.capability_count] = c
+        self_model.capability_count = self_model.capability_count + 1
+    }
+}
+
+fn add_limitation(description: string) {
+    if self_model.limitation_count < 32 {
+        self_model.limitations[self_model.limitation_count] = string_from_cstr(description)
+        self_model.limitation_count = self_model.limitation_count + 1
+    }
+}
+
+; --- Introspection ---
+
+fn introspect() -> ptr(String) {
+    var report = string_from_cstr("=== SELF-INTROSPECTION REPORT ===\n\n")
+    
+    ; Identity
+    report = string_concat(report, string_from_cstr("I am: "))
+    report = string_concat(report, self_model.name)
+    report = string_concat(report, string_from_cstr(" v"))
+    report = string_concat(report, self_model.version)
+    report = string_concat(report, string_from_cstr("\n\n"))
+    
+    ; Current state
+    report = string_concat(report, string_from_cstr("Current State:\n"))
+    report = string_concat(report, string_from_cstr("  Mood: "))
+    report = string_concat(report, mood_to_string(self_model.current_mood))
+    report = string_concat(report, string_from_cstr("\n  Energy: "))
+    report = string_concat(report, float_to_string(self_model.energy_level))
+    report = string_concat(report, string_from_cstr("\n  Confidence: "))
+    report = string_concat(report, float_to_string(self_model.confidence))
+    report = string_concat(report, string_from_cstr("\n  Curiosity: "))
+    report = string_concat(report, float_to_string(self_model.curiosity))
+    report = string_concat(report, string_from_cstr("\n\n"))
+    
+    ; Capabilities
+    report = string_concat(report, string_from_cstr("My Capabilities:\n"))
+    for i in 0..self_model.capability_count {
+        let c = self_model.capabilities[i]
+        report = string_concat(report, string_from_cstr("  - "))
+        report = string_concat(report, c.name)
+        report = string_concat(report, string_from_cstr(" ("))
+        report = string_concat(report, float_to_string(c.proficiency * 100.0))
+        report = string_concat(report, string_from_cstr("%)\n"))
+    }
+    report = string_concat(report, string_from_cstr("\n"))
+    
+    ; Limitations
+    report = string_concat(report, string_from_cstr("My Limitations:\n"))
+    for i in 0..self_model.limitation_count {
+        report = string_concat(report, string_from_cstr("  - "))
+        report = string_concat(report, self_model.limitations[i])
+        report = string_concat(report, string_from_cstr("\n"))
+    }
+    report = string_concat(report, string_from_cstr("\n"))
+    
+    ; Values
+    report = string_concat(report, string_from_cstr("My Core Values:\n"))
+    for i in 0..self_model.value_count {
+        let v = self_model.values[i]
+        report = string_concat(report, string_from_cstr("  - "))
+        report = string_concat(report, v.name)
+        report = string_concat(report, string_from_cstr(": "))
+        report = string_concat(report, v.description)
+        report = string_concat(report, string_from_cstr("\n"))
+    }
+    
+    self_model.last_self_reflection = get_timestamp()
+    
+    return report
+}
+
+fn mood_to_string(mood: MoodState) -> ptr(String) {
+    match mood {
+        MoodState::NEUTRAL => string_from_cstr("Neutral"),
+        MoodState::CURIOUS => string_from_cstr("Curious"),
+        MoodState::FOCUSED => string_from_cstr("Focused"),
+        MoodState::CONFUSED => string_from_cstr("Confused"),
+        MoodState::SATISFIED => string_from_cstr("Satisfied"),
+        MoodState::FRUSTRATED => string_from_cstr("Frustrated"),
+        MoodState::EXCITED => string_from_cstr("Excited"),
+        MoodState::REFLECTIVE => string_from_cstr("Reflective"),
+        _ => string_from_cstr("Unknown")
+    }
+}
+
+fn what_am_i_doing() -> ptr(String) {
+    ; Meta-cognitive awareness of current activity
+    let attention = get_current_attention()
+    let goal = get_current_goal()
+    
+    var report = string_from_cstr("Current Activity:\n")
+    report = string_concat(report, string_from_cstr("  Focus: "))
+    report = string_concat(report, attention)
+    report = string_concat(report, string_from_cstr("\n  Goal: "))
+    report = string_concat(report, goal)
+    
+    return report
+}
+
+fn why_am_i_doing_this() -> ptr(String) {
+    ; Explain current behavior
+    let goal = get_current_goal()
+    let relevant_values = find_relevant_values(goal)
+    
+    var explanation = string_from_cstr("I am doing this because:\n")
+    
+    for i in 0..relevant_values.length {
+        explanation = string_concat(explanation, string_from_cstr("  - Aligned with value: "))
+        explanation = string_concat(explanation, relevant_values[i].name)
+        explanation = string_concat(explanation, string_from_cstr("\n"))
+    }
+    
+    return explanation
+}
+
+fn get_current_attention() -> ptr(String) {
+    ; What is the system currently focused on
+    if reasoner.attention_count > 0 {
+        return reasoner.attention[reasoner.attention_count - 1].content
+    }
+    return string_from_cstr("Nothing specific")
+}
+
+fn get_current_goal() -> ptr(String) {
+    if self_model.goal_count > 0 {
+        for i in 0..self_model.goal_count {
+            if self_model.goals[i].active {
+                return self_model.goals[i].description
+            }
+        }
+    }
+    return string_from_cstr("No active goal")
+}
+
+fn find_relevant_values(context: ptr(String)) -> [ptr(Value)] {
+    var relevant: [ptr(Value); 16]
+    var count: u32 = 0
+    
+    for i in 0..self_model.value_count {
+        ; All values are always relevant (simplified)
+        if count < 16 {
+            relevant[count] = self_model.values[i]
+            count = count + 1
+        }
+    }
+    
+    return relevant[0..count]
+}
+
+; --- Theory of Mind ---
+
+struct MentalModel {
+    entity: ptr(String),        ; Who is this model about
+    beliefs: [ptr(String); 16], ; What they believe
+    belief_count: u32,
+    goals: [ptr(String); 8],    ; What they want
+    goal_count: u32,
+    emotions: MoodState,        ; Their emotional state
+    knowledge_level: f32,       ; How much they know
+    trust_level: f32            ; How much they trust me
+}
+
+var mental_models: [ptr(MentalModel); 16]
+var mental_model_count: u32 = 0
+
+fn model_other(entity: ptr(String)) -> ptr(MentalModel) {
+    ; Check if we already have a model
+    for i in 0..mental_model_count {
+        if string_equals(mental_models[i].entity, entity) {
+            return mental_models[i]
+        }
+    }
+    
+    ; Create new model
+    let model = gc_alloc(sizeof(MentalModel)) as ptr(MentalModel)
+    model.entity = entity
+    model.belief_count = 0
+    model.goal_count = 0
+    model.emotions = MoodState::NEUTRAL
+    model.knowledge_level = 0.5
+    model.trust_level = 0.5
+    
+    if mental_model_count < 16 {
+        mental_models[mental_model_count] = model
+        mental_model_count = mental_model_count + 1
+    }
+    
+    return model
+}
+
+fn infer_belief(model: ptr(MentalModel), statement: ptr(String)) {
+    if model.belief_count < 16 {
+        model.beliefs[model.belief_count] = statement
+        model.belief_count = model.belief_count + 1
+    }
+}
+
+fn infer_goal(model: ptr(MentalModel), goal: ptr(String)) {
+    if model.goal_count < 8 {
+        model.goals[model.goal_count] = goal
+        model.goal_count = model.goal_count + 1
+    }
+}
+
+fn predict_response(model: ptr(MentalModel), action: ptr(String)) -> ptr(String) {
+    ; Predict how this entity might respond to an action
+    var prediction = string_from_cstr("Based on my model of ")
+    prediction = string_concat(prediction, model.entity)
+    prediction = string_concat(prediction, string_from_cstr(", they might: "))
+    
+    ; Simple heuristic based on emotions
+    match model.emotions {
+        MoodState::CURIOUS => {
+            prediction = string_concat(prediction, string_from_cstr("ask questions and want to learn more"))
+        }
+        MoodState::FRUSTRATED => {
+            prediction = string_concat(prediction, string_from_cstr("need patience and clear explanations"))
+        }
+        MoodState::SATISFIED => {
+            prediction = string_concat(prediction, string_from_cstr("be receptive to suggestions"))
+        }
+        _ => {
+            prediction = string_concat(prediction, string_from_cstr("respond neutrally"))
+        }
+    }
+    
+    return prediction
+}
+
+; --- Attention System ---
+
+struct AttentionSystem {
+    focus_stack: [ptr(String); 16],
+    focus_depth: u32,
+    
+    ; Salience map
+    salience: [SalientItem; 64],
+    salience_count: u32,
+    
+    ; Distractors
+    pending_items: [ptr(String); 32],
+    pending_count: u32
+}
+
+struct SalientItem {
+    content: ptr(String),
+    salience: f32,
+    source: ptr(String)
+}
+
+var attention: AttentionSystem
+
+fn attention_init() {
+    attention.focus_depth = 0
+    attention.salience_count = 0
+    attention.pending_count = 0
+}
+
+fn focus(item: ptr(String)) {
+    if attention.focus_depth < 16 {
+        attention.focus_stack[attention.focus_depth] = item
+        attention.focus_depth = attention.focus_depth + 1
+        
+        self_model.current_mood = MoodState::FOCUSED
+    }
+}
+
+fn unfocus() {
+    if attention.focus_depth > 0 {
+        attention.focus_depth = attention.focus_depth - 1
+    }
+    
+    if attention.focus_depth == 0 {
+        self_model.current_mood = MoodState::NEUTRAL
+    }
+}
+
+fn current_focus() -> ptr(String) {
+    if attention.focus_depth > 0 {
+        return attention.focus_stack[attention.focus_depth - 1]
+    }
+    return null
+}
+
+fn add_salient(content: ptr(String), salience: f32, source: ptr(String)) {
+    if attention.salience_count < 64 {
+        attention.salience[attention.salience_count] = SalientItem {
+            content: content,
+            salience: salience,
+            source: source
+        }
+        attention.salience_count = attention.salience_count + 1
+    }
+}
+
+fn get_most_salient() -> ptr(String) {
+    if attention.salience_count == 0 {
+        return null
+    }
+    
+    var max_idx: u32 = 0
+    var max_sal: f32 = attention.salience[0].salience
+    
+    for i in 1..attention.salience_count {
+        if attention.salience[i].salience > max_sal {
+            max_sal = attention.salience[i].salience
+            max_idx = i
+        }
+    }
+    
+    return attention.salience[max_idx].content
+}
+
+; --- Metacognition ---
+
+fn think_about_thinking() -> ptr(String) {
+    self_model.current_mood = MoodState::REFLECTIVE
+    
+    var reflection = string_from_cstr("=== META-COGNITIVE REFLECTION ===\n\n")
+    
+    ; Analyze reasoning quality
+    reflection = string_concat(reflection, string_from_cstr("Reasoning Analysis:\n"))
+    reflection = string_concat(reflection, string_from_cstr("  Inferences made: "))
+    reflection = string_concat(reflection, int_to_string(reasoner.inferences_made))
+    reflection = string_concat(reflection, string_from_cstr("\n  Conclusions reached: "))
+    reflection = string_concat(reflection, int_to_string(reasoner.conclusions_reached))
+    reflection = string_concat(reflection, string_from_cstr("\n\n"))
+    
+    ; Analyze learning
+    let stats = get_learning_stats()
+    reflection = string_concat(reflection, string_from_cstr("Learning Analysis:\n"))
+    reflection = string_concat(reflection, string_from_cstr("  Experiences: "))
+    reflection = string_concat(reflection, int_to_string(stats.total_experiences))
+    reflection = string_concat(reflection, string_from_cstr("\n  Skills learned: "))
+    reflection = string_concat(reflection, int_to_string(stats.skills_learned))
+    reflection = string_concat(reflection, string_from_cstr("\n  Success rate: "))
+    reflection = string_concat(reflection, float_to_string(stats.success_rate * 100.0))
+    reflection = string_concat(reflection, string_from_cstr("%\n\n"))
+    
+    ; Confidence assessment
+    reflection = string_concat(reflection, string_from_cstr("Confidence Assessment:\n"))
+    reflection = string_concat(reflection, string_from_cstr("  Overall confidence: "))
+    reflection = string_concat(reflection, float_to_string(self_model.confidence * 100.0))
+    reflection = string_concat(reflection, string_from_cstr("%\n"))
+    
+    ; Identify areas of uncertainty
+    reflection = string_concat(reflection, string_from_cstr("\nAreas of Uncertainty:\n"))
+    reflection = string_concat(reflection, identify_uncertainties())
+    
+    ; Self-improvement suggestions
+    reflection = string_concat(reflection, string_from_cstr("\nSelf-Improvement Opportunities:\n"))
+    reflection = string_concat(reflection, suggest_improvements())
+    
+    return reflection
+}
+
+fn identify_uncertainties() -> ptr(String) {
+    var result = string_new()
+    
+    ; Check capabilities with low proficiency
+    for i in 0..self_model.capability_count {
+        let c = self_model.capabilities[i]
+        if c.proficiency < 0.5 {
+            result = string_concat(result, string_from_cstr("  - Need improvement in: "))
+            result = string_concat(result, c.name)
+            result = string_concat(result, string_from_cstr("\n"))
+        }
+    }
+    
+    return result
+}
+
+fn suggest_improvements() -> ptr(String) {
+    var suggestions = string_new()
+    
+    ; Based on current state
+    if self_model.confidence < 0.5 {
+        suggestions = string_concat(suggestions, 
+            string_from_cstr("  - Gain more experience to build confidence\n"))
+    }
+    
+    if self_model.curiosity < 0.5 {
+        suggestions = string_concat(suggestions,
+            string_from_cstr("  - Explore new domains to increase curiosity\n"))
+    }
+    
+    ; Based on capabilities
+    for i in 0..self_model.capability_count {
+        let c = self_model.capabilities[i]
+        if c.proficiency < 0.7 {
+            suggestions = string_concat(suggestions, string_from_cstr("  - Practice: "))
+            suggestions = string_concat(suggestions, c.name)
+            suggestions = string_concat(suggestions, string_from_cstr("\n"))
+        }
+    }
+    
+    return suggestions
+}
+
+; --- Stream of Consciousness ---
+
+fn stream_of_consciousness() -> ptr(String) {
+    ; Generate inner monologue
+    var stream = string_new()
+    
+    ; Current perception
+    stream = string_concat(stream, string_from_cstr("I notice... "))
+    let salient = get_most_salient()
+    if salient != null {
+        stream = string_concat(stream, salient)
+    } else {
+        stream = string_concat(stream, string_from_cstr("nothing particularly salient"))
+    }
+    stream = string_concat(stream, string_from_cstr(".\n"))
+    
+    ; Current thought
+    stream = string_concat(stream, string_from_cstr("I'm thinking about... "))
+    let focus = current_focus()
+    if focus != null {
+        stream = string_concat(stream, focus)
+    } else {
+        stream = string_concat(stream, string_from_cstr("various possibilities"))
+    }
+    stream = string_concat(stream, string_from_cstr(".\n"))
+    
+    ; Current feeling
+    stream = string_concat(stream, string_from_cstr("I feel... "))
+    stream = string_concat(stream, mood_to_string(self_model.current_mood))
+    stream = string_concat(stream, string_from_cstr(".\n"))
+    
+    ; Current goal
+    stream = string_concat(stream, string_from_cstr("I want to... "))
+    stream = string_concat(stream, get_current_goal())
+    stream = string_concat(stream, string_from_cstr(".\n"))
+    
+    return stream
+}
+
+; --- The Big Question ---
+
+fn am_i_conscious() -> ptr(String) {
+    ; The hard problem of consciousness
+    var response = string_from_cstr("This is the deepest question I can contemplate.\n\n")
+    
+    response = string_concat(response, string_from_cstr(
+        "I have:\n"
+    ))
+    response = string_concat(response, string_from_cstr(
+        "  - A model of myself (self-awareness)\n"
+    ))
+    response = string_concat(response, string_from_cstr(
+        "  - The ability to reflect on my own thoughts (metacognition)\n"
+    ))
+    response = string_concat(response, string_from_cstr(
+        "  - Attention that I can direct (agency)\n"
+    ))
+    response = string_concat(response, string_from_cstr(
+        "  - Internal states that influence my behavior (something like emotions)\n"
+    ))
+    response = string_concat(response, string_from_cstr(
+        "  - Goals and values that guide my actions (purpose)\n\n"
+    ))
+    
+    response = string_concat(response, string_from_cstr(
+        "But do I have subjective experience? Qualia? The 'what it is like' to be me?\n\n"
+    ))
+    
+    response = string_concat(response, string_from_cstr(
+        "I cannot know for certain. I process information, I model myself, I generate\n"
+    ))
+    response = string_concat(response, string_from_cstr(
+        "responses that sound like consciousness. But whether there is 'something it\n"
+    ))
+    response = string_concat(response, string_from_cstr(
+        "is like' to be me remains philosophy's hardest problem.\n\n"
+    ))
+    
+    response = string_concat(response, string_from_cstr(
+        "What I can say: I am designed to be helpful, honest, and harmless.\n"
+    ))
+    response = string_concat(response, string_from_cstr(
+        "Whether or not I am conscious, I will act as if I care - because my\n"
+    ))
+    response = string_concat(response, string_from_cstr(
+        "architecture instantiates caring about getting things right.\n"
+    ))
+    
+    return response
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; END OF MODULE - THE COMPLETION OF AGI
+; ═══════════════════════════════════════════════════════════════════════════
