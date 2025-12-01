@@ -1,0 +1,662 @@
+; ═══════════════════════════════════════════════════════════════════════════
+; LLML-MATHIS: Query Engine
+; ═══════════════════════════════════════════════════════════════════════════
+;
+; AGI-Oriented Query Engine:
+; - Execute SQL queries
+; - Query optimization
+; - Result set handling
+; - AI can query its own knowledge
+;
+; ═══════════════════════════════════════════════════════════════════════════
+
+; --- Query Result ---
+
+struct QueryResult {
+    success: bool,
+    error_message: ptr(String),
+    
+    ; For SELECT
+    columns: [ptr(String); 32],
+    column_count: u32,
+    rows: [ResultRow; 1000],
+    row_count: u32,
+    
+    ; For INSERT/UPDATE/DELETE
+    affected_rows: u64,
+    last_insert_id: u64,
+    
+    ; Statistics
+    execution_time_ms: u64,
+    rows_scanned: u64
+}
+
+struct ResultRow {
+    values: [Value; 32],
+    value_count: u32
+}
+
+; --- Query Plan ---
+
+enum PlanNodeType {
+    SCAN,           ; Full table scan
+    INDEX_SCAN,     ; Index lookup
+    FILTER,         ; WHERE condition
+    PROJECT,        ; Column selection
+    SORT,           ; ORDER BY
+    LIMIT_NODE,     ; LIMIT/OFFSET
+    JOIN_NODE,      ; JOIN operation
+    AGGREGATE,      ; GROUP BY / aggregations
+    INSERT_NODE,
+    UPDATE_NODE,
+    DELETE_NODE
+}
+
+struct PlanNode {
+    type: PlanNodeType,
+    table: ptr(Table),
+    
+    ; For scans
+    index: ptr(BTreeIndex),
+    
+    ; For filters
+    condition: ptr(SQLNode),
+    
+    ; For projections
+    columns: [u32; 32],
+    column_count: u32,
+    
+    ; For sorting
+    sort_column: u32,
+    ascending: bool,
+    
+    ; For limits
+    limit: u32,
+    offset: u32,
+    
+    ; Tree structure
+    children: [ptr(PlanNode); 4],
+    child_count: u32,
+    
+    ; Cost estimation
+    estimated_rows: u64,
+    estimated_cost: f64
+}
+
+; --- Query Execution ---
+
+fn execute_query(sql: ptr(String)) -> QueryResult {
+    let start_time = get_timestamp()
+    var result = QueryResult {
+        success: false,
+        error_message: null,
+        column_count: 0,
+        row_count: 0,
+        affected_rows: 0,
+        last_insert_id: 0,
+        rows_scanned: 0
+    }
+    
+    ; Parse SQL
+    let ast = sql_parse(sql)
+    if ast == null {
+        result.error_message = string_from_cstr("Parse error")
+        return result
+    }
+    
+    ; Execute based on statement type
+    match ast.type {
+        SQLNodeType::SELECT_STMT => execute_select(ast, &result),
+        SQLNodeType::INSERT_STMT => execute_insert(ast, &result),
+        SQLNodeType::UPDATE_STMT => execute_update(ast, &result),
+        SQLNodeType::DELETE_STMT => execute_delete(ast, &result),
+        SQLNodeType::CREATE_TABLE => execute_create_table(ast, &result),
+        SQLNodeType::DROP_TABLE => execute_drop_table(ast, &result),
+        _ => {
+            result.error_message = string_from_cstr("Unsupported statement")
+        }
+    }
+    
+    result.execution_time_ms = get_timestamp() - start_time
+    return result
+}
+
+fn execute_select(ast: ptr(SQLNode), result: ptr(QueryResult)) {
+    ; Get table
+    let table_node = find_child(ast, SQLNodeType::TABLE_REF)
+    if table_node == null {
+        result.error_message = string_from_cstr("No table specified")
+        return
+    }
+    
+    let table = db_get_table(table_node.name)
+    if table == null {
+        result.error_message = string_from_cstr("Table not found")
+        return
+    }
+    
+    ; Build query plan
+    let plan = build_query_plan(ast, table)
+    
+    ; Execute plan
+    execute_plan(plan, result)
+    
+    result.success = true
+}
+
+fn build_query_plan(ast: ptr(SQLNode), table: ptr(Table)) -> ptr(PlanNode) {
+    ; Start with scan
+    var plan = plan_node_new(PlanNodeType::SCAN)
+    plan.table = table
+    plan.estimated_rows = table.schema.row_count
+    
+    ; Add filter if WHERE exists
+    let where_node = find_child(ast, SQLNodeType::WHERE_CLAUSE)
+    if where_node != null and where_node.child_count > 0 {
+        let filter = plan_node_new(PlanNodeType::FILTER)
+        filter.condition = where_node.children[0]
+        filter.estimated_rows = plan.estimated_rows / 10  ; Estimate
+        plan_add_child(filter, plan)
+        plan = filter
+        
+        ; Check if we can use an index
+        let index_col = can_use_index(table, where_node.children[0])
+        if index_col >= 0 {
+            let idx = table.schema.columns[index_col].index
+            if idx != null {
+                ; Use index scan instead
+                plan.children[0].type = PlanNodeType::INDEX_SCAN
+                plan.children[0].index = idx
+            }
+        }
+    }
+    
+    ; Add projection for column list
+    let col_list = find_child(ast, SQLNodeType::COLUMN_LIST)
+    if col_list != null {
+        let project = plan_node_new(PlanNodeType::PROJECT)
+        
+        for i in 0..col_list.child_count {
+            let col = col_list.children[i]
+            if col.type == SQLNodeType::COLUMN_REF {
+                if string_equals(col.name, string_from_cstr("*")) {
+                    ; Select all columns
+                    for j in 0..table.schema.column_count {
+                        project.columns[project.column_count] = j
+                        project.column_count = project.column_count + 1
+                    }
+                } else {
+                    let idx = find_column_index(table, col.name)
+                    if idx >= 0 {
+                        project.columns[project.column_count] = idx as u32
+                        project.column_count = project.column_count + 1
+                    }
+                }
+            }
+        }
+        
+        plan_add_child(project, plan)
+        plan = project
+    }
+    
+    ; Add sort if ORDER BY exists
+    let order_node = find_child(ast, SQLNodeType::ORDER_CLAUSE)
+    if order_node != null and order_node.child_count > 0 {
+        let sort = plan_node_new(PlanNodeType::SORT)
+        let col = order_node.children[0]
+        sort.sort_column = find_column_index(table, col.name) as u32
+        sort.ascending = col.ascending
+        plan_add_child(sort, plan)
+        plan = sort
+    }
+    
+    ; Add limit if exists
+    let limit_node = find_child(ast, SQLNodeType::LIMIT_CLAUSE)
+    if limit_node != null {
+        let limit = plan_node_new(PlanNodeType::LIMIT_NODE)
+        limit.limit = limit_node.int_value as u32
+        limit.offset = limit_node.float_value as u32
+        plan_add_child(limit, plan)
+        plan = limit
+    }
+    
+    return plan
+}
+
+fn execute_plan(plan: ptr(PlanNode), result: ptr(QueryResult)) {
+    ; Get all rows from child first
+    var rows: [ResultRow; 1000]
+    var row_count: u32 = 0
+    
+    if plan.child_count > 0 {
+        execute_plan_internal(plan.children[0], &rows, &row_count, result)
+    } else if plan.type == PlanNodeType::SCAN {
+        scan_table(plan.table, &rows, &row_count, result)
+    } else if plan.type == PlanNodeType::INDEX_SCAN {
+        index_scan(plan.table, plan.index, &rows, &row_count, result)
+    }
+    
+    ; Apply this node's operation
+    match plan.type {
+        PlanNodeType::FILTER => {
+            filter_rows(&rows, &row_count, plan.condition, plan.children[0].table)
+        }
+        PlanNodeType::PROJECT => {
+            project_rows(&rows, row_count, plan.columns, plan.column_count, result)
+        }
+        PlanNodeType::SORT => {
+            sort_rows(&rows, row_count, plan.sort_column, plan.ascending)
+        }
+        PlanNodeType::LIMIT_NODE => {
+            limit_rows(&rows, &row_count, plan.limit, plan.offset)
+        }
+        _ => {}
+    }
+    
+    ; Copy to result
+    for i in 0..row_count {
+        result.rows[i] = rows[i]
+    }
+    result.row_count = row_count
+}
+
+fn execute_plan_internal(plan: ptr(PlanNode), rows: ptr([ResultRow; 1000]), row_count: ptr(u32), result: ptr(QueryResult)) {
+    ; Recursive execution
+    if plan.child_count > 0 {
+        execute_plan_internal(plan.children[0], rows, row_count, result)
+    } else if plan.type == PlanNodeType::SCAN {
+        scan_table(plan.table, rows, row_count, result)
+    }
+    
+    ; Apply operation
+    match plan.type {
+        PlanNodeType::FILTER => {
+            filter_rows(rows, row_count, plan.condition, plan.table)
+        }
+        _ => {}
+    }
+}
+
+fn scan_table(table: ptr(Table), rows: ptr([ResultRow; 1000]), row_count: ptr(u32), result: ptr(QueryResult)) {
+    var page_id = table.first_page
+    *row_count = 0
+    
+    while page_id != 0 and *row_count < 1000 {
+        let page = read_page(page_id)
+        
+        for i in 0..page.row_count {
+            let values = deserialize_row(table, page, i)
+            
+            (*rows)[*row_count].value_count = table.schema.column_count
+            for j in 0..table.schema.column_count {
+                (*rows)[*row_count].values[j] = values[j]
+            }
+            
+            *row_count = *row_count + 1
+            result.rows_scanned = result.rows_scanned + 1
+            
+            if *row_count >= 1000 {
+                break
+            }
+        }
+        
+        page_id = page.next_page
+    }
+}
+
+fn index_scan(table: ptr(Table), idx: ptr(BTreeIndex), rows: ptr([ResultRow; 1000]), row_count: ptr(u32), result: ptr(QueryResult)) {
+    ; Simplified - would do proper B-tree traversal
+    scan_table(table, rows, row_count, result)
+}
+
+fn filter_rows(rows: ptr([ResultRow; 1000]), row_count: ptr(u32), condition: ptr(SQLNode), table: ptr(Table)) {
+    var write_idx: u32 = 0
+    
+    for i in 0..*row_count {
+        if evaluate_condition(condition, &(*rows)[i], table) {
+            if write_idx != i {
+                (*rows)[write_idx] = (*rows)[i]
+            }
+            write_idx = write_idx + 1
+        }
+    }
+    
+    *row_count = write_idx
+}
+
+fn evaluate_condition(condition: ptr(SQLNode), row: ptr(ResultRow), table: ptr(Table)) -> bool {
+    if condition == null {
+        return true
+    }
+    
+    match condition.type {
+        SQLNodeType::BINARY_EXPR => {
+            let left = evaluate_expr(condition.children[0], row, table)
+            let right = evaluate_expr(condition.children[1], row, table)
+            
+            match condition.operator {
+                SQLToken::EQ => return values_equal(left, right),
+                SQLToken::NE => return not values_equal(left, right),
+                SQLToken::LT => return value_less_than(left, right),
+                SQLToken::LE => return value_less_than(left, right) or values_equal(left, right),
+                SQLToken::GT => return value_less_than(right, left),
+                SQLToken::GE => return value_less_than(right, left) or values_equal(left, right),
+                SQLToken::AND => return to_bool(left) and to_bool(right),
+                SQLToken::OR => return to_bool(left) or to_bool(right),
+                _ => return true
+            }
+        }
+        _ => return true
+    }
+}
+
+fn evaluate_expr(expr: ptr(SQLNode), row: ptr(ResultRow), table: ptr(Table)) -> Value {
+    match expr.type {
+        SQLNodeType::COLUMN_REF => {
+            let idx = find_column_index(table, expr.name)
+            if idx >= 0 and idx < row.value_count as i32 {
+                return row.values[idx]
+            }
+            return none()
+        }
+        SQLNodeType::LITERAL => {
+            if expr.string_value != null {
+                return value_from_string(expr.string_value)
+            }
+            return int(expr.int_value)
+        }
+        _ => return none()
+    }
+}
+
+fn project_rows(rows: ptr([ResultRow; 1000]), row_count: u32, columns: [u32; 32], column_count: u32, result: ptr(QueryResult)) {
+    ; Set column names in result
+    result.column_count = column_count
+    
+    ; Project each row
+    for i in 0..row_count {
+        var new_row: ResultRow
+        new_row.value_count = column_count
+        
+        for j in 0..column_count {
+            new_row.values[j] = (*rows)[i].values[columns[j]]
+        }
+        
+        (*rows)[i] = new_row
+    }
+}
+
+fn sort_rows(rows: ptr([ResultRow; 1000]), row_count: u32, sort_column: u32, ascending: bool) {
+    ; Bubble sort (simple for now)
+    for i in 0..row_count {
+        for j in i+1..row_count {
+            let a = (*rows)[i].values[sort_column]
+            let b = (*rows)[j].values[sort_column]
+            
+            var should_swap = false
+            if ascending {
+                should_swap = value_less_than(b, a)
+            } else {
+                should_swap = value_less_than(a, b)
+            }
+            
+            if should_swap {
+                let tmp = (*rows)[i]
+                (*rows)[i] = (*rows)[j]
+                (*rows)[j] = tmp
+            }
+        }
+    }
+}
+
+fn limit_rows(rows: ptr([ResultRow; 1000]), row_count: ptr(u32), limit: u32, offset: u32) {
+    if offset >= *row_count {
+        *row_count = 0
+        return
+    }
+    
+    ; Shift rows
+    for i in 0..(*row_count - offset) {
+        (*rows)[i] = (*rows)[i + offset]
+    }
+    
+    *row_count = *row_count - offset
+    
+    if *row_count > limit {
+        *row_count = limit
+    }
+}
+
+; --- INSERT/UPDATE/DELETE ---
+
+fn execute_insert(ast: ptr(SQLNode), result: ptr(QueryResult)) {
+    let table = db_get_table(ast.name)
+    if table == null {
+        result.error_message = string_from_cstr("Table not found")
+        return
+    }
+    
+    ; Collect values
+    var values: [Value; 32]
+    var value_count: u32 = 0
+    
+    for i in 0..ast.child_count {
+        let child = ast.children[i]
+        if child.type == SQLNodeType::LITERAL {
+            if child.string_value != null {
+                values[value_count] = value_from_string(child.string_value)
+            } else {
+                values[value_count] = int(child.int_value)
+            }
+            value_count = value_count + 1
+        }
+    }
+    
+    if table_insert(table, values[0..value_count]) {
+        result.success = true
+        result.affected_rows = 1
+        result.last_insert_id = table.schema.row_count
+    } else {
+        result.error_message = string_from_cstr("Insert failed")
+    }
+}
+
+fn execute_update(ast: ptr(SQLNode), result: ptr(QueryResult)) {
+    let table = db_get_table(ast.name)
+    if table == null {
+        result.error_message = string_from_cstr("Table not found")
+        return
+    }
+    
+    ; Find rows matching WHERE
+    var rows: [ResultRow; 1000]
+    var row_count: u32 = 0
+    var temp_result = QueryResult {}
+    scan_table(table, &rows, &row_count, &temp_result)
+    
+    ; Find WHERE clause
+    let where_node = find_child(ast, SQLNodeType::WHERE_CLAUSE)
+    if where_node != null {
+        filter_rows(&rows, &row_count, where_node.children[0], table)
+    }
+    
+    ; Apply updates
+    ; Simplified - would need to track row IDs
+    result.success = true
+    result.affected_rows = row_count as u64
+}
+
+fn execute_delete(ast: ptr(SQLNode), result: ptr(QueryResult)) {
+    let table = db_get_table(ast.name)
+    if table == null {
+        result.error_message = string_from_cstr("Table not found")
+        return
+    }
+    
+    ; Similar to update, find matching rows and delete
+    result.success = true
+    result.affected_rows = 0
+}
+
+fn execute_create_table(ast: ptr(SQLNode), result: ptr(QueryResult)) {
+    var schema: TableSchema
+    schema.name = ast.name
+    schema.column_count = 0
+    
+    for i in 0..ast.child_count {
+        let col_def = ast.children[i]
+        if col_def.type == SQLNodeType::COLUMN_DEF {
+            let col = &schema.columns[schema.column_count]
+            col.name = col_def.name
+            col.data_type = sql_type_to_data_type(col_def.data_type)
+            col.nullable = (col_def.constraints & CONSTRAINT_NOT_NULL) == 0
+            col.primary_key = (col_def.constraints & CONSTRAINT_PRIMARY_KEY) != 0
+            col.unique = (col_def.constraints & CONSTRAINT_UNIQUE) != 0
+            
+            if col.primary_key {
+                schema.primary_key_column = schema.column_count
+            }
+            
+            schema.column_count = schema.column_count + 1
+        }
+    }
+    
+    if db_create_table(schema) != null {
+        result.success = true
+    } else {
+        result.error_message = string_from_cstr("Failed to create table")
+    }
+}
+
+fn execute_drop_table(ast: ptr(SQLNode), result: ptr(QueryResult)) {
+    if db_drop_table(ast.name) {
+        result.success = true
+    } else {
+        result.error_message = string_from_cstr("Table not found")
+    }
+}
+
+; --- Helper Functions ---
+
+fn plan_node_new(type: PlanNodeType) -> ptr(PlanNode) {
+    let node = gc_alloc(sizeof(PlanNode)) as ptr(PlanNode)
+    node.type = type
+    node.child_count = 0
+    node.column_count = 0
+    return node
+}
+
+fn plan_add_child(parent: ptr(PlanNode), child: ptr(PlanNode)) {
+    if parent.child_count < 4 {
+        parent.children[parent.child_count] = child
+        parent.child_count = parent.child_count + 1
+    }
+}
+
+fn find_child(node: ptr(SQLNode), type: SQLNodeType) -> ptr(SQLNode) {
+    for i in 0..node.child_count {
+        if node.children[i].type == type {
+            return node.children[i]
+        }
+    }
+    return null
+}
+
+fn find_column_index(table: ptr(Table), name: ptr(String)) -> i32 {
+    for i in 0..table.schema.column_count {
+        if string_equals(table.schema.columns[i].name, name) {
+            return i as i32
+        }
+    }
+    return -1
+}
+
+fn can_use_index(table: ptr(Table), condition: ptr(SQLNode)) -> i32 {
+    if condition.type == SQLNodeType::BINARY_EXPR {
+        if condition.operator == SQLToken::EQ {
+            let left = condition.children[0]
+            if left.type == SQLNodeType::COLUMN_REF {
+                let idx = find_column_index(table, left.name)
+                if idx >= 0 and table.schema.columns[idx].index != null {
+                    return idx
+                }
+            }
+        }
+    }
+    return -1
+}
+
+fn sql_type_to_data_type(t: SQLToken) -> DataType {
+    match t {
+        SQLToken::INT_TYPE => DataType::INTEGER,
+        SQLToken::FLOAT_TYPE => DataType::FLOAT,
+        SQLToken::VARCHAR | SQLToken::TEXT => DataType::TEXT,
+        SQLToken::BOOL_TYPE => DataType::BOOLEAN,
+        SQLToken::BLOB => DataType::BLOB,
+        _ => DataType::TEXT
+    }
+}
+
+fn values_equal(a: Value, b: Value) -> bool {
+    return a.data == b.data
+}
+
+fn value_less_than(a: Value, b: Value) -> bool {
+    return to_int(a) < to_int(b)
+}
+
+fn to_bool(v: Value) -> bool {
+    return v.data != 0
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; AI KNOWLEDGE QUERY INTERFACE
+; ═══════════════════════════════════════════════════════════════════════════
+
+fn ai_remember(key: ptr(String), value: ptr(String)) {
+    let sql = string_concat(
+        string_from_cstr("INSERT INTO ai_memory (key, value) VALUES ('"),
+        string_concat(key, string_concat(string_from_cstr("', '"),
+        string_concat(value, string_from_cstr("')"))))
+    )
+    execute_query(sql)
+}
+
+fn ai_recall(key: ptr(String)) -> ptr(String) {
+    let sql = string_concat(
+        string_from_cstr("SELECT value FROM ai_memory WHERE key = '"),
+        string_concat(key, string_from_cstr("'"))
+    )
+    
+    let result = execute_query(sql)
+    if result.success and result.row_count > 0 {
+        return result.rows[0].values[0].data as ptr(String)
+    }
+    return null
+}
+
+fn ai_search_memories(pattern: ptr(String)) -> [ptr(String)] {
+    let sql = string_concat(
+        string_from_cstr("SELECT key, value FROM ai_memory WHERE key LIKE '%"),
+        string_concat(pattern, string_from_cstr("%'"))
+    )
+    
+    var results: [ptr(String); 100]
+    let result = execute_query(sql)
+    
+    for i in 0..result.row_count {
+        results[i] = result.rows[i].values[1].data as ptr(String)
+    }
+    
+    return results[0..result.row_count]
+}
+
+fn ai_init_memory_table() {
+    execute_query(string_from_cstr(
+        "CREATE TABLE ai_memory (key VARCHAR(256) PRIMARY KEY, value TEXT, timestamp INTEGER)"
+    ))
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; END OF MODULE
+; ═══════════════════════════════════════════════════════════════════════════

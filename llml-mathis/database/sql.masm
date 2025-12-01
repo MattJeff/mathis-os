@@ -1,0 +1,878 @@
+; ═══════════════════════════════════════════════════════════════════════════
+; LLML-MATHIS: SQL Parser
+; ═══════════════════════════════════════════════════════════════════════════
+;
+; AGI-Oriented SQL:
+; - Parse SQL queries
+; - Build query AST
+; - AI can generate and optimize queries
+; - Knowledge storage interface
+;
+; ═══════════════════════════════════════════════════════════════════════════
+
+; --- SQL Token Types ---
+
+enum SQLToken {
+    EOF,
+    ERROR,
+    
+    ; Literals
+    IDENT,
+    STRING,
+    INTEGER,
+    FLOAT,
+    
+    ; Keywords
+    SELECT, FROM, WHERE, AND, OR, NOT,
+    INSERT, INTO, VALUES,
+    UPDATE, SET,
+    DELETE,
+    CREATE, TABLE, INDEX,
+    DROP, ALTER, ADD,
+    JOIN, LEFT, RIGHT, INNER, OUTER, ON,
+    ORDER, BY, ASC, DESC,
+    GROUP, HAVING,
+    LIMIT, OFFSET,
+    NULL, TRUE_KW, FALSE_KW,
+    PRIMARY, KEY, FOREIGN, REFERENCES,
+    UNIQUE, DEFAULT, AUTO_INCREMENT,
+    
+    ; Types
+    INT_TYPE, VARCHAR, TEXT, BOOL_TYPE, FLOAT_TYPE, BLOB,
+    
+    ; Operators
+    EQ, NE, LT, LE, GT, GE,
+    PLUS, MINUS, STAR, SLASH,
+    
+    ; Punctuation
+    LPAREN, RPAREN,
+    COMMA, DOT, SEMICOLON,
+    
+    ; Wildcards
+    PERCENT, UNDERSCORE
+}
+
+; --- SQL AST Nodes ---
+
+enum SQLNodeType {
+    SELECT_STMT,
+    INSERT_STMT,
+    UPDATE_STMT,
+    DELETE_STMT,
+    CREATE_TABLE,
+    DROP_TABLE,
+    
+    COLUMN_LIST,
+    TABLE_REF,
+    JOIN_CLAUSE,
+    WHERE_CLAUSE,
+    ORDER_CLAUSE,
+    GROUP_CLAUSE,
+    LIMIT_CLAUSE,
+    
+    BINARY_EXPR,
+    UNARY_EXPR,
+    COLUMN_REF,
+    LITERAL,
+    FUNCTION_CALL,
+    SUBQUERY,
+    
+    COLUMN_DEF,
+    CONSTRAINT
+}
+
+struct SQLNode {
+    type: SQLNodeType,
+    
+    ; For identifiers/literals
+    name: ptr(String),
+    string_value: ptr(String),
+    int_value: i64,
+    float_value: f64,
+    
+    ; For expressions
+    operator: SQLToken,
+    
+    ; Children
+    children: [ptr(SQLNode); 32],
+    child_count: u32,
+    
+    ; For column definitions
+    data_type: SQLToken,
+    constraints: u32,      ; Bit flags
+    
+    ; For ordering
+    ascending: bool
+}
+
+; Constraint flags
+const CONSTRAINT_PRIMARY_KEY: u32   = 0x01
+const CONSTRAINT_NOT_NULL: u32      = 0x02
+const CONSTRAINT_UNIQUE: u32        = 0x04
+const CONSTRAINT_AUTO_INCREMENT: u32 = 0x08
+const CONSTRAINT_DEFAULT: u32       = 0x10
+
+; --- SQL Lexer ---
+
+struct SQLLexer {
+    source: ptr(String),
+    pos: u32,
+    line: u32,
+    column: u32
+}
+
+var sql_lexer: SQLLexer
+
+fn sql_lex_init(source: ptr(String)) {
+    sql_lexer.source = source
+    sql_lexer.pos = 0
+    sql_lexer.line = 1
+    sql_lexer.column = 1
+}
+
+fn sql_next_token() -> (SQLToken, ptr(String)) {
+    sql_skip_whitespace()
+    
+    if sql_lexer.pos >= sql_lexer.source.length {
+        return (SQLToken::EOF, null)
+    }
+    
+    let c = sql_peek()
+    
+    ; Single char tokens
+    match c {
+        '(' => { sql_advance(); return (SQLToken::LPAREN, null) }
+        ')' => { sql_advance(); return (SQLToken::RPAREN, null) }
+        ',' => { sql_advance(); return (SQLToken::COMMA, null) }
+        '.' => { sql_advance(); return (SQLToken::DOT, null) }
+        ';' => { sql_advance(); return (SQLToken::SEMICOLON, null) }
+        '+' => { sql_advance(); return (SQLToken::PLUS, null) }
+        '-' => { sql_advance(); return (SQLToken::MINUS, null) }
+        '*' => { sql_advance(); return (SQLToken::STAR, null) }
+        '/' => { sql_advance(); return (SQLToken::SLASH, null) }
+        '%' => { sql_advance(); return (SQLToken::PERCENT, null) }
+        '_' => { sql_advance(); return (SQLToken::UNDERSCORE, null) }
+        _ => {}
+    }
+    
+    ; Two char operators
+    if c == '=' {
+        sql_advance()
+        return (SQLToken::EQ, null)
+    }
+    if c == '!' and sql_peek_next() == '=' {
+        sql_advance(); sql_advance()
+        return (SQLToken::NE, null)
+    }
+    if c == '<' {
+        sql_advance()
+        if sql_peek() == '=' { sql_advance(); return (SQLToken::LE, null) }
+        if sql_peek() == '>' { sql_advance(); return (SQLToken::NE, null) }
+        return (SQLToken::LT, null)
+    }
+    if c == '>' {
+        sql_advance()
+        if sql_peek() == '=' { sql_advance(); return (SQLToken::GE, null) }
+        return (SQLToken::GT, null)
+    }
+    
+    ; String literal
+    if c == '\'' {
+        return sql_scan_string()
+    }
+    
+    ; Number
+    if is_digit(c) {
+        return sql_scan_number()
+    }
+    
+    ; Identifier or keyword
+    if is_alpha(c) or c == '_' {
+        return sql_scan_identifier()
+    }
+    
+    sql_advance()
+    return (SQLToken::ERROR, null)
+}
+
+fn sql_scan_string() -> (SQLToken, ptr(String)) {
+    sql_advance()  ; Skip opening quote
+    let start = sql_lexer.pos
+    
+    while sql_lexer.pos < sql_lexer.source.length and sql_peek() != '\'' {
+        sql_advance()
+    }
+    
+    let text = string_substring(sql_lexer.source, start, sql_lexer.pos)
+    sql_advance()  ; Skip closing quote
+    
+    return (SQLToken::STRING, text)
+}
+
+fn sql_scan_number() -> (SQLToken, ptr(String)) {
+    let start = sql_lexer.pos
+    var is_float = false
+    
+    while is_digit(sql_peek()) {
+        sql_advance()
+    }
+    
+    if sql_peek() == '.' and is_digit(sql_peek_next()) {
+        is_float = true
+        sql_advance()
+        while is_digit(sql_peek()) {
+            sql_advance()
+        }
+    }
+    
+    let text = string_substring(sql_lexer.source, start, sql_lexer.pos)
+    return (if is_float { SQLToken::FLOAT } else { SQLToken::INTEGER }, text)
+}
+
+fn sql_scan_identifier() -> (SQLToken, ptr(String)) {
+    let start = sql_lexer.pos
+    
+    while is_alnum(sql_peek()) or sql_peek() == '_' {
+        sql_advance()
+    }
+    
+    let text = string_substring(sql_lexer.source, start, sql_lexer.pos)
+    let upper = string_to_upper(text)
+    
+    ; Check keywords
+    let kw = sql_lookup_keyword(upper)
+    return (kw, text)
+}
+
+fn sql_lookup_keyword(s: ptr(String)) -> SQLToken {
+    if string_equals(s, string_from_cstr("SELECT")) { return SQLToken::SELECT }
+    if string_equals(s, string_from_cstr("FROM")) { return SQLToken::FROM }
+    if string_equals(s, string_from_cstr("WHERE")) { return SQLToken::WHERE }
+    if string_equals(s, string_from_cstr("AND")) { return SQLToken::AND }
+    if string_equals(s, string_from_cstr("OR")) { return SQLToken::OR }
+    if string_equals(s, string_from_cstr("NOT")) { return SQLToken::NOT }
+    if string_equals(s, string_from_cstr("INSERT")) { return SQLToken::INSERT }
+    if string_equals(s, string_from_cstr("INTO")) { return SQLToken::INTO }
+    if string_equals(s, string_from_cstr("VALUES")) { return SQLToken::VALUES }
+    if string_equals(s, string_from_cstr("UPDATE")) { return SQLToken::UPDATE }
+    if string_equals(s, string_from_cstr("SET")) { return SQLToken::SET }
+    if string_equals(s, string_from_cstr("DELETE")) { return SQLToken::DELETE }
+    if string_equals(s, string_from_cstr("CREATE")) { return SQLToken::CREATE }
+    if string_equals(s, string_from_cstr("TABLE")) { return SQLToken::TABLE }
+    if string_equals(s, string_from_cstr("DROP")) { return SQLToken::DROP }
+    if string_equals(s, string_from_cstr("INDEX")) { return SQLToken::INDEX }
+    if string_equals(s, string_from_cstr("JOIN")) { return SQLToken::JOIN }
+    if string_equals(s, string_from_cstr("LEFT")) { return SQLToken::LEFT }
+    if string_equals(s, string_from_cstr("RIGHT")) { return SQLToken::RIGHT }
+    if string_equals(s, string_from_cstr("INNER")) { return SQLToken::INNER }
+    if string_equals(s, string_from_cstr("OUTER")) { return SQLToken::OUTER }
+    if string_equals(s, string_from_cstr("ON")) { return SQLToken::ON }
+    if string_equals(s, string_from_cstr("ORDER")) { return SQLToken::ORDER }
+    if string_equals(s, string_from_cstr("BY")) { return SQLToken::BY }
+    if string_equals(s, string_from_cstr("ASC")) { return SQLToken::ASC }
+    if string_equals(s, string_from_cstr("DESC")) { return SQLToken::DESC }
+    if string_equals(s, string_from_cstr("GROUP")) { return SQLToken::GROUP }
+    if string_equals(s, string_from_cstr("HAVING")) { return SQLToken::HAVING }
+    if string_equals(s, string_from_cstr("LIMIT")) { return SQLToken::LIMIT }
+    if string_equals(s, string_from_cstr("OFFSET")) { return SQLToken::OFFSET }
+    if string_equals(s, string_from_cstr("NULL")) { return SQLToken::NULL }
+    if string_equals(s, string_from_cstr("TRUE")) { return SQLToken::TRUE_KW }
+    if string_equals(s, string_from_cstr("FALSE")) { return SQLToken::FALSE_KW }
+    if string_equals(s, string_from_cstr("PRIMARY")) { return SQLToken::PRIMARY }
+    if string_equals(s, string_from_cstr("KEY")) { return SQLToken::KEY }
+    if string_equals(s, string_from_cstr("UNIQUE")) { return SQLToken::UNIQUE }
+    if string_equals(s, string_from_cstr("DEFAULT")) { return SQLToken::DEFAULT }
+    if string_equals(s, string_from_cstr("INT")) { return SQLToken::INT_TYPE }
+    if string_equals(s, string_from_cstr("INTEGER")) { return SQLToken::INT_TYPE }
+    if string_equals(s, string_from_cstr("VARCHAR")) { return SQLToken::VARCHAR }
+    if string_equals(s, string_from_cstr("TEXT")) { return SQLToken::TEXT }
+    if string_equals(s, string_from_cstr("BOOL")) { return SQLToken::BOOL_TYPE }
+    if string_equals(s, string_from_cstr("BOOLEAN")) { return SQLToken::BOOL_TYPE }
+    if string_equals(s, string_from_cstr("FLOAT")) { return SQLToken::FLOAT_TYPE }
+    if string_equals(s, string_from_cstr("BLOB")) { return SQLToken::BLOB }
+    
+    return SQLToken::IDENT
+}
+
+fn sql_skip_whitespace() {
+    while sql_lexer.pos < sql_lexer.source.length {
+        let c = sql_peek()
+        if c == ' ' or c == '\t' or c == '\r' {
+            sql_advance()
+        } else if c == '\n' {
+            sql_advance()
+            sql_lexer.line = sql_lexer.line + 1
+            sql_lexer.column = 1
+        } else if c == '-' and sql_peek_next() == '-' {
+            ; Line comment
+            while sql_lexer.pos < sql_lexer.source.length and sql_peek() != '\n' {
+                sql_advance()
+            }
+        } else {
+            break
+        }
+    }
+}
+
+fn sql_peek() -> u8 {
+    if sql_lexer.pos >= sql_lexer.source.length { return 0 }
+    return sql_lexer.source.data[sql_lexer.pos]
+}
+
+fn sql_peek_next() -> u8 {
+    if sql_lexer.pos + 1 >= sql_lexer.source.length { return 0 }
+    return sql_lexer.source.data[sql_lexer.pos + 1]
+}
+
+fn sql_advance() {
+    sql_lexer.pos = sql_lexer.pos + 1
+    sql_lexer.column = sql_lexer.column + 1
+}
+
+; --- SQL Parser ---
+
+struct SQLParser {
+    current_token: SQLToken,
+    current_lexeme: ptr(String),
+    
+    errors: [ptr(String); 32],
+    error_count: u32
+}
+
+var sql_parser: SQLParser
+
+fn sql_parse(source: ptr(String)) -> ptr(SQLNode) {
+    sql_lex_init(source)
+    sql_parser.error_count = 0
+    sql_parser_advance()
+    
+    return sql_parse_statement()
+}
+
+fn sql_parser_advance() {
+    let (token, lexeme) = sql_next_token()
+    sql_parser.current_token = token
+    sql_parser.current_lexeme = lexeme
+}
+
+fn sql_match(token: SQLToken) -> bool {
+    if sql_parser.current_token == token {
+        sql_parser_advance()
+        return true
+    }
+    return false
+}
+
+fn sql_expect(token: SQLToken, msg: string) {
+    if not sql_match(token) {
+        sql_error(msg)
+    }
+}
+
+fn sql_error(msg: string) {
+    if sql_parser.error_count < 32 {
+        sql_parser.errors[sql_parser.error_count] = string_from_cstr(msg)
+        sql_parser.error_count = sql_parser.error_count + 1
+    }
+}
+
+fn sql_parse_statement() -> ptr(SQLNode) {
+    match sql_parser.current_token {
+        SQLToken::SELECT => return sql_parse_select(),
+        SQLToken::INSERT => return sql_parse_insert(),
+        SQLToken::UPDATE => return sql_parse_update(),
+        SQLToken::DELETE => return sql_parse_delete(),
+        SQLToken::CREATE => return sql_parse_create(),
+        SQLToken::DROP => return sql_parse_drop(),
+        _ => {
+            sql_error("Expected SQL statement")
+            return null
+        }
+    }
+}
+
+fn sql_parse_select() -> ptr(SQLNode) {
+    let node = sql_node_new(SQLNodeType::SELECT_STMT)
+    sql_expect(SQLToken::SELECT, "Expected SELECT")
+    
+    ; Column list
+    let columns = sql_parse_column_list()
+    sql_add_child(node, columns)
+    
+    ; FROM clause
+    sql_expect(SQLToken::FROM, "Expected FROM")
+    let table = sql_parse_table_ref()
+    sql_add_child(node, table)
+    
+    ; Optional JOIN
+    while sql_parser.current_token == SQLToken::JOIN or
+          sql_parser.current_token == SQLToken::LEFT or
+          sql_parser.current_token == SQLToken::RIGHT or
+          sql_parser.current_token == SQLToken::INNER {
+        let join = sql_parse_join()
+        sql_add_child(node, join)
+    }
+    
+    ; Optional WHERE
+    if sql_match(SQLToken::WHERE) {
+        let where_node = sql_node_new(SQLNodeType::WHERE_CLAUSE)
+        let condition = sql_parse_expression()
+        sql_add_child(where_node, condition)
+        sql_add_child(node, where_node)
+    }
+    
+    ; Optional GROUP BY
+    if sql_match(SQLToken::GROUP) {
+        sql_expect(SQLToken::BY, "Expected BY after GROUP")
+        let group = sql_parse_group_by()
+        sql_add_child(node, group)
+    }
+    
+    ; Optional ORDER BY
+    if sql_match(SQLToken::ORDER) {
+        sql_expect(SQLToken::BY, "Expected BY after ORDER")
+        let order = sql_parse_order_by()
+        sql_add_child(node, order)
+    }
+    
+    ; Optional LIMIT
+    if sql_match(SQLToken::LIMIT) {
+        let limit = sql_node_new(SQLNodeType::LIMIT_CLAUSE)
+        limit.int_value = sql_parse_int()
+        
+        if sql_match(SQLToken::OFFSET) {
+            ; Store offset in float_value (hack)
+            limit.float_value = sql_parse_int() as f64
+        }
+        sql_add_child(node, limit)
+    }
+    
+    return node
+}
+
+fn sql_parse_column_list() -> ptr(SQLNode) {
+    let node = sql_node_new(SQLNodeType::COLUMN_LIST)
+    
+    if sql_match(SQLToken::STAR) {
+        let all = sql_node_new(SQLNodeType::COLUMN_REF)
+        all.name = string_from_cstr("*")
+        sql_add_child(node, all)
+        return node
+    }
+    
+    loop {
+        let col = sql_parse_expression()
+        sql_add_child(node, col)
+        
+        if not sql_match(SQLToken::COMMA) {
+            break
+        }
+    }
+    
+    return node
+}
+
+fn sql_parse_table_ref() -> ptr(SQLNode) {
+    let node = sql_node_new(SQLNodeType::TABLE_REF)
+    
+    if sql_parser.current_token == SQLToken::IDENT {
+        node.name = sql_parser.current_lexeme
+        sql_parser_advance()
+        
+        ; Optional alias
+        if sql_parser.current_token == SQLToken::IDENT {
+            ; Store alias in string_value
+            node.string_value = sql_parser.current_lexeme
+            sql_parser_advance()
+        }
+    }
+    
+    return node
+}
+
+fn sql_parse_join() -> ptr(SQLNode) {
+    let node = sql_node_new(SQLNodeType::JOIN_CLAUSE)
+    
+    ; Join type
+    if sql_match(SQLToken::LEFT) { node.name = string_from_cstr("LEFT") }
+    else if sql_match(SQLToken::RIGHT) { node.name = string_from_cstr("RIGHT") }
+    else if sql_match(SQLToken::INNER) { node.name = string_from_cstr("INNER") }
+    else { node.name = string_from_cstr("INNER") }
+    
+    sql_match(SQLToken::OUTER)
+    sql_expect(SQLToken::JOIN, "Expected JOIN")
+    
+    ; Table
+    let table = sql_parse_table_ref()
+    sql_add_child(node, table)
+    
+    ; ON condition
+    sql_expect(SQLToken::ON, "Expected ON")
+    let condition = sql_parse_expression()
+    sql_add_child(node, condition)
+    
+    return node
+}
+
+fn sql_parse_group_by() -> ptr(SQLNode) {
+    let node = sql_node_new(SQLNodeType::GROUP_CLAUSE)
+    
+    loop {
+        let col = sql_parse_expression()
+        sql_add_child(node, col)
+        
+        if not sql_match(SQLToken::COMMA) {
+            break
+        }
+    }
+    
+    ; Optional HAVING
+    if sql_match(SQLToken::HAVING) {
+        let having = sql_parse_expression()
+        sql_add_child(node, having)
+    }
+    
+    return node
+}
+
+fn sql_parse_order_by() -> ptr(SQLNode) {
+    let node = sql_node_new(SQLNodeType::ORDER_CLAUSE)
+    
+    loop {
+        let col = sql_parse_expression()
+        col.ascending = not sql_match(SQLToken::DESC)
+        sql_match(SQLToken::ASC)
+        sql_add_child(node, col)
+        
+        if not sql_match(SQLToken::COMMA) {
+            break
+        }
+    }
+    
+    return node
+}
+
+fn sql_parse_insert() -> ptr(SQLNode) {
+    let node = sql_node_new(SQLNodeType::INSERT_STMT)
+    sql_expect(SQLToken::INSERT, "Expected INSERT")
+    sql_expect(SQLToken::INTO, "Expected INTO")
+    
+    ; Table name
+    node.name = sql_parser.current_lexeme
+    sql_parser_advance()
+    
+    ; Optional column list
+    if sql_match(SQLToken::LPAREN) {
+        let cols = sql_node_new(SQLNodeType::COLUMN_LIST)
+        loop {
+            let col = sql_node_new(SQLNodeType::COLUMN_REF)
+            col.name = sql_parser.current_lexeme
+            sql_parser_advance()
+            sql_add_child(cols, col)
+            
+            if not sql_match(SQLToken::COMMA) {
+                break
+            }
+        }
+        sql_expect(SQLToken::RPAREN, "Expected ')'")
+        sql_add_child(node, cols)
+    }
+    
+    ; VALUES
+    sql_expect(SQLToken::VALUES, "Expected VALUES")
+    sql_expect(SQLToken::LPAREN, "Expected '('")
+    
+    loop {
+        let val = sql_parse_expression()
+        sql_add_child(node, val)
+        
+        if not sql_match(SQLToken::COMMA) {
+            break
+        }
+    }
+    
+    sql_expect(SQLToken::RPAREN, "Expected ')'")
+    
+    return node
+}
+
+fn sql_parse_update() -> ptr(SQLNode) {
+    let node = sql_node_new(SQLNodeType::UPDATE_STMT)
+    sql_expect(SQLToken::UPDATE, "Expected UPDATE")
+    
+    node.name = sql_parser.current_lexeme
+    sql_parser_advance()
+    
+    sql_expect(SQLToken::SET, "Expected SET")
+    
+    ; SET clauses
+    loop {
+        let col = sql_node_new(SQLNodeType::BINARY_EXPR)
+        col.operator = SQLToken::EQ
+        
+        let left = sql_node_new(SQLNodeType::COLUMN_REF)
+        left.name = sql_parser.current_lexeme
+        sql_parser_advance()
+        sql_add_child(col, left)
+        
+        sql_expect(SQLToken::EQ, "Expected '='")
+        
+        let right = sql_parse_expression()
+        sql_add_child(col, right)
+        
+        sql_add_child(node, col)
+        
+        if not sql_match(SQLToken::COMMA) {
+            break
+        }
+    }
+    
+    ; Optional WHERE
+    if sql_match(SQLToken::WHERE) {
+        let where_node = sql_node_new(SQLNodeType::WHERE_CLAUSE)
+        let condition = sql_parse_expression()
+        sql_add_child(where_node, condition)
+        sql_add_child(node, where_node)
+    }
+    
+    return node
+}
+
+fn sql_parse_delete() -> ptr(SQLNode) {
+    let node = sql_node_new(SQLNodeType::DELETE_STMT)
+    sql_expect(SQLToken::DELETE, "Expected DELETE")
+    sql_expect(SQLToken::FROM, "Expected FROM")
+    
+    node.name = sql_parser.current_lexeme
+    sql_parser_advance()
+    
+    ; Optional WHERE
+    if sql_match(SQLToken::WHERE) {
+        let condition = sql_parse_expression()
+        sql_add_child(node, condition)
+    }
+    
+    return node
+}
+
+fn sql_parse_create() -> ptr(SQLNode) {
+    sql_expect(SQLToken::CREATE, "Expected CREATE")
+    sql_expect(SQLToken::TABLE, "Expected TABLE")
+    
+    let node = sql_node_new(SQLNodeType::CREATE_TABLE)
+    node.name = sql_parser.current_lexeme
+    sql_parser_advance()
+    
+    sql_expect(SQLToken::LPAREN, "Expected '('")
+    
+    ; Column definitions
+    loop {
+        let col = sql_parse_column_def()
+        sql_add_child(node, col)
+        
+        if not sql_match(SQLToken::COMMA) {
+            break
+        }
+    }
+    
+    sql_expect(SQLToken::RPAREN, "Expected ')'")
+    
+    return node
+}
+
+fn sql_parse_column_def() -> ptr(SQLNode) {
+    let node = sql_node_new(SQLNodeType::COLUMN_DEF)
+    
+    node.name = sql_parser.current_lexeme
+    sql_parser_advance()
+    
+    ; Data type
+    node.data_type = sql_parser.current_token
+    sql_parser_advance()
+    
+    ; Optional size for VARCHAR
+    if sql_match(SQLToken::LPAREN) {
+        node.int_value = sql_parse_int()
+        sql_expect(SQLToken::RPAREN, "Expected ')'")
+    }
+    
+    ; Constraints
+    node.constraints = 0
+    loop {
+        if sql_match(SQLToken::PRIMARY) {
+            sql_expect(SQLToken::KEY, "Expected KEY")
+            node.constraints = node.constraints | CONSTRAINT_PRIMARY_KEY
+        } else if sql_match(SQLToken::NOT) {
+            sql_expect(SQLToken::NULL, "Expected NULL")
+            node.constraints = node.constraints | CONSTRAINT_NOT_NULL
+        } else if sql_match(SQLToken::UNIQUE) {
+            node.constraints = node.constraints | CONSTRAINT_UNIQUE
+        } else if sql_match(SQLToken::DEFAULT) {
+            node.constraints = node.constraints | CONSTRAINT_DEFAULT
+            ; Skip default value
+            sql_parse_expression()
+        } else {
+            break
+        }
+    }
+    
+    return node
+}
+
+fn sql_parse_drop() -> ptr(SQLNode) {
+    sql_expect(SQLToken::DROP, "Expected DROP")
+    sql_expect(SQLToken::TABLE, "Expected TABLE")
+    
+    let node = sql_node_new(SQLNodeType::DROP_TABLE)
+    node.name = sql_parser.current_lexeme
+    sql_parser_advance()
+    
+    return node
+}
+
+fn sql_parse_expression() -> ptr(SQLNode) {
+    return sql_parse_or()
+}
+
+fn sql_parse_or() -> ptr(SQLNode) {
+    var left = sql_parse_and()
+    
+    while sql_match(SQLToken::OR) {
+        let node = sql_node_new(SQLNodeType::BINARY_EXPR)
+        node.operator = SQLToken::OR
+        sql_add_child(node, left)
+        sql_add_child(node, sql_parse_and())
+        left = node
+    }
+    
+    return left
+}
+
+fn sql_parse_and() -> ptr(SQLNode) {
+    var left = sql_parse_comparison()
+    
+    while sql_match(SQLToken::AND) {
+        let node = sql_node_new(SQLNodeType::BINARY_EXPR)
+        node.operator = SQLToken::AND
+        sql_add_child(node, left)
+        sql_add_child(node, sql_parse_comparison())
+        left = node
+    }
+    
+    return left
+}
+
+fn sql_parse_comparison() -> ptr(SQLNode) {
+    var left = sql_parse_primary()
+    
+    if sql_parser.current_token == SQLToken::EQ or
+       sql_parser.current_token == SQLToken::NE or
+       sql_parser.current_token == SQLToken::LT or
+       sql_parser.current_token == SQLToken::LE or
+       sql_parser.current_token == SQLToken::GT or
+       sql_parser.current_token == SQLToken::GE {
+        let op = sql_parser.current_token
+        sql_parser_advance()
+        
+        let node = sql_node_new(SQLNodeType::BINARY_EXPR)
+        node.operator = op
+        sql_add_child(node, left)
+        sql_add_child(node, sql_parse_primary())
+        return node
+    }
+    
+    return left
+}
+
+fn sql_parse_primary() -> ptr(SQLNode) {
+    match sql_parser.current_token {
+        SQLToken::INTEGER => {
+            let node = sql_node_new(SQLNodeType::LITERAL)
+            node.int_value = parse_int(sql_parser.current_lexeme)
+            sql_parser_advance()
+            return node
+        }
+        SQLToken::FLOAT => {
+            let node = sql_node_new(SQLNodeType::LITERAL)
+            node.float_value = parse_float(sql_parser.current_lexeme)
+            sql_parser_advance()
+            return node
+        }
+        SQLToken::STRING => {
+            let node = sql_node_new(SQLNodeType::LITERAL)
+            node.string_value = sql_parser.current_lexeme
+            sql_parser_advance()
+            return node
+        }
+        SQLToken::NULL => {
+            let node = sql_node_new(SQLNodeType::LITERAL)
+            sql_parser_advance()
+            return node
+        }
+        SQLToken::TRUE_KW => {
+            let node = sql_node_new(SQLNodeType::LITERAL)
+            node.int_value = 1
+            sql_parser_advance()
+            return node
+        }
+        SQLToken::FALSE_KW => {
+            let node = sql_node_new(SQLNodeType::LITERAL)
+            node.int_value = 0
+            sql_parser_advance()
+            return node
+        }
+        SQLToken::IDENT => {
+            let node = sql_node_new(SQLNodeType::COLUMN_REF)
+            node.name = sql_parser.current_lexeme
+            sql_parser_advance()
+            
+            ; Check for table.column
+            if sql_match(SQLToken::DOT) {
+                node.string_value = node.name  ; table
+                node.name = sql_parser.current_lexeme  ; column
+                sql_parser_advance()
+            }
+            
+            return node
+        }
+        SQLToken::LPAREN => {
+            sql_parser_advance()
+            let expr = sql_parse_expression()
+            sql_expect(SQLToken::RPAREN, "Expected ')'")
+            return expr
+        }
+        _ => {
+            sql_error("Expected expression")
+            return sql_node_new(SQLNodeType::LITERAL)
+        }
+    }
+}
+
+fn sql_parse_int() -> i64 {
+    if sql_parser.current_token == SQLToken::INTEGER {
+        let val = parse_int(sql_parser.current_lexeme)
+        sql_parser_advance()
+        return val
+    }
+    return 0
+}
+
+fn sql_node_new(type: SQLNodeType) -> ptr(SQLNode) {
+    let node = gc_alloc(sizeof(SQLNode)) as ptr(SQLNode)
+    node.type = type
+    node.child_count = 0
+    node.constraints = 0
+    node.ascending = true
+    return node
+}
+
+fn sql_add_child(parent: ptr(SQLNode), child: ptr(SQLNode)) {
+    if child != null and parent.child_count < 32 {
+        parent.children[parent.child_count] = child
+        parent.child_count = parent.child_count + 1
+    }
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; END OF MODULE
+; ═══════════════════════════════════════════════════════════════════════════

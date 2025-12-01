@@ -1,0 +1,620 @@
+; ═══════════════════════════════════════════════════════════════════════════
+; LLML-MATHIS: Storage Engine
+; ═══════════════════════════════════════════════════════════════════════════
+;
+; AGI-Oriented Storage:
+; - Persistent data storage
+; - Table management
+; - B-tree indexes for fast lookup
+; - AI knowledge persistence
+;
+; ═══════════════════════════════════════════════════════════════════════════
+
+; --- Storage Constants ---
+
+const PAGE_SIZE: u32 = 4096
+const MAX_TABLES: u32 = 64
+const MAX_COLUMNS: u32 = 32
+const MAX_ROWS_PER_PAGE: u32 = 100
+const MAX_KEY_SIZE: u32 = 256
+
+; --- Data Types ---
+
+enum DataType {
+    NULL_TYPE,
+    INTEGER,
+    FLOAT,
+    TEXT,
+    BLOB,
+    BOOLEAN
+}
+
+fn data_type_size(t: DataType) -> u32 {
+    match t {
+        DataType::NULL_TYPE => 0,
+        DataType::INTEGER => 8,
+        DataType::FLOAT => 8,
+        DataType::TEXT => 8,      ; Pointer
+        DataType::BLOB => 8,      ; Pointer
+        DataType::BOOLEAN => 1,
+        _ => 0
+    }
+}
+
+; --- Column Definition ---
+
+struct Column {
+    name: ptr(String),
+    data_type: DataType,
+    size: u32,              ; For VARCHAR
+    nullable: bool,
+    primary_key: bool,
+    unique: bool,
+    default_value: Value,
+    index: ptr(BTreeIndex)
+}
+
+; --- Table Schema ---
+
+struct TableSchema {
+    name: ptr(String),
+    columns: [Column; MAX_COLUMNS],
+    column_count: u32,
+    primary_key_column: u32,
+    row_size: u32,
+    
+    ; Statistics
+    row_count: u64,
+    created_at: u64,
+    modified_at: u64
+}
+
+; --- Row ---
+
+struct Row {
+    data: [u8; 1024],       ; Raw row data
+    null_bitmap: u32,       ; Which columns are NULL
+    valid: bool
+}
+
+; --- Page ---
+
+struct Page {
+    page_id: u32,
+    page_type: u8,          ; 0=data, 1=index, 2=overflow
+    row_count: u32,
+    free_space: u32,
+    next_page: u32,
+    prev_page: u32,
+    data: [u8; PAGE_SIZE - 24]
+}
+
+const PAGE_TYPE_DATA: u8 = 0
+const PAGE_TYPE_INDEX: u8 = 1
+const PAGE_TYPE_OVERFLOW: u8 = 2
+
+; --- Table ---
+
+struct Table {
+    schema: TableSchema,
+    first_page: u32,
+    last_page: u32,
+    page_count: u32,
+    
+    ; In-memory cache
+    cached_pages: [ptr(Page); 16],
+    cached_count: u32
+}
+
+; --- B-Tree Index ---
+
+struct BTreeNode {
+    is_leaf: bool,
+    key_count: u32,
+    keys: [u8; 4096],       ; Serialized keys
+    children: [u32; 128],   ; Child page IDs or row pointers
+    parent: u32,
+    next_leaf: u32          ; For leaf nodes
+}
+
+struct BTreeIndex {
+    name: ptr(String),
+    column_idx: u32,
+    root_page: u32,
+    height: u32,
+    unique: bool
+}
+
+; --- Database ---
+
+struct Database {
+    name: ptr(String),
+    tables: [Table; MAX_TABLES],
+    table_count: u32,
+    
+    ; Storage file
+    file_path: ptr(String),
+    file_size: u64,
+    
+    ; Page management
+    next_page_id: u32,
+    free_pages: [u32; 256],
+    free_page_count: u32,
+    
+    ; Transaction
+    in_transaction: bool,
+    transaction_id: u64
+}
+
+var db: Database
+
+; --- Initialization ---
+
+fn db_init(name: ptr(String)) {
+    db.name = name
+    db.table_count = 0
+    db.next_page_id = 1
+    db.free_page_count = 0
+    db.in_transaction = false
+    db.transaction_id = 0
+}
+
+fn db_open(path: ptr(String)) -> bool {
+    db.file_path = path
+    
+    ; Try to read existing database
+    let content = file_read_all(path)
+    if content != null and content.length > 0 {
+        return db_deserialize(content)
+    }
+    
+    ; Create new database
+    return true
+}
+
+fn db_close() {
+    db_flush()
+}
+
+fn db_flush() {
+    let data = db_serialize()
+    file_write_all(db.file_path, data)
+}
+
+; --- Table Management ---
+
+fn db_create_table(schema: TableSchema) -> ptr(Table) {
+    if db.table_count >= MAX_TABLES {
+        return null
+    }
+    
+    let table = &db.tables[db.table_count]
+    table.schema = schema
+    table.first_page = allocate_page()
+    table.last_page = table.first_page
+    table.page_count = 1
+    table.cached_count = 0
+    
+    ; Calculate row size
+    table.schema.row_size = 0
+    for i in 0..schema.column_count {
+        table.schema.row_size = table.schema.row_size + data_type_size(schema.columns[i].data_type)
+    }
+    
+    table.schema.row_count = 0
+    table.schema.created_at = get_timestamp()
+    table.schema.modified_at = table.schema.created_at
+    
+    db.table_count = db.table_count + 1
+    return table
+}
+
+fn db_drop_table(name: ptr(String)) -> bool {
+    for i in 0..db.table_count {
+        if string_equals(db.tables[i].schema.name, name) {
+            ; Free all pages
+            free_table_pages(&db.tables[i])
+            
+            ; Remove from array
+            for j in i..(db.table_count - 1) {
+                db.tables[j] = db.tables[j + 1]
+            }
+            db.table_count = db.table_count - 1
+            return true
+        }
+    }
+    return false
+}
+
+fn db_get_table(name: ptr(String)) -> ptr(Table) {
+    for i in 0..db.table_count {
+        if string_equals(db.tables[i].schema.name, name) {
+            return &db.tables[i]
+        }
+    }
+    return null
+}
+
+fn free_table_pages(table: ptr(Table)) {
+    var page_id = table.first_page
+    while page_id != 0 {
+        let page = read_page(page_id)
+        let next = page.next_page
+        free_page(page_id)
+        page_id = next
+    }
+}
+
+; --- Row Operations ---
+
+fn table_insert(table: ptr(Table), values: [Value]) -> bool {
+    ; Find page with space
+    var page = find_page_with_space(table)
+    if page == null {
+        ; Allocate new page
+        let new_page_id = allocate_page()
+        page = read_page(new_page_id)
+        page.page_type = PAGE_TYPE_DATA
+        page.row_count = 0
+        page.prev_page = table.last_page
+        
+        let last = read_page(table.last_page)
+        last.next_page = new_page_id
+        write_page(table.last_page, last)
+        
+        table.last_page = new_page_id
+        table.page_count = table.page_count + 1
+    }
+    
+    ; Serialize row
+    var row: Row
+    row.valid = true
+    row.null_bitmap = 0
+    
+    var offset: u32 = 0
+    for i in 0..table.schema.column_count {
+        let col = table.schema.columns[i]
+        let val = values[i]
+        
+        if is_none(val) {
+            row.null_bitmap = row.null_bitmap | (1 << i)
+        } else {
+            serialize_value(&row.data + offset, val, col.data_type)
+        }
+        offset = offset + data_type_size(col.data_type)
+    }
+    
+    ; Add to page
+    let row_offset = page.row_count * table.schema.row_size
+    memcpy(&page.data + row_offset, &row.data, table.schema.row_size)
+    page.row_count = page.row_count + 1
+    
+    write_page(page.page_id, page)
+    
+    table.schema.row_count = table.schema.row_count + 1
+    table.schema.modified_at = get_timestamp()
+    
+    ; Update indexes
+    update_indexes(table, values, table.schema.row_count - 1)
+    
+    return true
+}
+
+fn table_delete(table: ptr(Table), row_id: u64) -> bool {
+    ; Find the page containing this row
+    let (page, local_row) = find_row_location(table, row_id)
+    if page == null {
+        return false
+    }
+    
+    ; Mark row as deleted (set first byte to 0)
+    let row_offset = local_row * table.schema.row_size
+    page.data[row_offset] = 0
+    
+    write_page(page.page_id, page)
+    table.schema.row_count = table.schema.row_count - 1
+    table.schema.modified_at = get_timestamp()
+    
+    return true
+}
+
+fn table_update(table: ptr(Table), row_id: u64, column_idx: u32, value: Value) -> bool {
+    let (page, local_row) = find_row_location(table, row_id)
+    if page == null {
+        return false
+    }
+    
+    ; Calculate offset to column
+    var col_offset: u32 = 0
+    for i in 0..column_idx {
+        col_offset = col_offset + data_type_size(table.schema.columns[i].data_type)
+    }
+    
+    let row_offset = local_row * table.schema.row_size
+    serialize_value(&page.data + row_offset + col_offset, value, table.schema.columns[column_idx].data_type)
+    
+    write_page(page.page_id, page)
+    table.schema.modified_at = get_timestamp()
+    
+    return true
+}
+
+fn table_get_row(table: ptr(Table), row_id: u64) -> [Value] {
+    let (page, local_row) = find_row_location(table, row_id)
+    if page == null {
+        return []
+    }
+    
+    return deserialize_row(table, page, local_row)
+}
+
+fn deserialize_row(table: ptr(Table), page: ptr(Page), local_row: u32) -> [Value] {
+    var values: [Value; MAX_COLUMNS]
+    let row_offset = local_row * table.schema.row_size
+    
+    var col_offset: u32 = 0
+    for i in 0..table.schema.column_count {
+        let col = table.schema.columns[i]
+        values[i] = deserialize_value(&page.data + row_offset + col_offset, col.data_type)
+        col_offset = col_offset + data_type_size(col.data_type)
+    }
+    
+    return values[0..table.schema.column_count]
+}
+
+fn find_row_location(table: ptr(Table), row_id: u64) -> (ptr(Page), u32) {
+    var page_id = table.first_page
+    var remaining = row_id
+    
+    while page_id != 0 {
+        let page = read_page(page_id)
+        
+        if remaining < page.row_count as u64 {
+            return (page, remaining as u32)
+        }
+        
+        remaining = remaining - page.row_count as u64
+        page_id = page.next_page
+    }
+    
+    return (null, 0)
+}
+
+fn find_page_with_space(table: ptr(Table)) -> ptr(Page) {
+    var page_id = table.first_page
+    let max_rows = (PAGE_SIZE - 24) / table.schema.row_size
+    
+    while page_id != 0 {
+        let page = read_page(page_id)
+        if page.row_count < max_rows {
+            return page
+        }
+        page_id = page.next_page
+    }
+    
+    return null
+}
+
+; --- Serialization ---
+
+fn serialize_value(dest: ptr, value: Value, dtype: DataType) {
+    match dtype {
+        DataType::INTEGER => {
+            let v = to_int(value)
+            for i in 0..8 {
+                store_byte(dest + i, ((v >> (i * 8)) & 0xFF) as u8)
+            }
+        }
+        DataType::FLOAT => {
+            let v = to_float(value) as i64  ; Bit cast
+            for i in 0..8 {
+                store_byte(dest + i, ((v >> (i * 8)) & 0xFF) as u8)
+            }
+        }
+        DataType::TEXT => {
+            let ptr_val = value.data as u64
+            for i in 0..8 {
+                store_byte(dest + i, ((ptr_val >> (i * 8)) & 0xFF) as u8)
+            }
+        }
+        DataType::BOOLEAN => {
+            store_byte(dest, if to_int(value) != 0 { 1 } else { 0 })
+        }
+        _ => {}
+    }
+}
+
+fn deserialize_value(src: ptr, dtype: DataType) -> Value {
+    match dtype {
+        DataType::INTEGER => {
+            var v: i64 = 0
+            for i in 0..8 {
+                v = v | ((load_byte(src + i) as i64) << (i * 8))
+            }
+            return int(v)
+        }
+        DataType::FLOAT => {
+            var v: i64 = 0
+            for i in 0..8 {
+                v = v | ((load_byte(src + i) as i64) << (i * 8))
+            }
+            return float(v as f64)  ; Bit cast back
+        }
+        DataType::TEXT => {
+            var ptr_val: u64 = 0
+            for i in 0..8 {
+                ptr_val = ptr_val | ((load_byte(src + i) as u64) << (i * 8))
+            }
+            return value_from_string(ptr_val as ptr(String))
+        }
+        DataType::BOOLEAN => {
+            return bool_value(load_byte(src) != 0)
+        }
+        _ => return none()
+    }
+}
+
+; --- Page Management ---
+
+var page_cache: [Page; 64]
+var page_cache_ids: [u32; 64]
+var page_cache_count: u32 = 0
+
+fn allocate_page() -> u32 {
+    if db.free_page_count > 0 {
+        db.free_page_count = db.free_page_count - 1
+        return db.free_pages[db.free_page_count]
+    }
+    
+    let id = db.next_page_id
+    db.next_page_id = db.next_page_id + 1
+    return id
+}
+
+fn free_page(page_id: u32) {
+    if db.free_page_count < 256 {
+        db.free_pages[db.free_page_count] = page_id
+        db.free_page_count = db.free_page_count + 1
+    }
+}
+
+fn read_page(page_id: u32) -> ptr(Page) {
+    ; Check cache
+    for i in 0..page_cache_count {
+        if page_cache_ids[i] == page_id {
+            return &page_cache[i]
+        }
+    }
+    
+    ; Load from storage (simplified - uses memory)
+    if page_cache_count < 64 {
+        page_cache_ids[page_cache_count] = page_id
+        page_cache[page_cache_count].page_id = page_id
+        page_cache_count = page_cache_count + 1
+        return &page_cache[page_cache_count - 1]
+    }
+    
+    ; Evict oldest
+    page_cache_ids[0] = page_id
+    page_cache[0].page_id = page_id
+    return &page_cache[0]
+}
+
+fn write_page(page_id: u32, page: ptr(Page)) {
+    ; Update cache
+    for i in 0..page_cache_count {
+        if page_cache_ids[i] == page_id {
+            page_cache[i] = *page
+            return
+        }
+    }
+}
+
+; --- Indexing ---
+
+fn create_index(table: ptr(Table), column_idx: u32, unique: bool) -> ptr(BTreeIndex) {
+    let idx = gc_alloc(sizeof(BTreeIndex)) as ptr(BTreeIndex)
+    idx.column_idx = column_idx
+    idx.root_page = allocate_page()
+    idx.height = 1
+    idx.unique = unique
+    
+    table.schema.columns[column_idx].index = idx
+    
+    ; Build index from existing data
+    rebuild_index(table, idx)
+    
+    return idx
+}
+
+fn rebuild_index(table: ptr(Table), idx: ptr(BTreeIndex)) {
+    var row_id: u64 = 0
+    var page_id = table.first_page
+    
+    while page_id != 0 {
+        let page = read_page(page_id)
+        
+        for i in 0..page.row_count {
+            let values = deserialize_row(table, page, i)
+            let key = values[idx.column_idx]
+            btree_insert(idx, key, row_id)
+            row_id = row_id + 1
+        }
+        
+        page_id = page.next_page
+    }
+}
+
+fn update_indexes(table: ptr(Table), values: [Value], row_id: u64) {
+    for i in 0..table.schema.column_count {
+        let col = table.schema.columns[i]
+        if col.index != null {
+            btree_insert(col.index, values[i], row_id)
+        }
+    }
+}
+
+fn btree_insert(idx: ptr(BTreeIndex), key: Value, row_id: u64) {
+    ; Simplified B-tree insert
+    let root = read_page(idx.root_page)
+    let node = root as ptr(BTreeNode)
+    
+    ; For now, just linear insert in leaf
+    if node.key_count < 126 {
+        ; Store key and row pointer
+        node.children[node.key_count] = row_id as u32
+        node.key_count = node.key_count + 1
+    }
+}
+
+fn btree_search(idx: ptr(BTreeIndex), key: Value) -> u64 {
+    ; Simplified B-tree search
+    let root = read_page(idx.root_page)
+    let node = root as ptr(BTreeNode)
+    
+    ; Linear search in leaf
+    for i in 0..node.key_count {
+        ; Would compare keys here
+        return node.children[i] as u64
+    }
+    
+    return 0xFFFFFFFFFFFFFFFF  ; Not found
+}
+
+; --- Database Serialization ---
+
+fn db_serialize() -> ptr(String) {
+    ; Simplified - would serialize all tables and data
+    var result = string_from_cstr("MATHISDB\n")
+    
+    for i in 0..db.table_count {
+        let table = &db.tables[i]
+        result = string_concat(result, string_from_cstr("TABLE:"))
+        result = string_concat(result, table.schema.name)
+        result = string_concat(result, string_from_cstr("\n"))
+    }
+    
+    return result
+}
+
+fn db_deserialize(data: ptr(String)) -> bool {
+    ; Simplified deserialization
+    if not string_starts_with(data, string_from_cstr("MATHISDB")) {
+        return false
+    }
+    return true
+}
+
+; --- Helper Functions ---
+
+fn value_from_string(s: ptr(String)) -> Value {
+    return Value { type_id: TYPE_STRING, flags: 0, reserved: 0, data: s as u64 }
+}
+
+fn bool_value(b: bool) -> Value {
+    return Value { type_id: TYPE_BOOL, flags: 0, reserved: 0, data: if b { 1 } else { 0 } }
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; END OF MODULE
+; ═══════════════════════════════════════════════════════════════════════════

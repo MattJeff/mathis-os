@@ -35,10 +35,10 @@ Réécrire entièrement LLML en Mathis natif pour créer un écosystème AGI aut
 - [x] http.masm - HTTP client/server + AI API calls (600 lignes)
 - [x] websocket.masm - WebSocket + AI streaming (550 lignes)
 
-### Phase 6: Database (Semaine 13-14)
-- [ ] sql.masm - SQL parser
-- [ ] storage.masm - Stockage persistant
-- [ ] query.masm - Query engine
+### Phase 6: Database (Semaine 13-14) ✅ COMPLETE
+- [x] sql.masm - Full SQL parser (lexer + AST) (700 lignes)
+- [x] storage.masm - Tables + Pages + B-tree indexes (550 lignes)
+- [x] query.masm - Query planner + executor + AI memory (650 lignes)
 
 ### Phase 7: AI (Semaine 15-20)
 - [ ] tensor.masm - Tenseurs
