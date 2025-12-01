@@ -1,0 +1,587 @@
+; ═══════════════════════════════════════════════════════════════════════════
+; LLML-MATHIS: Math Library
+; ═══════════════════════════════════════════════════════════════════════════
+;
+; AGI-Oriented Math:
+; - Standard math functions
+; - Vector/Matrix operations for AI
+; - Statistical functions for learning
+; - Activation functions for neural networks
+;
+; ═══════════════════════════════════════════════════════════════════════════
+
+; --- Constants ---
+
+const PI: f64 = 3.14159265358979323846
+const E: f64 = 2.71828182845904523536
+const EPSILON: f64 = 0.0000001
+const INF: f64 = 1.0 / 0.0
+const NEG_INF: f64 = -1.0 / 0.0
+
+; --- Basic Functions ---
+
+fn abs(x: i64) -> i64 {
+    if x < 0 { return -x }
+    return x
+}
+
+fn abs_f(x: f64) -> f64 {
+    if x < 0.0 { return -x }
+    return x
+}
+
+fn min(a: i64, b: i64) -> i64 {
+    if a < b { return a }
+    return b
+}
+
+fn max(a: i64, b: i64) -> i64 {
+    if a > b { return a }
+    return b
+}
+
+fn min_f(a: f64, b: f64) -> f64 {
+    if a < b { return a }
+    return b
+}
+
+fn max_f(a: f64, b: f64) -> f64 {
+    if a > b { return a }
+    return b
+}
+
+fn clamp(x: i64, lo: i64, hi: i64) -> i64 {
+    return max(lo, min(x, hi))
+}
+
+fn clamp_f(x: f64, lo: f64, hi: f64) -> f64 {
+    return max_f(lo, min_f(x, hi))
+}
+
+fn sign(x: i64) -> i64 {
+    if x > 0 { return 1 }
+    if x < 0 { return -1 }
+    return 0
+}
+
+fn sign_f(x: f64) -> f64 {
+    if x > 0.0 { return 1.0 }
+    if x < 0.0 { return -1.0 }
+    return 0.0
+}
+
+; --- Power & Roots ---
+
+fn pow(base: f64, exp: i64) -> f64 {
+    if exp == 0 { return 1.0 }
+    if exp < 0 { return 1.0 / pow(base, -exp) }
+    
+    var result: f64 = 1.0
+    for i in 0..exp {
+        result = result * base
+    }
+    return result
+}
+
+fn pow_f(base: f64, exp: f64) -> f64 {
+    ; Using exp(exp * ln(base))
+    return exp_f(exp * ln(base))
+}
+
+fn sqrt(x: f64) -> f64 {
+    ; Newton's method
+    if x < 0.0 { return 0.0 }  ; NaN would be better
+    if x == 0.0 { return 0.0 }
+    
+    var guess: f64 = x / 2.0
+    for i in 0..20 {
+        let new_guess = (guess + x / guess) / 2.0
+        if abs_f(new_guess - guess) < EPSILON {
+            return new_guess
+        }
+        guess = new_guess
+    }
+    return guess
+}
+
+fn cbrt(x: f64) -> f64 {
+    ; Cube root using Newton's method
+    if x == 0.0 { return 0.0 }
+    
+    var guess: f64 = x / 3.0
+    for i in 0..20 {
+        let new_guess = (2.0 * guess + x / (guess * guess)) / 3.0
+        if abs_f(new_guess - guess) < EPSILON {
+            return new_guess
+        }
+        guess = new_guess
+    }
+    return guess
+}
+
+; --- Exponential & Logarithm ---
+
+fn exp_f(x: f64) -> f64 {
+    ; Taylor series: e^x = 1 + x + x²/2! + x³/3! + ...
+    var result: f64 = 1.0
+    var term: f64 = 1.0
+    
+    for n in 1..50 {
+        term = term * x / (n as f64)
+        result = result + term
+        if abs_f(term) < EPSILON {
+            break
+        }
+    }
+    return result
+}
+
+fn ln(x: f64) -> f64 {
+    ; Natural logarithm using Newton's method
+    if x <= 0.0 { return NEG_INF }
+    if x == 1.0 { return 0.0 }
+    
+    var guess: f64 = x - 1.0
+    for i in 0..50 {
+        let exp_guess = exp_f(guess)
+        let new_guess = guess + (x - exp_guess) / exp_guess
+        if abs_f(new_guess - guess) < EPSILON {
+            return new_guess
+        }
+        guess = new_guess
+    }
+    return guess
+}
+
+fn log10(x: f64) -> f64 {
+    return ln(x) / ln(10.0)
+}
+
+fn log2(x: f64) -> f64 {
+    return ln(x) / ln(2.0)
+}
+
+; --- Trigonometry ---
+
+fn sin(x: f64) -> f64 {
+    ; Normalize to [-π, π]
+    var normalized = x
+    while normalized > PI { normalized = normalized - 2.0 * PI }
+    while normalized < -PI { normalized = normalized + 2.0 * PI }
+    
+    ; Taylor series
+    var result: f64 = normalized
+    var term: f64 = normalized
+    
+    for n in 1..20 {
+        term = -term * normalized * normalized / ((2.0 * n as f64) * (2.0 * n as f64 + 1.0))
+        result = result + term
+        if abs_f(term) < EPSILON {
+            break
+        }
+    }
+    return result
+}
+
+fn cos(x: f64) -> f64 {
+    return sin(x + PI / 2.0)
+}
+
+fn tan(x: f64) -> f64 {
+    let c = cos(x)
+    if abs_f(c) < EPSILON { return INF }
+    return sin(x) / c
+}
+
+fn asin(x: f64) -> f64 {
+    ; Clamp input
+    let clamped = clamp_f(x, -1.0, 1.0)
+    ; Taylor series approximation
+    return clamped + pow_f(clamped, 3.0) / 6.0 + 3.0 * pow_f(clamped, 5.0) / 40.0
+}
+
+fn acos(x: f64) -> f64 {
+    return PI / 2.0 - asin(x)
+}
+
+fn atan(x: f64) -> f64 {
+    ; Approximation
+    if abs_f(x) > 1.0 {
+        return sign_f(x) * PI / 2.0 - atan(1.0 / x)
+    }
+    return x - pow_f(x, 3.0) / 3.0 + pow_f(x, 5.0) / 5.0 - pow_f(x, 7.0) / 7.0
+}
+
+fn atan2(y: f64, x: f64) -> f64 {
+    if x > 0.0 { return atan(y / x) }
+    if x < 0.0 and y >= 0.0 { return atan(y / x) + PI }
+    if x < 0.0 and y < 0.0 { return atan(y / x) - PI }
+    if x == 0.0 and y > 0.0 { return PI / 2.0 }
+    if x == 0.0 and y < 0.0 { return -PI / 2.0 }
+    return 0.0
+}
+
+; --- Hyperbolic ---
+
+fn sinh(x: f64) -> f64 {
+    return (exp_f(x) - exp_f(-x)) / 2.0
+}
+
+fn cosh(x: f64) -> f64 {
+    return (exp_f(x) + exp_f(-x)) / 2.0
+}
+
+fn tanh(x: f64) -> f64 {
+    let ex = exp_f(x)
+    let emx = exp_f(-x)
+    return (ex - emx) / (ex + emx)
+}
+
+; --- Rounding ---
+
+fn floor(x: f64) -> i64 {
+    let i = x as i64
+    if x < 0.0 and x != (i as f64) {
+        return i - 1
+    }
+    return i
+}
+
+fn ceil(x: f64) -> i64 {
+    let i = x as i64
+    if x > 0.0 and x != (i as f64) {
+        return i + 1
+    }
+    return i
+}
+
+fn round(x: f64) -> i64 {
+    return floor(x + 0.5)
+}
+
+fn trunc(x: f64) -> i64 {
+    return x as i64
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; NEURAL NETWORK ACTIVATION FUNCTIONS (for AGI)
+; ═══════════════════════════════════════════════════════════════════════════
+
+fn sigmoid(x: f64) -> f64 {
+    return 1.0 / (1.0 + exp_f(-x))
+}
+
+fn sigmoid_derivative(x: f64) -> f64 {
+    let s = sigmoid(x)
+    return s * (1.0 - s)
+}
+
+fn relu(x: f64) -> f64 {
+    return max_f(0.0, x)
+}
+
+fn relu_derivative(x: f64) -> f64 {
+    if x > 0.0 { return 1.0 }
+    return 0.0
+}
+
+fn leaky_relu(x: f64, alpha: f64) -> f64 {
+    if x > 0.0 { return x }
+    return alpha * x
+}
+
+fn elu(x: f64, alpha: f64) -> f64 {
+    if x > 0.0 { return x }
+    return alpha * (exp_f(x) - 1.0)
+}
+
+fn swish(x: f64) -> f64 {
+    return x * sigmoid(x)
+}
+
+fn gelu(x: f64) -> f64 {
+    ; Gaussian Error Linear Unit (used in transformers)
+    return 0.5 * x * (1.0 + tanh(sqrt(2.0 / PI) * (x + 0.044715 * pow_f(x, 3.0))))
+}
+
+fn softplus(x: f64) -> f64 {
+    return ln(1.0 + exp_f(x))
+}
+
+; --- Softmax (for output layer) ---
+
+fn softmax(values: [f64]) -> [f64] {
+    ; Find max for numerical stability
+    var max_val: f64 = values[0]
+    for i in 1..values.length {
+        if values[i] > max_val {
+            max_val = values[i]
+        }
+    }
+    
+    ; Compute exp(x - max) and sum
+    var exps: [f64; 1000]
+    var sum: f64 = 0.0
+    for i in 0..values.length {
+        exps[i] = exp_f(values[i] - max_val)
+        sum = sum + exps[i]
+    }
+    
+    ; Normalize
+    var result: [f64; 1000]
+    for i in 0..values.length {
+        result[i] = exps[i] / sum
+    }
+    
+    return result[0..values.length]
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; STATISTICAL FUNCTIONS (for learning)
+; ═══════════════════════════════════════════════════════════════════════════
+
+fn sum(values: [f64]) -> f64 {
+    var total: f64 = 0.0
+    for i in 0..values.length {
+        total = total + values[i]
+    }
+    return total
+}
+
+fn mean(values: [f64]) -> f64 {
+    if values.length == 0 { return 0.0 }
+    return sum(values) / (values.length as f64)
+}
+
+fn variance(values: [f64]) -> f64 {
+    if values.length == 0 { return 0.0 }
+    let m = mean(values)
+    var sum_sq: f64 = 0.0
+    for i in 0..values.length {
+        let diff = values[i] - m
+        sum_sq = sum_sq + diff * diff
+    }
+    return sum_sq / (values.length as f64)
+}
+
+fn stddev(values: [f64]) -> f64 {
+    return sqrt(variance(values))
+}
+
+fn normalize(values: [f64]) -> [f64] {
+    let m = mean(values)
+    let s = stddev(values)
+    if s < EPSILON { s = 1.0 }
+    
+    var result: [f64; 1000]
+    for i in 0..values.length {
+        result[i] = (values[i] - m) / s
+    }
+    return result[0..values.length]
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; VECTOR OPERATIONS (for AI)
+; ═══════════════════════════════════════════════════════════════════════════
+
+fn vec_add(a: [f64], b: [f64]) -> [f64] {
+    let len = min(a.length, b.length) as u32
+    var result: [f64; 1000]
+    for i in 0..len {
+        result[i] = a[i] + b[i]
+    }
+    return result[0..len]
+}
+
+fn vec_sub(a: [f64], b: [f64]) -> [f64] {
+    let len = min(a.length, b.length) as u32
+    var result: [f64; 1000]
+    for i in 0..len {
+        result[i] = a[i] - b[i]
+    }
+    return result[0..len]
+}
+
+fn vec_mul(a: [f64], b: [f64]) -> [f64] {
+    ; Element-wise multiplication
+    let len = min(a.length, b.length) as u32
+    var result: [f64; 1000]
+    for i in 0..len {
+        result[i] = a[i] * b[i]
+    }
+    return result[0..len]
+}
+
+fn vec_scale(v: [f64], scalar: f64) -> [f64] {
+    var result: [f64; 1000]
+    for i in 0..v.length {
+        result[i] = v[i] * scalar
+    }
+    return result[0..v.length]
+}
+
+fn dot(a: [f64], b: [f64]) -> f64 {
+    ; Dot product
+    let len = min(a.length, b.length) as u32
+    var result: f64 = 0.0
+    for i in 0..len {
+        result = result + a[i] * b[i]
+    }
+    return result
+}
+
+fn magnitude(v: [f64]) -> f64 {
+    return sqrt(dot(v, v))
+}
+
+fn normalize_vec(v: [f64]) -> [f64] {
+    let mag = magnitude(v)
+    if mag < EPSILON { return v }
+    return vec_scale(v, 1.0 / mag)
+}
+
+fn cosine_similarity(a: [f64], b: [f64]) -> f64 {
+    ; Used for semantic similarity in AI
+    let dot_prod = dot(a, b)
+    let mag_a = magnitude(a)
+    let mag_b = magnitude(b)
+    if mag_a < EPSILON or mag_b < EPSILON { return 0.0 }
+    return dot_prod / (mag_a * mag_b)
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; MATRIX OPERATIONS (for neural networks)
+; ═══════════════════════════════════════════════════════════════════════════
+
+struct Matrix {
+    rows: u32,
+    cols: u32,
+    data: [f64]
+}
+
+fn matrix_new(rows: u32, cols: u32) -> Matrix {
+    var data: [f64; 10000]
+    for i in 0..(rows * cols) {
+        data[i] = 0.0
+    }
+    return Matrix {
+        rows: rows,
+        cols: cols,
+        data: data[0..(rows * cols)]
+    }
+}
+
+fn matrix_get(m: Matrix, row: u32, col: u32) -> f64 {
+    return m.data[row * m.cols + col]
+}
+
+fn matrix_set(m: Matrix, row: u32, col: u32, value: f64) {
+    m.data[row * m.cols + col] = value
+}
+
+fn matrix_multiply(a: Matrix, b: Matrix) -> Matrix {
+    ; Standard matrix multiplication
+    if a.cols != b.rows {
+        return matrix_new(0, 0)  ; Error
+    }
+    
+    var result = matrix_new(a.rows, b.cols)
+    
+    for i in 0..a.rows {
+        for j in 0..b.cols {
+            var sum: f64 = 0.0
+            for k in 0..a.cols {
+                sum = sum + matrix_get(a, i, k) * matrix_get(b, k, j)
+            }
+            matrix_set(result, i, j, sum)
+        }
+    }
+    
+    return result
+}
+
+fn matrix_transpose(m: Matrix) -> Matrix {
+    var result = matrix_new(m.cols, m.rows)
+    for i in 0..m.rows {
+        for j in 0..m.cols {
+            matrix_set(result, j, i, matrix_get(m, i, j))
+        }
+    }
+    return result
+}
+
+fn matrix_add(a: Matrix, b: Matrix) -> Matrix {
+    if a.rows != b.rows or a.cols != b.cols {
+        return matrix_new(0, 0)
+    }
+    
+    var result = matrix_new(a.rows, a.cols)
+    for i in 0..(a.rows * a.cols) {
+        result.data[i] = a.data[i] + b.data[i]
+    }
+    return result
+}
+
+fn matrix_scale(m: Matrix, scalar: f64) -> Matrix {
+    var result = matrix_new(m.rows, m.cols)
+    for i in 0..(m.rows * m.cols) {
+        result.data[i] = m.data[i] * scalar
+    }
+    return result
+}
+
+fn matrix_apply(m: Matrix, func: fn(f64) -> f64) -> Matrix {
+    ; Apply function to each element (for activation)
+    var result = matrix_new(m.rows, m.cols)
+    for i in 0..(m.rows * m.cols) {
+        result.data[i] = func(m.data[i])
+    }
+    return result
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; RANDOM (for AI initialization)
+; ═══════════════════════════════════════════════════════════════════════════
+
+var random_seed: u64 = 12345
+
+fn set_seed(seed: u64) {
+    random_seed = seed
+}
+
+fn random() -> u64 {
+    ; Linear congruential generator
+    random_seed = (random_seed * 6364136223846793005 + 1442695040888963407) % 0xFFFFFFFFFFFFFFFF
+    return random_seed
+}
+
+fn random_f64() -> f64 {
+    ; Random float in [0, 1)
+    return (random() as f64) / (0xFFFFFFFFFFFFFFFF as f64)
+}
+
+fn random_range(lo: i64, hi: i64) -> i64 {
+    return lo + (random() % ((hi - lo + 1) as u64)) as i64
+}
+
+fn random_normal() -> f64 {
+    ; Box-Muller transform for normal distribution
+    let u1 = random_f64()
+    let u2 = random_f64()
+    return sqrt(-2.0 * ln(u1)) * cos(2.0 * PI * u2)
+}
+
+fn random_xavier(fan_in: u32, fan_out: u32) -> f64 {
+    ; Xavier initialization for neural networks
+    let limit = sqrt(6.0 / ((fan_in + fan_out) as f64))
+    return (random_f64() * 2.0 - 1.0) * limit
+}
+
+fn random_he(fan_in: u32) -> f64 {
+    ; He initialization for ReLU networks
+    return random_normal() * sqrt(2.0 / (fan_in as f64))
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; END OF MODULE
+; ═══════════════════════════════════════════════════════════════════════════

@@ -1,0 +1,442 @@
+; ═══════════════════════════════════════════════════════════════════════════
+; LLML-MATHIS: Dynamic List Library
+; ═══════════════════════════════════════════════════════════════════════════
+;
+; AGI-Oriented Lists:
+; - Dynamic arrays that grow
+; - Functional operations (map, filter, reduce)
+; - AI can manipulate sequences of data
+; - Used for training data, embeddings, etc.
+;
+; ═══════════════════════════════════════════════════════════════════════════
+
+; --- List Structure ---
+
+struct List {
+    data: ptr,
+    length: u32,
+    capacity: u32,
+    element_size: u32
+}
+
+; --- Constructors ---
+
+fn list_new(element_size: u32) -> ptr(List) {
+    let l = alloc(sizeof(List)) as ptr(List)
+    l.data = null
+    l.length = 0
+    l.capacity = 0
+    l.element_size = element_size
+    return l
+}
+
+fn list_with_capacity(element_size: u32, capacity: u32) -> ptr(List) {
+    let l = alloc(sizeof(List)) as ptr(List)
+    l.data = alloc(element_size * capacity)
+    l.length = 0
+    l.capacity = capacity
+    l.element_size = element_size
+    return l
+}
+
+fn list_from_array(arr: ptr, length: u32, element_size: u32) -> ptr(List) {
+    let l = list_with_capacity(element_size, length)
+    memcpy(l.data, arr, length * element_size)
+    l.length = length
+    return l
+}
+
+; --- Basic Operations ---
+
+fn list_len(l: ptr(List)) -> u32 {
+    if l == null { return 0 }
+    return l.length
+}
+
+fn list_is_empty(l: ptr(List)) -> bool {
+    return l == null or l.length == 0
+}
+
+fn list_capacity(l: ptr(List)) -> u32 {
+    if l == null { return 0 }
+    return l.capacity
+}
+
+fn list_get(l: ptr(List), index: u32) -> ptr {
+    if index >= l.length {
+        return null
+    }
+    return l.data + index * l.element_size
+}
+
+fn list_set(l: ptr(List), index: u32, value: ptr) {
+    if index >= l.length {
+        return
+    }
+    memcpy(l.data + index * l.element_size, value, l.element_size)
+}
+
+fn list_first(l: ptr(List)) -> ptr {
+    return list_get(l, 0)
+}
+
+fn list_last(l: ptr(List)) -> ptr {
+    if l.length == 0 { return null }
+    return list_get(l, l.length - 1)
+}
+
+; --- Growth ---
+
+fn list_grow(l: ptr(List)) {
+    let new_capacity = if l.capacity == 0 { 8 } else { l.capacity * 2 }
+    let new_data = alloc(new_capacity * l.element_size)
+    
+    if l.data != null {
+        memcpy(new_data, l.data, l.length * l.element_size)
+        free(l.data)
+    }
+    
+    l.data = new_data
+    l.capacity = new_capacity
+}
+
+fn list_ensure_capacity(l: ptr(List), needed: u32) {
+    while l.capacity < needed {
+        list_grow(l)
+    }
+}
+
+; --- Modification ---
+
+fn list_push(l: ptr(List), value: ptr) {
+    if l.length >= l.capacity {
+        list_grow(l)
+    }
+    memcpy(l.data + l.length * l.element_size, value, l.element_size)
+    l.length = l.length + 1
+}
+
+fn list_pop(l: ptr(List)) -> ptr {
+    if l.length == 0 {
+        return null
+    }
+    l.length = l.length - 1
+    return l.data + l.length * l.element_size
+}
+
+fn list_insert(l: ptr(List), index: u32, value: ptr) {
+    if index > l.length {
+        return
+    }
+    
+    if l.length >= l.capacity {
+        list_grow(l)
+    }
+    
+    ; Shift elements right
+    let shift_count = l.length - index
+    if shift_count > 0 {
+        let src = l.data + index * l.element_size
+        let dst = src + l.element_size
+        memmove(dst, src, shift_count * l.element_size)
+    }
+    
+    memcpy(l.data + index * l.element_size, value, l.element_size)
+    l.length = l.length + 1
+}
+
+fn list_remove(l: ptr(List), index: u32) {
+    if index >= l.length {
+        return
+    }
+    
+    ; Shift elements left
+    let shift_count = l.length - index - 1
+    if shift_count > 0 {
+        let dst = l.data + index * l.element_size
+        let src = dst + l.element_size
+        memmove(dst, src, shift_count * l.element_size)
+    }
+    
+    l.length = l.length - 1
+}
+
+fn list_clear(l: ptr(List)) {
+    l.length = 0
+}
+
+; --- Search ---
+
+fn list_index_of(l: ptr(List), value: ptr, compare: fn(ptr, ptr) -> bool) -> i32 {
+    for i in 0..l.length {
+        if compare(list_get(l, i), value) {
+            return i as i32
+        }
+    }
+    return -1
+}
+
+fn list_contains(l: ptr(List), value: ptr, compare: fn(ptr, ptr) -> bool) -> bool {
+    return list_index_of(l, value, compare) >= 0
+}
+
+fn list_count(l: ptr(List), value: ptr, compare: fn(ptr, ptr) -> bool) -> u32 {
+    var count: u32 = 0
+    for i in 0..l.length {
+        if compare(list_get(l, i), value) {
+            count = count + 1
+        }
+    }
+    return count
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; FUNCTIONAL OPERATIONS (for AI data processing)
+; ═══════════════════════════════════════════════════════════════════════════
+
+fn list_map(l: ptr(List), transform: fn(ptr) -> ptr, result_size: u32) -> ptr(List) {
+    let result = list_with_capacity(result_size, l.length)
+    
+    for i in 0..l.length {
+        let item = list_get(l, i)
+        let transformed = transform(item)
+        list_push(result, transformed)
+    }
+    
+    return result
+}
+
+fn list_filter(l: ptr(List), predicate: fn(ptr) -> bool) -> ptr(List) {
+    let result = list_new(l.element_size)
+    
+    for i in 0..l.length {
+        let item = list_get(l, i)
+        if predicate(item) {
+            list_push(result, item)
+        }
+    }
+    
+    return result
+}
+
+fn list_reduce(l: ptr(List), initial: ptr, reducer: fn(ptr, ptr) -> ptr) -> ptr {
+    var acc = initial
+    
+    for i in 0..l.length {
+        acc = reducer(acc, list_get(l, i))
+    }
+    
+    return acc
+}
+
+fn list_foreach(l: ptr(List), action: fn(ptr)) {
+    for i in 0..l.length {
+        action(list_get(l, i))
+    }
+}
+
+fn list_any(l: ptr(List), predicate: fn(ptr) -> bool) -> bool {
+    for i in 0..l.length {
+        if predicate(list_get(l, i)) {
+            return true
+        }
+    }
+    return false
+}
+
+fn list_all(l: ptr(List), predicate: fn(ptr) -> bool) -> bool {
+    for i in 0..l.length {
+        if not predicate(list_get(l, i)) {
+            return false
+        }
+    }
+    return true
+}
+
+fn list_find(l: ptr(List), predicate: fn(ptr) -> bool) -> ptr {
+    for i in 0..l.length {
+        let item = list_get(l, i)
+        if predicate(item) {
+            return item
+        }
+    }
+    return null
+}
+
+; --- Sorting ---
+
+fn list_sort(l: ptr(List), compare: fn(ptr, ptr) -> i32) {
+    ; Quicksort
+    if l.length <= 1 {
+        return
+    }
+    quicksort(l, 0, l.length - 1, compare)
+}
+
+fn quicksort(l: ptr(List), lo: u32, hi: u32, compare: fn(ptr, ptr) -> i32) {
+    if lo >= hi {
+        return
+    }
+    
+    let pivot_idx = partition(l, lo, hi, compare)
+    if pivot_idx > 0 {
+        quicksort(l, lo, pivot_idx - 1, compare)
+    }
+    quicksort(l, pivot_idx + 1, hi, compare)
+}
+
+fn partition(l: ptr(List), lo: u32, hi: u32, compare: fn(ptr, ptr) -> i32) -> u32 {
+    let pivot = list_get(l, hi)
+    var i = lo
+    
+    for j in lo..hi {
+        if compare(list_get(l, j), pivot) < 0 {
+            list_swap(l, i, j)
+            i = i + 1
+        }
+    }
+    
+    list_swap(l, i, hi)
+    return i
+}
+
+fn list_swap(l: ptr(List), i: u32, j: u32) {
+    if i == j { return }
+    
+    ; Use temporary buffer
+    var temp: [u8; 64]  ; Assume max element size 64
+    let pi = list_get(l, i)
+    let pj = list_get(l, j)
+    
+    memcpy(&temp, pi, l.element_size)
+    memcpy(pi, pj, l.element_size)
+    memcpy(pj, &temp, l.element_size)
+}
+
+fn list_reverse(l: ptr(List)) {
+    var i: u32 = 0
+    var j: u32 = l.length - 1
+    
+    while i < j {
+        list_swap(l, i, j)
+        i = i + 1
+        j = j - 1
+    }
+}
+
+fn list_shuffle(l: ptr(List)) {
+    ; Fisher-Yates shuffle
+    for i in (l.length - 1)..0 {
+        let j = random_range(0, i as i64) as u32
+        list_swap(l, i, j)
+    }
+}
+
+; --- Slicing ---
+
+fn list_slice(l: ptr(List), start: u32, end: u32) -> ptr(List) {
+    if start >= l.length { start = l.length }
+    if end > l.length { end = l.length }
+    if start >= end { return list_new(l.element_size) }
+    
+    let len = end - start
+    let result = list_with_capacity(l.element_size, len)
+    memcpy(result.data, l.data + start * l.element_size, len * l.element_size)
+    result.length = len
+    return result
+}
+
+fn list_take(l: ptr(List), n: u32) -> ptr(List) {
+    return list_slice(l, 0, n)
+}
+
+fn list_skip(l: ptr(List), n: u32) -> ptr(List) {
+    return list_slice(l, n, l.length)
+}
+
+; --- Combination ---
+
+fn list_concat(a: ptr(List), b: ptr(List)) -> ptr(List) {
+    if a.element_size != b.element_size {
+        return null
+    }
+    
+    let result = list_with_capacity(a.element_size, a.length + b.length)
+    memcpy(result.data, a.data, a.length * a.element_size)
+    memcpy(result.data + a.length * a.element_size, b.data, b.length * b.element_size)
+    result.length = a.length + b.length
+    return result
+}
+
+fn list_zip(a: ptr(List), b: ptr(List), combine: fn(ptr, ptr) -> ptr, result_size: u32) -> ptr(List) {
+    let len = min(a.length, b.length)
+    let result = list_with_capacity(result_size, len)
+    
+    for i in 0..len {
+        let combined = combine(list_get(a, i), list_get(b, i))
+        list_push(result, combined)
+    }
+    
+    return result
+}
+
+; --- Typed List Helpers ---
+
+fn list_push_i64(l: ptr(List), value: i64) {
+    list_push(l, &value as ptr)
+}
+
+fn list_get_i64(l: ptr(List), index: u32) -> i64 {
+    let p = list_get(l, index)
+    if p == null { return 0 }
+    return *(p as ptr(i64))
+}
+
+fn list_push_f64(l: ptr(List), value: f64) {
+    list_push(l, &value as ptr)
+}
+
+fn list_get_f64(l: ptr(List), index: u32) -> f64 {
+    let p = list_get(l, index)
+    if p == null { return 0.0 }
+    return *(p as ptr(f64))
+}
+
+fn list_sum_i64(l: ptr(List)) -> i64 {
+    var total: i64 = 0
+    for i in 0..l.length {
+        total = total + list_get_i64(l, i)
+    }
+    return total
+}
+
+fn list_sum_f64(l: ptr(List)) -> f64 {
+    var total: f64 = 0.0
+    for i in 0..l.length {
+        total = total + list_get_f64(l, i)
+    }
+    return total
+}
+
+; --- Memory helpers ---
+
+fn memmove(dst: ptr, src: ptr, count: u32) {
+    ; Handle overlapping regions
+    if dst < src {
+        memcpy(dst, src, count)
+    } else {
+        ; Copy backwards
+        for i in (count - 1)..0 {
+            store_byte(dst + i, load_byte(src + i))
+        }
+    }
+}
+
+fn min(a: u32, b: u32) -> u32 {
+    if a < b { return a }
+    return b
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; END OF MODULE
+; ═══════════════════════════════════════════════════════════════════════════

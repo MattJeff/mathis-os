@@ -13,11 +13,11 @@ Réécrire entièrement LLML en Mathis natif pour créer un écosystème AGI aut
 - [x] introspect.masm - Self-awareness + code navigation (450 lignes)
 - [x] agent.masm - AGI Agent core (650 lignes)
 
-### Phase 2: Stdlib (Semaine 3-4)
-- [ ] math.masm - Fonctions mathématiques
-- [ ] list.masm - Listes dynamiques
-- [ ] map.masm - Dictionnaires
-- [ ] io.masm - Entrées/Sorties
+### Phase 2: Stdlib (Semaine 3-4) ✅ COMPLETE
+- [x] math.masm - Math + Neural activations + Vectors/Matrix (550 lignes)
+- [x] list.masm - Dynamic lists + Functional ops (400 lignes)
+- [x] map.masm - HashMap + Knowledge Base + Cache (450 lignes)
+- [x] io.masm - Console + Files + Serial AI comm (550 lignes)
 
 ### Phase 3: Runtime (Semaine 5-6)
 - [ ] vm.masm - Machine virtuelle

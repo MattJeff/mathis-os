@@ -1,0 +1,680 @@
+; ═══════════════════════════════════════════════════════════════════════════
+; LLML-MATHIS: I/O Library
+; ═══════════════════════════════════════════════════════════════════════════
+;
+; AGI-Oriented I/O:
+; - File system access for persistence
+; - Console for human interaction
+; - Serial for external AI communication
+; - Network for distributed AGI (future)
+;
+; ═══════════════════════════════════════════════════════════════════════════
+
+; --- I/O Result Types ---
+
+struct IOResult {
+    success: bool,
+    bytes_read: u32,
+    bytes_written: u32,
+    error_code: u16,
+    error_msg: ptr(String)
+}
+
+fn io_ok(bytes: u32) -> IOResult {
+    return IOResult {
+        success: true,
+        bytes_read: bytes,
+        bytes_written: bytes,
+        error_code: 0,
+        error_msg: null
+    }
+}
+
+fn io_err(code: u16, msg: string) -> IOResult {
+    return IOResult {
+        success: false,
+        bytes_read: 0,
+        bytes_written: 0,
+        error_code: code,
+        error_msg: string_from_cstr(msg)
+    }
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; CONSOLE I/O (for human interaction)
+; ═══════════════════════════════════════════════════════════════════════════
+
+; Video memory address (VGA text mode)
+const VGA_BUFFER: u32 = 0xB8000
+const VGA_WIDTH: u32 = 80
+const VGA_HEIGHT: u32 = 25
+
+var console_row: u32 = 0
+var console_col: u32 = 0
+var console_color: u8 = 0x0F  ; White on black
+
+; --- Output ---
+
+fn print(text: ptr(String)) {
+    for i in 0..text.length {
+        print_char(text.data[i])
+    }
+}
+
+fn println(text: ptr(String)) {
+    print(text)
+    print_char('\n')
+}
+
+fn print_char(c: u8) {
+    if c == '\n' {
+        console_col = 0
+        console_row = console_row + 1
+        if console_row >= VGA_HEIGHT {
+            scroll_console()
+            console_row = VGA_HEIGHT - 1
+        }
+        return
+    }
+    
+    if c == '\r' {
+        console_col = 0
+        return
+    }
+    
+    if c == '\t' {
+        console_col = (console_col + 8) & ~7
+        if console_col >= VGA_WIDTH {
+            console_col = 0
+            console_row = console_row + 1
+        }
+        return
+    }
+    
+    let offset = (console_row * VGA_WIDTH + console_col) * 2
+    store_byte(VGA_BUFFER + offset, c)
+    store_byte(VGA_BUFFER + offset + 1, console_color)
+    
+    console_col = console_col + 1
+    if console_col >= VGA_WIDTH {
+        console_col = 0
+        console_row = console_row + 1
+        if console_row >= VGA_HEIGHT {
+            scroll_console()
+            console_row = VGA_HEIGHT - 1
+        }
+    }
+}
+
+fn scroll_console() {
+    ; Move all lines up by one
+    for row in 0..(VGA_HEIGHT - 1) {
+        let dst = VGA_BUFFER + row * VGA_WIDTH * 2
+        let src = VGA_BUFFER + (row + 1) * VGA_WIDTH * 2
+        memcpy(dst as ptr, src as ptr, VGA_WIDTH * 2)
+    }
+    
+    ; Clear last line
+    let last_row = VGA_BUFFER + (VGA_HEIGHT - 1) * VGA_WIDTH * 2
+    for col in 0..VGA_WIDTH {
+        store_byte(last_row + col * 2, ' ')
+        store_byte(last_row + col * 2 + 1, console_color)
+    }
+}
+
+fn clear_console() {
+    for i in 0..(VGA_WIDTH * VGA_HEIGHT) {
+        store_byte(VGA_BUFFER + i * 2, ' ')
+        store_byte(VGA_BUFFER + i * 2 + 1, console_color)
+    }
+    console_row = 0
+    console_col = 0
+}
+
+fn set_console_color(fg: u8, bg: u8) {
+    console_color = (bg << 4) | (fg & 0x0F)
+}
+
+fn set_cursor(row: u32, col: u32) {
+    console_row = row
+    console_col = col
+}
+
+fn get_cursor() -> (u32, u32) {
+    return (console_row, console_col)
+}
+
+; --- Formatted Output ---
+
+fn printf(format: ptr(String), args: [Value]) {
+    var arg_idx: u32 = 0
+    var i: u32 = 0
+    
+    while i < format.length {
+        let c = format.data[i]
+        
+        if c == '%' and i + 1 < format.length {
+            let spec = format.data[i + 1]
+            
+            match spec {
+                'd' | 'i' => {
+                    if arg_idx < args.length {
+                        print_int(to_int(args[arg_idx]))
+                        arg_idx = arg_idx + 1
+                    }
+                }
+                'f' => {
+                    if arg_idx < args.length {
+                        print_float(to_float(args[arg_idx]))
+                        arg_idx = arg_idx + 1
+                    }
+                }
+                's' => {
+                    if arg_idx < args.length {
+                        print(args[arg_idx].data as ptr(String))
+                        arg_idx = arg_idx + 1
+                    }
+                }
+                'x' => {
+                    if arg_idx < args.length {
+                        print_hex(to_int(args[arg_idx]) as u64)
+                        arg_idx = arg_idx + 1
+                    }
+                }
+                '%' => {
+                    print_char('%')
+                }
+                _ => {
+                    print_char('%')
+                    print_char(spec)
+                }
+            }
+            i = i + 2
+        } else {
+            print_char(c)
+            i = i + 1
+        }
+    }
+}
+
+fn print_int(n: i64) {
+    if n < 0 {
+        print_char('-')
+        n = -n
+    }
+    
+    if n == 0 {
+        print_char('0')
+        return
+    }
+    
+    var buf: [u8; 20]
+    var len: u32 = 0
+    
+    while n > 0 {
+        buf[len] = '0' + (n % 10) as u8
+        n = n / 10
+        len = len + 1
+    }
+    
+    ; Print in reverse
+    while len > 0 {
+        len = len - 1
+        print_char(buf[len])
+    }
+}
+
+fn print_float(f: f64) {
+    if f < 0.0 {
+        print_char('-')
+        f = -f
+    }
+    
+    let int_part = f as i64
+    print_int(int_part)
+    print_char('.')
+    
+    ; 2 decimal places
+    let frac = ((f - (int_part as f64)) * 100.0) as i64
+    if frac < 10 { print_char('0') }
+    print_int(frac)
+}
+
+fn print_hex(n: u64) {
+    print(string_from_cstr("0x"))
+    
+    if n == 0 {
+        print_char('0')
+        return
+    }
+    
+    var buf: [u8; 16]
+    var len: u32 = 0
+    
+    while n > 0 {
+        let digit = (n & 0xF) as u8
+        if digit < 10 {
+            buf[len] = '0' + digit
+        } else {
+            buf[len] = 'A' + digit - 10
+        }
+        n = n >> 4
+        len = len + 1
+    }
+    
+    while len > 0 {
+        len = len - 1
+        print_char(buf[len])
+    }
+}
+
+; --- Input ---
+
+; Keyboard buffer
+const KEYBOARD_BUFFER_SIZE: u32 = 256
+var keyboard_buffer: [u8; KEYBOARD_BUFFER_SIZE]
+var keyboard_read_pos: u32 = 0
+var keyboard_write_pos: u32 = 0
+
+fn read_char() -> u8 {
+    ; Wait for input (blocking)
+    while keyboard_read_pos == keyboard_write_pos {
+        ; Busy wait - in real OS would yield
+        halt()
+    }
+    
+    let c = keyboard_buffer[keyboard_read_pos]
+    keyboard_read_pos = (keyboard_read_pos + 1) % KEYBOARD_BUFFER_SIZE
+    return c
+}
+
+fn read_char_nonblocking() -> (bool, u8) {
+    if keyboard_read_pos == keyboard_write_pos {
+        return (false, 0)
+    }
+    
+    let c = keyboard_buffer[keyboard_read_pos]
+    keyboard_read_pos = (keyboard_read_pos + 1) % KEYBOARD_BUFFER_SIZE
+    return (true, c)
+}
+
+fn read_line() -> ptr(String) {
+    var buf: [u8; 256]
+    var len: u32 = 0
+    
+    loop {
+        let c = read_char()
+        
+        if c == '\n' or c == '\r' {
+            break
+        }
+        
+        if c == '\b' or c == 127 {  ; Backspace
+            if len > 0 {
+                len = len - 1
+                print_char('\b')
+                print_char(' ')
+                print_char('\b')
+            }
+            continue
+        }
+        
+        if len < 255 {
+            buf[len] = c
+            len = len + 1
+            print_char(c)  ; Echo
+        }
+    }
+    
+    println(string_from_cstr(""))  ; Newline
+    return string_from(&buf, len)
+}
+
+fn keyboard_interrupt_handler(scancode: u8) {
+    ; Called by keyboard ISR
+    let c = scancode_to_ascii(scancode)
+    if c != 0 {
+        keyboard_buffer[keyboard_write_pos] = c
+        keyboard_write_pos = (keyboard_write_pos + 1) % KEYBOARD_BUFFER_SIZE
+    }
+}
+
+fn scancode_to_ascii(scancode: u8) -> u8 {
+    ; Simple US keyboard layout
+    const SCANCODE_TABLE: [u8; 58] = [
+        0, 27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',
+        '\t', 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n',
+        0, 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', '`',
+        0, '\\', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 0, '*', 0, ' '
+    ]
+    
+    if scancode >= 58 {
+        return 0
+    }
+    return SCANCODE_TABLE[scancode]
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; FILE I/O (using RAM disk)
+; ═══════════════════════════════════════════════════════════════════════════
+
+const FS_BASE: u32 = 0x30000
+const FS_DIR: u32 = 0x30200
+const FS_DATA: u32 = 0x31000
+const MAX_FILES: u32 = 32
+const MAX_FILENAME: u32 = 16
+const MAX_FILESIZE: u32 = 4096
+
+struct FileEntry {
+    name: [u8; MAX_FILENAME],
+    size: u32,
+    data_offset: u32,
+    created: u64,
+    modified: u64,
+    is_directory: bool
+}
+
+struct File {
+    entry: ptr(FileEntry),
+    position: u32,
+    mode: u8    ; 0=read, 1=write, 2=append
+}
+
+fn file_open(path: ptr(String), mode: string) -> ptr(File) {
+    let entry = find_file_entry(path)
+    
+    let mode_byte = if string_equals(string_from_cstr(mode), string_from_cstr("r")) { 0 }
+                    else if string_equals(string_from_cstr(mode), string_from_cstr("w")) { 1 }
+                    else if string_equals(string_from_cstr(mode), string_from_cstr("a")) { 2 }
+                    else { 0 }
+    
+    if entry == null {
+        if mode_byte == 0 {
+            return null  ; Can't read non-existent file
+        }
+        ; Create new file
+        entry = create_file_entry(path)
+        if entry == null {
+            return null
+        }
+    }
+    
+    let f = alloc(sizeof(File)) as ptr(File)
+    f.entry = entry
+    f.position = if mode_byte == 2 { entry.size } else { 0 }
+    f.mode = mode_byte
+    
+    return f
+}
+
+fn file_close(f: ptr(File)) {
+    if f != null {
+        free(f)
+    }
+}
+
+fn file_read(f: ptr(File), buffer: ptr, size: u32) -> IOResult {
+    if f == null or f.mode != 0 {
+        return io_err(1, "Invalid file or mode")
+    }
+    
+    let available = f.entry.size - f.position
+    let to_read = if size < available { size } else { available }
+    
+    let src = FS_DATA + f.entry.data_offset + f.position
+    memcpy(buffer, src as ptr, to_read)
+    f.position = f.position + to_read
+    
+    return io_ok(to_read)
+}
+
+fn file_write(f: ptr(File), buffer: ptr, size: u32) -> IOResult {
+    if f == null or f.mode == 0 {
+        return io_err(1, "Invalid file or mode")
+    }
+    
+    if f.position + size > MAX_FILESIZE {
+        return io_err(2, "File too large")
+    }
+    
+    let dst = FS_DATA + f.entry.data_offset + f.position
+    memcpy(dst as ptr, buffer, size)
+    
+    f.position = f.position + size
+    if f.position > f.entry.size {
+        f.entry.size = f.position
+    }
+    f.entry.modified = get_timestamp()
+    
+    return io_ok(size)
+}
+
+fn file_read_all(path: ptr(String)) -> ptr(String) {
+    let f = file_open(path, "r")
+    if f == null {
+        return null
+    }
+    
+    let size = f.entry.size
+    let buffer = alloc(size + 16) as ptr(String)
+    buffer.length = size
+    buffer.capacity = size
+    
+    file_read(f, &buffer.data, size)
+    file_close(f)
+    
+    buffer.hash = compute_hash(&buffer.data, size)
+    return buffer
+}
+
+fn file_write_all(path: ptr(String), content: ptr(String)) -> IOResult {
+    let f = file_open(path, "w")
+    if f == null {
+        return io_err(1, "Cannot open file")
+    }
+    
+    let result = file_write(f, &content.data, content.length)
+    file_close(f)
+    return result
+}
+
+fn file_exists(path: ptr(String)) -> bool {
+    return find_file_entry(path) != null
+}
+
+fn file_size(path: ptr(String)) -> u32 {
+    let entry = find_file_entry(path)
+    if entry == null { return 0 }
+    return entry.size
+}
+
+fn file_delete(path: ptr(String)) -> bool {
+    let entry = find_file_entry(path)
+    if entry == null { return false }
+    
+    ; Mark as deleted (zero out name)
+    entry.name[0] = 0
+    return true
+}
+
+fn list_files() -> [ptr(String)] {
+    var files: [ptr(String); MAX_FILES]
+    var count: u32 = 0
+    
+    for i in 0..MAX_FILES {
+        let entry = (FS_DIR + i * sizeof(FileEntry)) as ptr(FileEntry)
+        if entry.name[0] != 0 {
+            files[count] = string_from(&entry.name, strlen(&entry.name as ptr))
+            count = count + 1
+        }
+    }
+    
+    return files[0..count]
+}
+
+; --- File system helpers ---
+
+fn find_file_entry(path: ptr(String)) -> ptr(FileEntry) {
+    for i in 0..MAX_FILES {
+        let entry = (FS_DIR + i * sizeof(FileEntry)) as ptr(FileEntry)
+        if entry.name[0] != 0 {
+            let name = string_from(&entry.name, strlen(&entry.name as ptr))
+            if string_equals(name, path) {
+                return entry
+            }
+        }
+    }
+    return null
+}
+
+fn create_file_entry(path: ptr(String)) -> ptr(FileEntry) {
+    ; Find free slot
+    for i in 0..MAX_FILES {
+        let entry = (FS_DIR + i * sizeof(FileEntry)) as ptr(FileEntry)
+        if entry.name[0] == 0 {
+            ; Copy name
+            let len = if path.length > MAX_FILENAME - 1 { MAX_FILENAME - 1 } else { path.length }
+            memcpy(&entry.name, &path.data, len)
+            entry.name[len] = 0
+            
+            entry.size = 0
+            entry.data_offset = i * MAX_FILESIZE
+            entry.created = get_timestamp()
+            entry.modified = entry.created
+            entry.is_directory = false
+            
+            return entry
+        }
+    }
+    return null
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; SERIAL I/O (for external AI communication)
+; ═══════════════════════════════════════════════════════════════════════════
+
+const SERIAL_PORT: u16 = 0x3F8  ; COM1
+
+fn serial_init() {
+    ; Disable interrupts
+    out_byte(SERIAL_PORT + 1, 0x00)
+    ; Set baud rate divisor (115200 baud)
+    out_byte(SERIAL_PORT + 3, 0x80)  ; Enable DLAB
+    out_byte(SERIAL_PORT + 0, 0x01)  ; Divisor low byte
+    out_byte(SERIAL_PORT + 1, 0x00)  ; Divisor high byte
+    ; 8 bits, no parity, 1 stop bit
+    out_byte(SERIAL_PORT + 3, 0x03)
+    ; Enable FIFO
+    out_byte(SERIAL_PORT + 2, 0xC7)
+    ; Enable interrupts
+    out_byte(SERIAL_PORT + 4, 0x0B)
+}
+
+fn serial_ready_to_send() -> bool {
+    return (in_byte(SERIAL_PORT + 5) & 0x20) != 0
+}
+
+fn serial_data_available() -> bool {
+    return (in_byte(SERIAL_PORT + 5) & 0x01) != 0
+}
+
+fn serial_send_byte(b: u8) {
+    while not serial_ready_to_send() {
+        ; Wait
+    }
+    out_byte(SERIAL_PORT, b)
+}
+
+fn serial_receive_byte() -> u8 {
+    while not serial_data_available() {
+        ; Wait
+    }
+    return in_byte(SERIAL_PORT)
+}
+
+fn serial_send(text: ptr(String)) {
+    for i in 0..text.length {
+        serial_send_byte(text.data[i])
+    }
+}
+
+fn serial_send_line(text: ptr(String)) {
+    serial_send(text)
+    serial_send_byte('\n')
+}
+
+fn serial_receive_line() -> ptr(String) {
+    var buf: [u8; 256]
+    var len: u32 = 0
+    
+    loop {
+        let c = serial_receive_byte()
+        if c == '\n' or c == '\r' {
+            break
+        }
+        if len < 255 {
+            buf[len] = c
+            len = len + 1
+        }
+    }
+    
+    return string_from(&buf, len)
+}
+
+; --- External AI Communication ---
+
+fn ai_query(prompt: ptr(String)) -> ptr(String) {
+    ; Send query to external AI via serial
+    serial_send_line(string_from_cstr("AI_QUERY:"))
+    serial_send_line(prompt)
+    serial_send_line(string_from_cstr("END_QUERY"))
+    
+    ; Wait for response
+    let response_start = serial_receive_line()
+    if not string_equals(response_start, string_from_cstr("AI_RESPONSE:")) {
+        return string_from_cstr("[Error: Invalid response from AI]")
+    }
+    
+    ; Read response lines until END_RESPONSE
+    var response = string_new()
+    loop {
+        let line = serial_receive_line()
+        if string_equals(line, string_from_cstr("END_RESPONSE")) {
+            break
+        }
+        response = string_concat(response, line)
+        response = string_concat(response, string_from_cstr("\n"))
+    }
+    
+    return response
+}
+
+; --- Low-level I/O ---
+
+fn out_byte(port: u16, value: u8) {
+    ; Assembly: out dx, al
+    asm {
+        mov dx, port
+        mov al, value
+        out dx, al
+    }
+}
+
+fn in_byte(port: u16) -> u8 {
+    ; Assembly: in al, dx
+    var result: u8
+    asm {
+        mov dx, port
+        in al, dx
+        mov result, al
+    }
+    return result
+}
+
+fn halt() {
+    asm { hlt }
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; END OF MODULE
+; ═══════════════════════════════════════════════════════════════════════════

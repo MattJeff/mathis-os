@@ -1,0 +1,504 @@
+; ═══════════════════════════════════════════════════════════════════════════
+; LLML-MATHIS: Hash Map Library
+; ═══════════════════════════════════════════════════════════════════════════
+;
+; AGI-Oriented Maps:
+; - Key-value storage for knowledge base
+; - Fast lookup for AI memory
+; - Used for symbol tables, caches, embeddings
+; - AI can store and retrieve facts
+;
+; ═══════════════════════════════════════════════════════════════════════════
+
+const DEFAULT_CAPACITY: u32 = 16
+const LOAD_FACTOR: f64 = 0.75
+
+; --- Entry Structure ---
+
+struct MapEntry {
+    key: ptr(String),
+    value: Value,
+    hash: u32,
+    next: ptr(MapEntry)     ; For collision chaining
+}
+
+; --- Map Structure ---
+
+struct Map {
+    buckets: ptr,           ; Array of MapEntry pointers
+    capacity: u32,
+    length: u32,
+    key_compare: fn(ptr(String), ptr(String)) -> bool
+}
+
+; --- Constructors ---
+
+fn map_new() -> ptr(Map) {
+    return map_with_capacity(DEFAULT_CAPACITY)
+}
+
+fn map_with_capacity(capacity: u32) -> ptr(Map) {
+    let m = alloc(sizeof(Map)) as ptr(Map)
+    m.buckets = alloc(capacity * sizeof(ptr))
+    m.capacity = capacity
+    m.length = 0
+    m.key_compare = string_equals
+    
+    ; Initialize buckets to null
+    for i in 0..capacity {
+        store_ptr(m.buckets + i * sizeof(ptr), null)
+    }
+    
+    return m
+}
+
+; --- Basic Operations ---
+
+fn map_len(m: ptr(Map)) -> u32 {
+    if m == null { return 0 }
+    return m.length
+}
+
+fn map_is_empty(m: ptr(Map)) -> bool {
+    return m == null or m.length == 0
+}
+
+fn map_capacity(m: ptr(Map)) -> u32 {
+    if m == null { return 0 }
+    return m.capacity
+}
+
+; --- Hash & Bucket ---
+
+fn map_hash(key: ptr(String)) -> u32 {
+    return key.hash
+}
+
+fn map_bucket_index(m: ptr(Map), hash: u32) -> u32 {
+    return hash % m.capacity
+}
+
+fn map_get_bucket(m: ptr(Map), index: u32) -> ptr(MapEntry) {
+    return load_ptr(m.buckets + index * sizeof(ptr)) as ptr(MapEntry)
+}
+
+fn map_set_bucket(m: ptr(Map), index: u32, entry: ptr(MapEntry)) {
+    store_ptr(m.buckets + index * sizeof(ptr), entry)
+}
+
+; --- Get/Set ---
+
+fn map_get(m: ptr(Map), key: ptr(String)) -> Value {
+    let entry = map_find_entry(m, key)
+    if entry == null {
+        return none()
+    }
+    return entry.value
+}
+
+fn map_get_or(m: ptr(Map), key: ptr(String), default: Value) -> Value {
+    let entry = map_find_entry(m, key)
+    if entry == null {
+        return default
+    }
+    return entry.value
+}
+
+fn map_set(m: ptr(Map), key: ptr(String), value: Value) {
+    ; Check if we need to grow
+    if (m.length as f64) / (m.capacity as f64) > LOAD_FACTOR {
+        map_grow(m)
+    }
+    
+    let hash = map_hash(key)
+    let bucket_idx = map_bucket_index(m, hash)
+    
+    ; Check if key already exists
+    var entry = map_get_bucket(m, bucket_idx)
+    while entry != null {
+        if entry.hash == hash and m.key_compare(entry.key, key) {
+            ; Update existing
+            entry.value = value
+            return
+        }
+        entry = entry.next
+    }
+    
+    ; Create new entry
+    let new_entry = alloc(sizeof(MapEntry)) as ptr(MapEntry)
+    new_entry.key = key
+    new_entry.value = value
+    new_entry.hash = hash
+    new_entry.next = map_get_bucket(m, bucket_idx)
+    
+    map_set_bucket(m, bucket_idx, new_entry)
+    m.length = m.length + 1
+}
+
+fn map_find_entry(m: ptr(Map), key: ptr(String)) -> ptr(MapEntry) {
+    let hash = map_hash(key)
+    let bucket_idx = map_bucket_index(m, hash)
+    
+    var entry = map_get_bucket(m, bucket_idx)
+    while entry != null {
+        if entry.hash == hash and m.key_compare(entry.key, key) {
+            return entry
+        }
+        entry = entry.next
+    }
+    
+    return null
+}
+
+fn map_contains(m: ptr(Map), key: ptr(String)) -> bool {
+    return map_find_entry(m, key) != null
+}
+
+fn map_remove(m: ptr(Map), key: ptr(String)) -> bool {
+    let hash = map_hash(key)
+    let bucket_idx = map_bucket_index(m, hash)
+    
+    var prev: ptr(MapEntry) = null
+    var entry = map_get_bucket(m, bucket_idx)
+    
+    while entry != null {
+        if entry.hash == hash and m.key_compare(entry.key, key) {
+            ; Found it
+            if prev == null {
+                map_set_bucket(m, bucket_idx, entry.next)
+            } else {
+                prev.next = entry.next
+            }
+            free(entry)
+            m.length = m.length - 1
+            return true
+        }
+        prev = entry
+        entry = entry.next
+    }
+    
+    return false
+}
+
+fn map_clear(m: ptr(Map)) {
+    for i in 0..m.capacity {
+        var entry = map_get_bucket(m, i)
+        while entry != null {
+            let next = entry.next
+            free(entry)
+            entry = next
+        }
+        map_set_bucket(m, i, null)
+    }
+    m.length = 0
+}
+
+; --- Growth ---
+
+fn map_grow(m: ptr(Map)) {
+    let old_buckets = m.buckets
+    let old_capacity = m.capacity
+    
+    ; Double capacity
+    m.capacity = m.capacity * 2
+    m.buckets = alloc(m.capacity * sizeof(ptr))
+    m.length = 0
+    
+    ; Initialize new buckets
+    for i in 0..m.capacity {
+        store_ptr(m.buckets + i * sizeof(ptr), null)
+    }
+    
+    ; Rehash all entries
+    for i in 0..old_capacity {
+        var entry = load_ptr(old_buckets + i * sizeof(ptr)) as ptr(MapEntry)
+        while entry != null {
+            let next = entry.next
+            
+            ; Reinsert
+            let bucket_idx = map_bucket_index(m, entry.hash)
+            entry.next = map_get_bucket(m, bucket_idx)
+            map_set_bucket(m, bucket_idx, entry)
+            m.length = m.length + 1
+            
+            entry = next
+        }
+    }
+    
+    free(old_buckets)
+}
+
+; --- Iteration ---
+
+fn map_keys(m: ptr(Map)) -> [ptr(String)] {
+    var keys: [ptr(String); 1000]
+    var count: u32 = 0
+    
+    for i in 0..m.capacity {
+        var entry = map_get_bucket(m, i)
+        while entry != null and count < 1000 {
+            keys[count] = entry.key
+            count = count + 1
+            entry = entry.next
+        }
+    }
+    
+    return keys[0..count]
+}
+
+fn map_values(m: ptr(Map)) -> [Value] {
+    var values: [Value; 1000]
+    var count: u32 = 0
+    
+    for i in 0..m.capacity {
+        var entry = map_get_bucket(m, i)
+        while entry != null and count < 1000 {
+            values[count] = entry.value
+            count = count + 1
+            entry = entry.next
+        }
+    }
+    
+    return values[0..count]
+}
+
+fn map_entries(m: ptr(Map)) -> [(ptr(String), Value)] {
+    var entries: [(ptr(String), Value); 1000]
+    var count: u32 = 0
+    
+    for i in 0..m.capacity {
+        var entry = map_get_bucket(m, i)
+        while entry != null and count < 1000 {
+            entries[count] = (entry.key, entry.value)
+            count = count + 1
+            entry = entry.next
+        }
+    }
+    
+    return entries[0..count]
+}
+
+fn map_foreach(m: ptr(Map), action: fn(ptr(String), Value)) {
+    for i in 0..m.capacity {
+        var entry = map_get_bucket(m, i)
+        while entry != null {
+            action(entry.key, entry.value)
+            entry = entry.next
+        }
+    }
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; AGI KNOWLEDGE BASE OPERATIONS
+; ═══════════════════════════════════════════════════════════════════════════
+
+; --- Knowledge Base ---
+; AI stores and retrieves facts
+
+struct KnowledgeBase {
+    facts: ptr(Map),        ; subject -> predicate -> object
+    confidence: ptr(Map),   ; fact_id -> confidence score
+    timestamps: ptr(Map),   ; fact_id -> when learned
+    sources: ptr(Map)       ; fact_id -> where learned from
+}
+
+fn kb_new() -> ptr(KnowledgeBase) {
+    let kb = alloc(sizeof(KnowledgeBase)) as ptr(KnowledgeBase)
+    kb.facts = map_new()
+    kb.confidence = map_new()
+    kb.timestamps = map_new()
+    kb.sources = map_new()
+    return kb
+}
+
+fn kb_add_fact(kb: ptr(KnowledgeBase), subject: ptr(String), predicate: ptr(String), object: ptr(String), confidence: f64) {
+    ; Create composite key
+    let key = string_concat(subject, string_concat(string_from_cstr(":"), predicate))
+    
+    ; Store the fact
+    map_set(kb.facts, key, value_from_string(object))
+    
+    ; Store confidence
+    map_set(kb.confidence, key, float(confidence))
+    
+    ; Store timestamp
+    map_set(kb.timestamps, key, int(get_timestamp() as i64))
+}
+
+fn kb_query(kb: ptr(KnowledgeBase), subject: ptr(String), predicate: ptr(String)) -> ptr(String) {
+    let key = string_concat(subject, string_concat(string_from_cstr(":"), predicate))
+    let value = map_get(kb.facts, key)
+    
+    if is_none(value) {
+        return null
+    }
+    
+    return value.data as ptr(String)
+}
+
+fn kb_get_confidence(kb: ptr(KnowledgeBase), subject: ptr(String), predicate: ptr(String)) -> f64 {
+    let key = string_concat(subject, string_concat(string_from_cstr(":"), predicate))
+    let value = map_get(kb.confidence, key)
+    
+    if is_none(value) {
+        return 0.0
+    }
+    
+    return to_float(value)
+}
+
+fn kb_find_by_subject(kb: ptr(KnowledgeBase), subject: ptr(String)) -> [(ptr(String), ptr(String))] {
+    ; Find all facts about a subject
+    var results: [(ptr(String), ptr(String)); 100]
+    var count: u32 = 0
+    
+    let prefix = string_concat(subject, string_from_cstr(":"))
+    let keys = map_keys(kb.facts)
+    
+    for i in 0..keys.length {
+        if string_starts_with(keys[i], prefix) {
+            let predicate = string_substring(keys[i], prefix.length, keys[i].length)
+            let object = map_get(kb.facts, keys[i]).data as ptr(String)
+            
+            if count < 100 {
+                results[count] = (predicate, object)
+                count = count + 1
+            }
+        }
+    }
+    
+    return results[0..count]
+}
+
+fn kb_find_by_object(kb: ptr(KnowledgeBase), object: ptr(String)) -> [(ptr(String), ptr(String))] {
+    ; Find all facts with a given object (reverse lookup)
+    var results: [(ptr(String), ptr(String)); 100]
+    var count: u32 = 0
+    
+    let entries = map_entries(kb.facts)
+    for i in 0..entries.length {
+        let (key, value) = entries[i]
+        if string_equals(value.data as ptr(String), object) {
+            let parts = string_split(key, ':')
+            if parts.length >= 2 and count < 100 {
+                results[count] = (parts[0], parts[1])
+                count = count + 1
+            }
+        }
+    }
+    
+    return results[0..count]
+}
+
+; --- Semantic Search ---
+; AI finds related concepts
+
+fn kb_semantic_search(kb: ptr(KnowledgeBase), query: ptr(String), limit: u32) -> [ptr(String)] {
+    ; Simple keyword matching for now
+    ; Future: Use embeddings for semantic similarity
+    var results: [ptr(String); 100]
+    var count: u32 = 0
+    
+    let query_lower = string_to_lower(query)
+    let keys = map_keys(kb.facts)
+    
+    for i in 0..keys.length {
+        if count >= limit { break }
+        
+        let key_lower = string_to_lower(keys[i])
+        if string_contains(key_lower, query_lower) {
+            results[count] = keys[i]
+            count = count + 1
+        }
+    }
+    
+    return results[0..count]
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; CACHE (for AI inference optimization)
+; ═══════════════════════════════════════════════════════════════════════════
+
+struct Cache {
+    data: ptr(Map),
+    max_size: u32,
+    hits: u64,
+    misses: u64,
+    eviction_policy: u8     ; 0=LRU, 1=LFU, 2=Random
+}
+
+const EVICT_LRU: u8 = 0
+const EVICT_LFU: u8 = 1
+const EVICT_RANDOM: u8 = 2
+
+fn cache_new(max_size: u32) -> ptr(Cache) {
+    let c = alloc(sizeof(Cache)) as ptr(Cache)
+    c.data = map_new()
+    c.max_size = max_size
+    c.hits = 0
+    c.misses = 0
+    c.eviction_policy = EVICT_LRU
+    return c
+}
+
+fn cache_get(c: ptr(Cache), key: ptr(String)) -> Value {
+    let value = map_get(c.data, key)
+    if is_none(value) {
+        c.misses = c.misses + 1
+        return none()
+    }
+    c.hits = c.hits + 1
+    return value
+}
+
+fn cache_set(c: ptr(Cache), key: ptr(String), value: Value) {
+    ; Evict if at capacity
+    if map_len(c.data) >= c.max_size {
+        cache_evict(c)
+    }
+    map_set(c.data, key, value)
+}
+
+fn cache_evict(c: ptr(Cache)) {
+    ; Simple random eviction for now
+    let keys = map_keys(c.data)
+    if keys.length > 0 {
+        let idx = random() % keys.length
+        map_remove(c.data, keys[idx])
+    }
+}
+
+fn cache_hit_rate(c: ptr(Cache)) -> f64 {
+    let total = c.hits + c.misses
+    if total == 0 { return 0.0 }
+    return (c.hits as f64) / (total as f64)
+}
+
+fn cache_clear(c: ptr(Cache)) {
+    map_clear(c.data)
+    c.hits = 0
+    c.misses = 0
+}
+
+; --- Pointer helpers ---
+
+fn load_ptr(addr: ptr) -> ptr {
+    return *(addr as ptr(ptr))
+}
+
+fn store_ptr(addr: ptr, value: ptr) {
+    *(addr as ptr(ptr)) = value
+}
+
+fn value_from_string(s: ptr(String)) -> Value {
+    return Value {
+        type_id: TYPE_STRING,
+        flags: 0,
+        reserved: 0,
+        data: s as u64
+    }
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; END OF MODULE
+; ═══════════════════════════════════════════════════════════════════════════
