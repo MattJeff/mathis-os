@@ -54,42 +54,41 @@
 
 ---
 
-## Phase 3: Langage MathisScript (Semaine 5-8)
+## Phase 3: Porter MathisScript vers l'OS (Semaine 5-8)
 
-### 3.1 Syntaxe Complète
+> **Note**: Le langage MathisScript existe déjà dans `llml/` (87K+ lignes, Rust).
+> L'objectif est de porter progressivement le compilateur vers l'OS Assembly.
+
+### Syntaxe MathisScript (déjà définie)
 ```javascript
-// Variables
-let x = 42;
-const PI = 3.14159;
-
-// Fonctions
-func add(a, b) {
-    return a + b;
-}
-
-// Conditions
-if (x > 10) {
-    print("Grand");
-} else {
-    print("Petit");
-}
-
-// Boucles
-for (i in 0..10) {
-    print(i);
-}
-
-while (running) {
-    process();
+@block("create-user")
+@intent("Create a new user")
+@pure
+func createUser(email: String, password: String) -> Result<User, String> {
+    let hashedPassword = crypto.hashPassword(password)
+    let user = store.create("User", {
+        email: email,
+        password: hashedPassword
+    })
+    return Ok(user)
 }
 ```
 
-### 3.2 Features
-- [ ] Types: int, float, string, bool, list, map
-- [ ] Fonctions avec paramètres
-- [ ] Conditions if/else
-- [ ] Boucles for/while
-- [ ] Import de modules
+### 3.1 Porter le Lexer
+- [ ] Tokenizer en Assembly (basé sur `llml/parser/`)
+- [ ] Support: keywords, identifiers, strings, numbers
+- [ ] Support: annotations (@block, @intent, @pure)
+
+### 3.2 Porter le Parser
+- [ ] AST en Assembly
+- [ ] Fonctions avec types
+- [ ] Expressions complexes
+- [ ] Structures de contrôle
+
+### 3.3 Porter le CodeGen
+- [ ] Génération bytecode depuis AST
+- [ ] Optimisations basiques
+- [ ] Support des built-ins
 
 ---
 

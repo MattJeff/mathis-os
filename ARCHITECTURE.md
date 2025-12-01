@@ -174,7 +174,17 @@ Taille: 64KB
 
 Le compilateur intégré compile MathisScript (.mhs) en bytecode (.mbc).
 
-### Pipeline
+### Relation avec LLML
+
+Le langage **MathisScript** est défini dans le projet frère `llml/`:
+- **87K+ lignes** de Rust
+- **30 crates** (parser, runtime, http, database, crypto, etc.)
+- Syntaxe complète avec types, annotations, etc.
+
+L'OS contient un **mini-compilateur** qui supporte un sous-ensemble de la syntaxe.
+L'objectif long-terme: porter tout le compilateur LLML vers Assembly.
+
+### Pipeline Actuel (simplifié)
 ```
 Source (.mhs) → Lexer → Parser → CodeGen → Bytecode (.mbc)
 ```
@@ -186,7 +196,7 @@ Output: 23 bytes de bytecode
 Result: 100
 ```
 
-### Fichiers du Compilateur
+### Fichiers du Compilateur (dans l'OS)
 ```
 mathisc/
 ├── lexer.masm      # Tokenization
@@ -194,6 +204,20 @@ mathisc/
 ├── codegen.masm    # Code generation
 ├── mathisc_v7.masm # Compilateur complet
 └── mathisc.mhs     # Source en MathisScript
+```
+
+### Syntaxe Complète (définie dans llml/)
+```javascript
+@block("api-endpoint")
+@intent("Handle user creation")
+@depends(["store.create", "crypto.hash"])
+@effects(["database.write"])
+
+func createUser(email: String, password: String) -> Result<User, String> {
+    let hashed = crypto.hashPassword(password)
+    let user = store.create("User", { email, password: hashed })
+    return Ok(user)
+}
 ```
 
 ---
