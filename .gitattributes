@@ -1,0 +1,18 @@
+# Mathis Assembly - principal langage
+*.masm linguist-language=Assembly
+*.masm linguist-detectable=true
+
+# Mathis High-level Source - langage custom
+*.mhs linguist-language=MathisScript
+*.mhs linguist-detectable=true
+
+# Exclure Python des stats (bridge temporaire)
+*.py linguist-vendored=true
+
+# Bytecode et binaires (pas du code)
+*.mbc linguist-detectable=false
+*.bin linguist-detectable=false
+*.img linguist-detectable=false
+
+# Fichiers générés exclus des stats
+boot/kernel_bytes.h linguist-vendored=true
