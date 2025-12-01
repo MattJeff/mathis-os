@@ -967,6 +967,56 @@ keyboard_isr:
     test al, al
     jz .kbd_done
     
+    ; Handle Enter - clear line and reset cursor
+    cmp al, 13
+    jne .not_enter
+    ; Clear the input line
+    mov ebx, 50
+    mov ecx, 168
+.clear_line:
+    push ebx
+    mov edx, 8
+    mov al, COLOR_DARK_BG
+    call draw_hline
+    mov ecx, 169
+    call draw_hline
+    mov ecx, 170
+    call draw_hline
+    mov ecx, 171
+    call draw_hline
+    mov ecx, 172
+    call draw_hline
+    mov ecx, 168
+    pop ebx
+    add ebx, 8
+    cmp ebx, 280
+    jb .clear_line
+    mov dword [input_x], 50
+    jmp .kbd_done
+.not_enter:
+
+    ; Handle Backspace - erase last block
+    cmp al, 8
+    jne .not_backspace
+    cmp dword [input_x], 50
+    jbe .kbd_done
+    sub dword [input_x], 8
+    mov ebx, [input_x]
+    mov ecx, 168
+    mov edx, 8
+    mov al, COLOR_DARK_BG
+    call draw_hline
+    mov ecx, 169
+    call draw_hline
+    mov ecx, 170
+    call draw_hline
+    mov ecx, 171
+    call draw_hline
+    mov ecx, 172
+    call draw_hline
+    jmp .kbd_done
+.not_backspace:
+
     ; Draw a block for each character typed
     mov ebx, [input_x]
     mov ecx, 168
@@ -988,7 +1038,7 @@ keyboard_isr:
     add dword [input_x], 8
     cmp dword [input_x], 280
     jb .kbd_done
-    mov dword [input_x], 65
+    mov dword [input_x], 50
     
 .kbd_done:
     ; Send EOI to PIC
