@@ -1,0 +1,639 @@
+; ═══════════════════════════════════════════════════════════════════════════
+; LLML-MATHIS: Task Scheduler
+; ═══════════════════════════════════════════════════════════════════════════
+;
+; AGI-Oriented Scheduler:
+; - Cooperative multitasking
+; - Priority-based scheduling
+; - AI can spawn and manage tasks
+; - Self-monitoring and optimization
+;
+; ═══════════════════════════════════════════════════════════════════════════
+
+; --- Task Configuration ---
+
+const MAX_TASKS: u32 = 64
+const TASK_STACK_SIZE: u32 = 4096
+const DEFAULT_QUANTUM: u32 = 100  ; Time slice in cycles
+
+; --- Task States ---
+
+enum TaskState {
+    READY,
+    RUNNING,
+    BLOCKED,
+    SLEEPING,
+    WAITING_IO,
+    WAITING_AI,
+    TERMINATED
+}
+
+; --- Task Priority ---
+
+const PRIORITY_IDLE: u8     = 0
+const PRIORITY_LOW: u8      = 1
+const PRIORITY_NORMAL: u8   = 2
+const PRIORITY_HIGH: u8     = 3
+const PRIORITY_REALTIME: u8 = 4
+const PRIORITY_AI: u8       = 5   ; Highest for AI tasks
+
+; --- Task Structure ---
+
+struct Task {
+    id: u32,
+    name: ptr(String),
+    state: TaskState,
+    priority: u8,
+    
+    ; Saved context
+    ip: u32,
+    sp: u32,
+    fp: u32,
+    stack_base: u32,
+    
+    ; Scheduling
+    quantum: u32,
+    remaining_quantum: u32,
+    wake_time: u64,
+    
+    ; Statistics
+    total_cycles: u64,
+    context_switches: u32,
+    created_at: u64,
+    
+    ; AI integration
+    owner_agent: ptr,
+    ai_priority_boost: i8,
+    
+    ; Waiting
+    wait_reason: ptr(String),
+    wait_data: ptr
+}
+
+; --- Scheduler State ---
+
+struct Scheduler {
+    tasks: [ptr(Task); MAX_TASKS],
+    task_count: u32,
+    current_task: u32,
+    
+    ; State
+    running: bool,
+    idle_task: ptr(Task),
+    
+    ; Statistics
+    total_switches: u64,
+    total_cycles: u64,
+    idle_cycles: u64,
+    
+    ; AI control
+    ai_controlled: bool,
+    ai_suggested_next: i32
+}
+
+var sched: Scheduler
+var next_task_id: u32 = 1
+
+; --- Initialization ---
+
+fn scheduler_init() {
+    sched.task_count = 0
+    sched.current_task = 0
+    sched.running = false
+    sched.total_switches = 0
+    sched.total_cycles = 0
+    sched.idle_cycles = 0
+    sched.ai_controlled = false
+    sched.ai_suggested_next = -1
+    
+    ; Create idle task
+    sched.idle_task = create_task("idle", idle_task_fn, PRIORITY_IDLE)
+}
+
+fn idle_task_fn() {
+    loop {
+        sched.idle_cycles = sched.idle_cycles + 1
+        yield()
+    }
+}
+
+; --- Task Creation ---
+
+fn create_task(name: string, entry: fn(), priority: u8) -> ptr(Task) {
+    if sched.task_count >= MAX_TASKS {
+        return null
+    }
+    
+    let task = gc_alloc(sizeof(Task)) as ptr(Task)
+    task.id = next_task_id
+    next_task_id = next_task_id + 1
+    task.name = string_from_cstr(name)
+    task.state = TaskState::READY
+    task.priority = priority
+    
+    ; Allocate stack
+    task.stack_base = gc_alloc(TASK_STACK_SIZE) as u32
+    task.sp = task.stack_base + TASK_STACK_SIZE
+    task.fp = task.sp
+    
+    ; Setup initial stack frame
+    task.sp = task.sp - 4
+    store_u32(task.sp, entry as u32)  ; Return address = entry point
+    task.ip = entry as u32
+    
+    ; Scheduling
+    task.quantum = DEFAULT_QUANTUM
+    task.remaining_quantum = DEFAULT_QUANTUM
+    
+    ; Statistics
+    task.total_cycles = 0
+    task.context_switches = 0
+    task.created_at = get_timestamp()
+    
+    ; AI
+    task.owner_agent = null
+    task.ai_priority_boost = 0
+    
+    ; Add to scheduler
+    sched.tasks[sched.task_count] = task
+    sched.task_count = sched.task_count + 1
+    
+    return task
+}
+
+fn spawn(name: string, entry: fn()) -> ptr(Task) {
+    return create_task(name, entry, PRIORITY_NORMAL)
+}
+
+fn spawn_ai_task(name: string, entry: fn(), agent: ptr) -> ptr(Task) {
+    let task = create_task(name, entry, PRIORITY_AI)
+    if task != null {
+        task.owner_agent = agent
+    }
+    return task
+}
+
+; --- Task Control ---
+
+fn kill_task(task: ptr(Task)) {
+    task.state = TaskState::TERMINATED
+    
+    ; Free stack
+    gc_free(task.stack_base as ptr)
+    
+    ; Remove from scheduler
+    for i in 0..sched.task_count {
+        if sched.tasks[i] == task {
+            for j in i..(sched.task_count - 1) {
+                sched.tasks[j] = sched.tasks[j + 1]
+            }
+            sched.task_count = sched.task_count - 1
+            break
+        }
+    }
+    
+    gc_free(task as ptr)
+}
+
+fn suspend_task(task: ptr(Task)) {
+    task.state = TaskState::BLOCKED
+}
+
+fn resume_task(task: ptr(Task)) {
+    if task.state == TaskState::BLOCKED {
+        task.state = TaskState::READY
+    }
+}
+
+fn sleep_task(task: ptr(Task), duration_ms: u64) {
+    task.state = TaskState::SLEEPING
+    task.wake_time = get_timestamp() + duration_ms
+}
+
+fn set_priority(task: ptr(Task), priority: u8) {
+    task.priority = priority
+}
+
+; --- Yielding ---
+
+fn yield() {
+    ; Cooperative yield - give up remaining quantum
+    let current = get_current_task()
+    if current != null {
+        current.remaining_quantum = 0
+    }
+    schedule()
+}
+
+fn sleep(duration_ms: u64) {
+    let current = get_current_task()
+    if current != null {
+        sleep_task(current, duration_ms)
+        schedule()
+    }
+}
+
+fn wait_for(reason: string) {
+    let current = get_current_task()
+    if current != null {
+        current.state = TaskState::BLOCKED
+        current.wait_reason = string_from_cstr(reason)
+        schedule()
+    }
+}
+
+fn wait_for_ai() {
+    let current = get_current_task()
+    if current != null {
+        current.state = TaskState::WAITING_AI
+        schedule()
+    }
+}
+
+; --- Scheduling ---
+
+fn schedule() {
+    save_current_context()
+    
+    let next = select_next_task()
+    
+    if next != sched.current_task {
+        sched.total_switches = sched.total_switches + 1
+        let task = sched.tasks[next]
+        task.context_switches = task.context_switches + 1
+    }
+    
+    sched.current_task = next
+    restore_context(sched.tasks[next])
+}
+
+fn select_next_task() -> u32 {
+    ; Check if AI has a suggestion
+    if sched.ai_controlled and sched.ai_suggested_next >= 0 {
+        let suggested = sched.ai_suggested_next as u32
+        sched.ai_suggested_next = -1
+        if suggested < sched.task_count {
+            let task = sched.tasks[suggested]
+            if task.state == TaskState::READY {
+                return suggested
+            }
+        }
+    }
+    
+    ; Wake sleeping tasks
+    wake_sleeping_tasks()
+    
+    ; Priority-based selection
+    var best_idx: u32 = 0
+    var best_priority: i16 = -1
+    
+    for i in 0..sched.task_count {
+        let task = sched.tasks[i]
+        
+        if task.state != TaskState::READY {
+            continue
+        }
+        
+        let effective_priority = task.priority as i16 + task.ai_priority_boost as i16
+        
+        if effective_priority > best_priority {
+            best_priority = effective_priority
+            best_idx = i
+        }
+    }
+    
+    ; If no ready task, run idle
+    if best_priority < 0 {
+        return 0  ; Idle task is always at index 0
+    }
+    
+    return best_idx
+}
+
+fn wake_sleeping_tasks() {
+    let now = get_timestamp()
+    
+    for i in 0..sched.task_count {
+        let task = sched.tasks[i]
+        if task.state == TaskState::SLEEPING and task.wake_time <= now {
+            task.state = TaskState::READY
+        }
+    }
+}
+
+fn save_current_context() {
+    let task = get_current_task()
+    if task != null {
+        ; Save registers (in real implementation)
+        task.ip = vm_get_ip()
+        task.sp = vm_get_sp()
+        ; task.fp = vm_get_fp()
+        
+        if task.state == TaskState::RUNNING {
+            task.state = TaskState::READY
+        }
+    }
+}
+
+fn restore_context(task: ptr(Task)) {
+    task.state = TaskState::RUNNING
+    task.remaining_quantum = task.quantum
+    
+    ; Restore registers (in real implementation)
+    ; vm_set_ip(task.ip)
+    ; vm_set_sp(task.sp)
+}
+
+; --- Scheduler Control ---
+
+fn scheduler_start() {
+    sched.running = true
+    
+    while sched.running {
+        scheduler_tick()
+    }
+}
+
+fn scheduler_stop() {
+    sched.running = false
+}
+
+fn scheduler_tick() {
+    sched.total_cycles = sched.total_cycles + 1
+    
+    let current = get_current_task()
+    if current != null {
+        current.total_cycles = current.total_cycles + 1
+        current.remaining_quantum = current.remaining_quantum - 1
+        
+        if current.remaining_quantum == 0 {
+            schedule()
+        }
+    }
+}
+
+; --- Task Query ---
+
+fn get_current_task() -> ptr(Task) {
+    if sched.task_count == 0 {
+        return null
+    }
+    return sched.tasks[sched.current_task]
+}
+
+fn get_task_by_id(id: u32) -> ptr(Task) {
+    for i in 0..sched.task_count {
+        if sched.tasks[i].id == id {
+            return sched.tasks[i]
+        }
+    }
+    return null
+}
+
+fn get_task_by_name(name: ptr(String)) -> ptr(Task) {
+    for i in 0..sched.task_count {
+        if string_equals(sched.tasks[i].name, name) {
+            return sched.tasks[i]
+        }
+    }
+    return null
+}
+
+fn list_tasks() -> [ptr(Task)] {
+    var tasks: [ptr(Task); MAX_TASKS]
+    for i in 0..sched.task_count {
+        tasks[i] = sched.tasks[i]
+    }
+    return tasks[0..sched.task_count]
+}
+
+fn task_count() -> u32 {
+    return sched.task_count
+}
+
+; --- Statistics (for AGI) ---
+
+struct SchedulerStats {
+    task_count: u32,
+    total_switches: u64,
+    total_cycles: u64,
+    idle_cycles: u64,
+    cpu_utilization: f64
+}
+
+fn scheduler_stats() -> SchedulerStats {
+    let util = if sched.total_cycles > 0 {
+        1.0 - (sched.idle_cycles as f64 / sched.total_cycles as f64)
+    } else {
+        0.0
+    }
+    
+    return SchedulerStats {
+        task_count: sched.task_count,
+        total_switches: sched.total_switches,
+        total_cycles: sched.total_cycles,
+        idle_cycles: sched.idle_cycles,
+        cpu_utilization: util
+    }
+}
+
+fn task_stats(task: ptr(Task)) -> TaskStats {
+    return TaskStats {
+        id: task.id,
+        name: task.name,
+        state: task.state,
+        priority: task.priority,
+        total_cycles: task.total_cycles,
+        context_switches: task.context_switches,
+        cpu_percent: (task.total_cycles as f64 / max(1, sched.total_cycles) as f64) * 100.0
+    }
+}
+
+struct TaskStats {
+    id: u32,
+    name: ptr(String),
+    state: TaskState,
+    priority: u8,
+    total_cycles: u64,
+    context_switches: u32,
+    cpu_percent: f64
+}
+
+; --- AI Integration ---
+
+fn ai_set_control(enabled: bool) {
+    sched.ai_controlled = enabled
+}
+
+fn ai_suggest_next(task_idx: u32) {
+    sched.ai_suggested_next = task_idx as i32
+}
+
+fn ai_boost_priority(task: ptr(Task), boost: i8) {
+    task.ai_priority_boost = boost
+}
+
+fn ai_get_bottleneck() -> ptr(Task) {
+    ; Find task consuming most CPU
+    var worst: ptr(Task) = null
+    var worst_cycles: u64 = 0
+    
+    for i in 0..sched.task_count {
+        let task = sched.tasks[i]
+        if task.total_cycles > worst_cycles {
+            worst_cycles = task.total_cycles
+            worst = task
+        }
+    }
+    
+    return worst
+}
+
+fn ai_get_idle_tasks() -> [ptr(Task)] {
+    var idle: [ptr(Task); MAX_TASKS]
+    var count: u32 = 0
+    
+    for i in 0..sched.task_count {
+        let task = sched.tasks[i]
+        let cpu_percent = (task.total_cycles as f64 / max(1, sched.total_cycles) as f64) * 100.0
+        if cpu_percent < 1.0 and task.state == TaskState::READY {
+            idle[count] = task
+            count = count + 1
+        }
+    }
+    
+    return idle[0..count]
+}
+
+fn ai_optimize_scheduling() {
+    ; AI analyzes and optimizes task priorities
+    
+    ; Boost CPU-bound tasks that are starving
+    for i in 0..sched.task_count {
+        let task = sched.tasks[i]
+        let cpu_share = task.total_cycles as f64 / max(1, sched.total_cycles) as f64
+        
+        if cpu_share < 0.01 and task.priority > PRIORITY_IDLE {
+            ; Task is starving - boost it
+            task.ai_priority_boost = 2
+        } else if cpu_share > 0.5 {
+            ; Task is hogging CPU - reduce priority
+            task.ai_priority_boost = -1
+        } else {
+            task.ai_priority_boost = 0
+        }
+    }
+}
+
+; --- Synchronization Primitives ---
+
+struct Mutex {
+    locked: bool,
+    owner: ptr(Task),
+    waiting: [ptr(Task); 16],
+    waiting_count: u32
+}
+
+fn mutex_new() -> ptr(Mutex) {
+    let m = gc_alloc(sizeof(Mutex)) as ptr(Mutex)
+    m.locked = false
+    m.owner = null
+    m.waiting_count = 0
+    return m
+}
+
+fn mutex_lock(m: ptr(Mutex)) {
+    let current = get_current_task()
+    
+    while m.locked {
+        ; Add to waiting list
+        if m.waiting_count < 16 {
+            m.waiting[m.waiting_count] = current
+            m.waiting_count = m.waiting_count + 1
+        }
+        current.state = TaskState::BLOCKED
+        schedule()
+    }
+    
+    m.locked = true
+    m.owner = current
+}
+
+fn mutex_unlock(m: ptr(Mutex)) {
+    let current = get_current_task()
+    
+    if m.owner != current {
+        return  ; Not owner
+    }
+    
+    m.locked = false
+    m.owner = null
+    
+    ; Wake first waiting task
+    if m.waiting_count > 0 {
+        let woken = m.waiting[0]
+        for i in 0..(m.waiting_count - 1) {
+            m.waiting[i] = m.waiting[i + 1]
+        }
+        m.waiting_count = m.waiting_count - 1
+        woken.state = TaskState::READY
+    }
+}
+
+struct Semaphore {
+    count: i32,
+    waiting: [ptr(Task); 32],
+    waiting_count: u32
+}
+
+fn semaphore_new(initial: i32) -> ptr(Semaphore) {
+    let s = gc_alloc(sizeof(Semaphore)) as ptr(Semaphore)
+    s.count = initial
+    s.waiting_count = 0
+    return s
+}
+
+fn semaphore_wait(s: ptr(Semaphore)) {
+    s.count = s.count - 1
+    
+    if s.count < 0 {
+        let current = get_current_task()
+        if s.waiting_count < 32 {
+            s.waiting[s.waiting_count] = current
+            s.waiting_count = s.waiting_count + 1
+        }
+        current.state = TaskState::BLOCKED
+        schedule()
+    }
+}
+
+fn semaphore_signal(s: ptr(Semaphore)) {
+    s.count = s.count + 1
+    
+    if s.waiting_count > 0 {
+        let woken = s.waiting[0]
+        for i in 0..(s.waiting_count - 1) {
+            s.waiting[i] = s.waiting[i + 1]
+        }
+        s.waiting_count = s.waiting_count - 1
+        woken.state = TaskState::READY
+    }
+}
+
+; --- Helpers ---
+
+fn max(a: u64, b: u64) -> u64 {
+    if a > b { return a }
+    return b
+}
+
+fn store_u32(addr: u32, value: u32) {
+    store_byte(addr, (value & 0xFF) as u8)
+    store_byte(addr + 1, ((value >> 8) & 0xFF) as u8)
+    store_byte(addr + 2, ((value >> 16) & 0xFF) as u8)
+    store_byte(addr + 3, ((value >> 24) & 0xFF) as u8)
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; END OF MODULE
+; ═══════════════════════════════════════════════════════════════════════════

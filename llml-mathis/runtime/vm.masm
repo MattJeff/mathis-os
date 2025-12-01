@@ -1,0 +1,750 @@
+; ═══════════════════════════════════════════════════════════════════════════
+; LLML-MATHIS: Virtual Machine
+; ═══════════════════════════════════════════════════════════════════════════
+;
+; AGI-Oriented VM:
+; - Executes Mathis bytecode
+; - Stack-based architecture
+; - Self-modifiable (AGI can patch itself)
+; - Introspectable execution state
+;
+; ═══════════════════════════════════════════════════════════════════════════
+
+; --- Memory Layout ---
+const CODE_BASE: u32    = 0x20000
+const STACK_BASE: u32   = 0x25000
+const STACK_SIZE: u32   = 0x4000   ; 16KB stack
+const LOCALS_BASE: u32  = 0x24000
+const GLOBALS_BASE: u32 = 0x23000
+
+; --- VM State ---
+
+struct VM {
+    ; Registers
+    ip: u32,            ; Instruction pointer
+    sp: u32,            ; Stack pointer
+    fp: u32,            ; Frame pointer
+    
+    ; State
+    running: bool,
+    paused: bool,
+    error: ptr(Error),
+    
+    ; Statistics (for AGI optimization)
+    instructions_executed: u64,
+    cycles: u64,
+    last_opcode: u8,
+    
+    ; Debugging
+    breakpoints: [u32; 32],
+    breakpoint_count: u32,
+    trace_enabled: bool,
+    
+    ; Self-modification
+    hot_patch_enabled: bool,
+    patches: [Patch; 16],
+    patch_count: u32
+}
+
+struct Patch {
+    address: u32,
+    old_byte: u8,
+    new_byte: u8,
+    applied: bool
+}
+
+struct CallFrame {
+    return_ip: u32,
+    return_fp: u32,
+    local_count: u32,
+    arg_count: u32
+}
+
+; --- Global VM Instance ---
+var vm: VM
+
+; --- Opcodes (matching kernel) ---
+const OP_NOP: u8         = 0x00
+const OP_HALT: u8        = 0x01
+const OP_PANIC: u8       = 0x02
+
+const OP_CONST: u8       = 0x10
+const OP_CONST_NONE: u8  = 0x11
+const OP_CONST_TRUE: u8  = 0x12
+const OP_CONST_FALSE: u8 = 0x13
+const OP_CONST_I64: u8   = 0x14
+const OP_CONST_F64: u8   = 0x15
+const OP_CONST_STR: u8   = 0x16
+const OP_CONST_SMALL: u8 = 0x17
+
+const OP_GET_LOCAL: u8   = 0x20
+const OP_SET_LOCAL: u8   = 0x21
+const OP_GET_GLOBAL: u8  = 0x22
+const OP_SET_GLOBAL: u8  = 0x23
+
+const OP_ADD: u8         = 0x30
+const OP_SUB: u8         = 0x31
+const OP_MUL: u8         = 0x32
+const OP_DIV: u8         = 0x33
+const OP_MOD: u8         = 0x34
+const OP_NEG: u8         = 0x35
+
+const OP_EQ: u8          = 0x40
+const OP_NE: u8          = 0x41
+const OP_LT: u8          = 0x42
+const OP_LE: u8          = 0x43
+const OP_GT: u8          = 0x44
+const OP_GE: u8          = 0x45
+
+const OP_AND: u8         = 0x50
+const OP_OR: u8          = 0x51
+const OP_NOT: u8         = 0x52
+const OP_BIT_AND: u8     = 0x53
+const OP_BIT_OR: u8      = 0x54
+const OP_BIT_XOR: u8     = 0x55
+const OP_BIT_NOT: u8     = 0x56
+const OP_SHL: u8         = 0x57
+const OP_SHR: u8         = 0x58
+
+const OP_JUMP: u8        = 0x60
+const OP_JUMP_IF_TRUE: u8  = 0x61
+const OP_JUMP_IF_FALSE: u8 = 0x62
+const OP_CALL: u8        = 0x65
+const OP_RET: u8         = 0x68
+
+const OP_POP: u8         = 0x70
+const OP_DUP: u8         = 0x71
+const OP_DUP2: u8        = 0x72
+const OP_SWAP: u8        = 0x73
+const OP_ROT: u8         = 0x74
+
+const OP_SYSCALL: u8     = 0xC0
+const OP_PRINT: u8       = 0xC3
+
+; AI-specific opcodes
+const OP_AI_BREAK: u8    = 0xA0
+const OP_AI_CALL: u8     = 0xA1
+const OP_AI_DECIDE: u8   = 0xA2
+const OP_AI_LEARN: u8    = 0xA3
+
+; --- Initialization ---
+
+fn vm_init() {
+    vm.ip = CODE_BASE + 0x40  ; Skip header
+    vm.sp = STACK_BASE + STACK_SIZE
+    vm.fp = vm.sp
+    vm.running = false
+    vm.paused = false
+    vm.error = null
+    vm.instructions_executed = 0
+    vm.cycles = 0
+    vm.breakpoint_count = 0
+    vm.trace_enabled = false
+    vm.hot_patch_enabled = true
+    vm.patch_count = 0
+}
+
+fn vm_reset() {
+    vm_init()
+}
+
+; --- Stack Operations ---
+
+fn push(value: i64) {
+    vm.sp = vm.sp - 8
+    store_i64(vm.sp, value)
+}
+
+fn pop() -> i64 {
+    let value = load_i64(vm.sp)
+    vm.sp = vm.sp + 8
+    return value
+}
+
+fn peek() -> i64 {
+    return load_i64(vm.sp)
+}
+
+fn peek_at(offset: u32) -> i64 {
+    return load_i64(vm.sp + offset * 8)
+}
+
+; --- Memory Access ---
+
+fn read_byte() -> u8 {
+    let b = load_byte(vm.ip)
+    vm.ip = vm.ip + 1
+    return b
+}
+
+fn read_u16() -> u16 {
+    let lo = load_byte(vm.ip) as u16
+    let hi = load_byte(vm.ip + 1) as u16
+    vm.ip = vm.ip + 2
+    return lo | (hi << 8)
+}
+
+fn read_i32() -> i32 {
+    let b0 = load_byte(vm.ip) as i32
+    let b1 = load_byte(vm.ip + 1) as i32
+    let b2 = load_byte(vm.ip + 2) as i32
+    let b3 = load_byte(vm.ip + 3) as i32
+    vm.ip = vm.ip + 4
+    return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+}
+
+fn read_i64() -> i64 {
+    let lo = read_i32() as i64
+    let hi = read_i32() as i64
+    return lo | (hi << 32)
+}
+
+; --- Execution ---
+
+fn vm_run() {
+    vm.running = true
+    vm.paused = false
+    
+    while vm.running and not vm.paused {
+        vm_step()
+    }
+}
+
+fn vm_step() {
+    ; Check breakpoints
+    if vm.breakpoint_count > 0 {
+        for i in 0..vm.breakpoint_count {
+            if vm.breakpoints[i] == vm.ip {
+                vm.paused = true
+                return
+            }
+        }
+    }
+    
+    ; Fetch opcode
+    let opcode = read_byte()
+    vm.last_opcode = opcode
+    vm.instructions_executed = vm.instructions_executed + 1
+    
+    ; Trace if enabled
+    if vm.trace_enabled {
+        trace_instruction(vm.ip - 1, opcode)
+    }
+    
+    ; Dispatch
+    match opcode {
+        OP_NOP => { }
+        
+        OP_HALT => {
+            vm.running = false
+        }
+        
+        OP_PANIC => {
+            vm.error = create_error(ERROR_RUNTIME, "PANIC instruction")
+            vm.running = false
+        }
+        
+        ; --- Constants ---
+        OP_CONST => {
+            let idx = read_u16()
+            push(idx as i64)
+        }
+        
+        OP_CONST_NONE => {
+            push(0)
+        }
+        
+        OP_CONST_TRUE => {
+            push(1)
+        }
+        
+        OP_CONST_FALSE => {
+            push(0)
+        }
+        
+        OP_CONST_I64 => {
+            let value = read_i64()
+            push(value)
+        }
+        
+        OP_CONST_SMALL => {
+            let value = read_byte() as i8 as i64
+            push(value)
+        }
+        
+        ; --- Variables ---
+        OP_GET_LOCAL => {
+            let idx = read_byte()
+            let value = load_i64(LOCALS_BASE + idx as u32 * 8)
+            push(value)
+        }
+        
+        OP_SET_LOCAL => {
+            let idx = read_byte()
+            let value = pop()
+            store_i64(LOCALS_BASE + idx as u32 * 8, value)
+        }
+        
+        OP_GET_GLOBAL => {
+            let idx = read_u16()
+            let value = load_i64(GLOBALS_BASE + idx as u32 * 8)
+            push(value)
+        }
+        
+        OP_SET_GLOBAL => {
+            let idx = read_u16()
+            let value = pop()
+            store_i64(GLOBALS_BASE + idx as u32 * 8, value)
+        }
+        
+        ; --- Arithmetic ---
+        OP_ADD => {
+            let b = pop()
+            let a = pop()
+            push(a + b)
+        }
+        
+        OP_SUB => {
+            let b = pop()
+            let a = pop()
+            push(a - b)
+        }
+        
+        OP_MUL => {
+            let b = pop()
+            let a = pop()
+            push(a * b)
+        }
+        
+        OP_DIV => {
+            let b = pop()
+            let a = pop()
+            if b == 0 {
+                vm.error = create_error(ERROR_DIVIDE_BY_ZERO, "Division by zero")
+                vm.running = false
+            } else {
+                push(a / b)
+            }
+        }
+        
+        OP_MOD => {
+            let b = pop()
+            let a = pop()
+            push(a % b)
+        }
+        
+        OP_NEG => {
+            push(-pop())
+        }
+        
+        ; --- Comparison ---
+        OP_EQ => {
+            let b = pop()
+            let a = pop()
+            push(if a == b { 1 } else { 0 })
+        }
+        
+        OP_NE => {
+            let b = pop()
+            let a = pop()
+            push(if a != b { 1 } else { 0 })
+        }
+        
+        OP_LT => {
+            let b = pop()
+            let a = pop()
+            push(if a < b { 1 } else { 0 })
+        }
+        
+        OP_LE => {
+            let b = pop()
+            let a = pop()
+            push(if a <= b { 1 } else { 0 })
+        }
+        
+        OP_GT => {
+            let b = pop()
+            let a = pop()
+            push(if a > b { 1 } else { 0 })
+        }
+        
+        OP_GE => {
+            let b = pop()
+            let a = pop()
+            push(if a >= b { 1 } else { 0 })
+        }
+        
+        ; --- Logic ---
+        OP_AND => {
+            let b = pop()
+            let a = pop()
+            push(if a != 0 and b != 0 { 1 } else { 0 })
+        }
+        
+        OP_OR => {
+            let b = pop()
+            let a = pop()
+            push(if a != 0 or b != 0 { 1 } else { 0 })
+        }
+        
+        OP_NOT => {
+            push(if pop() == 0 { 1 } else { 0 })
+        }
+        
+        OP_BIT_AND => {
+            let b = pop()
+            let a = pop()
+            push(a & b)
+        }
+        
+        OP_BIT_OR => {
+            let b = pop()
+            let a = pop()
+            push(a | b)
+        }
+        
+        OP_BIT_XOR => {
+            let b = pop()
+            let a = pop()
+            push(a ^ b)
+        }
+        
+        OP_BIT_NOT => {
+            push(~pop())
+        }
+        
+        OP_SHL => {
+            let b = pop()
+            let a = pop()
+            push(a << b)
+        }
+        
+        OP_SHR => {
+            let b = pop()
+            let a = pop()
+            push(a >> b)
+        }
+        
+        ; --- Control Flow ---
+        OP_JUMP => {
+            let offset = read_u16()
+            vm.ip = CODE_BASE + 0x40 + offset as u32
+        }
+        
+        OP_JUMP_IF_TRUE => {
+            let offset = read_u16()
+            if pop() != 0 {
+                vm.ip = CODE_BASE + 0x40 + offset as u32
+            }
+        }
+        
+        OP_JUMP_IF_FALSE => {
+            let offset = read_u16()
+            if pop() == 0 {
+                vm.ip = CODE_BASE + 0x40 + offset as u32
+            }
+        }
+        
+        OP_CALL => {
+            let offset = read_u16()
+            ; Save return address
+            push(vm.ip as i64)
+            push(vm.fp as i64)
+            vm.fp = vm.sp
+            vm.ip = CODE_BASE + 0x40 + offset as u32
+        }
+        
+        OP_RET => {
+            vm.sp = vm.fp
+            vm.fp = pop() as u32
+            vm.ip = pop() as u32
+            
+            ; If stack is empty, we're done
+            if vm.sp >= STACK_BASE + STACK_SIZE {
+                vm.running = false
+            }
+        }
+        
+        ; --- Stack ---
+        OP_POP => {
+            pop()
+        }
+        
+        OP_DUP => {
+            push(peek())
+        }
+        
+        OP_DUP2 => {
+            let a = peek_at(0)
+            let b = peek_at(1)
+            push(b)
+            push(a)
+        }
+        
+        OP_SWAP => {
+            let a = pop()
+            let b = pop()
+            push(a)
+            push(b)
+        }
+        
+        OP_ROT => {
+            let a = pop()
+            let b = pop()
+            let c = pop()
+            push(b)
+            push(a)
+            push(c)
+        }
+        
+        ; --- System ---
+        OP_SYSCALL => {
+            let syscall_num = read_u16()
+            execute_syscall(syscall_num)
+        }
+        
+        OP_PRINT => {
+            let value = pop()
+            print_int(value)
+            println(string_from_cstr(""))
+        }
+        
+        ; --- AI Opcodes ---
+        OP_AI_BREAK => {
+            ; AI breakpoint - pause for inspection
+            vm.paused = true
+            ai_on_breakpoint()
+        }
+        
+        OP_AI_CALL => {
+            let func_id = read_u16()
+            ai_call_function(func_id)
+        }
+        
+        OP_AI_DECIDE => {
+            ; AI makes a decision based on context
+            let result = ai_decide()
+            push(result)
+        }
+        
+        OP_AI_LEARN => {
+            ; AI learns from current state
+            let pattern = pop()
+            ai_learn_pattern(pattern)
+        }
+        
+        _ => {
+            vm.error = create_error(ERROR_RUNTIME, "Unknown opcode")
+            vm.running = false
+        }
+    }
+    
+    vm.cycles = vm.cycles + 1
+}
+
+; --- Syscalls ---
+
+fn execute_syscall(num: u16) {
+    match num {
+        0x0001 => {  ; exit
+            vm.running = false
+        }
+        0x0010 => {  ; print
+            let value = pop()
+            print_int(value)
+        }
+        0x0011 => {  ; print_char
+            let c = pop() as u8
+            print_char(c)
+        }
+        0x0012 => {  ; print_string
+            let addr = pop() as u32
+            let s = addr as ptr(String)
+            print(s)
+        }
+        0x0020 => {  ; read_char
+            let c = read_char()
+            push(c as i64)
+        }
+        0x0030 => {  ; alloc
+            let size = pop() as u32
+            let ptr = alloc(size)
+            push(ptr as i64)
+        }
+        0x0031 => {  ; free
+            let ptr = pop() as ptr
+            free(ptr)
+        }
+        0x0040 => {  ; get_time
+            push(get_timestamp() as i64)
+        }
+        _ => {
+            ; Unknown syscall - push 0
+            push(0)
+        }
+    }
+}
+
+; --- AI Integration ---
+
+fn ai_on_breakpoint() {
+    ; Called when AI breakpoint is hit
+    ; AI can inspect state and decide what to do
+    remember(string_from_cstr("Hit AI breakpoint"))
+}
+
+fn ai_call_function(func_id: u16) {
+    ; AI calls a learned function
+    ; Future: implement function table
+    push(0)
+}
+
+fn ai_decide() -> i64 {
+    ; AI makes a decision
+    ; For now, always return 1 (yes)
+    ; Future: use neural network
+    return 1
+}
+
+fn ai_learn_pattern(pattern: i64) {
+    ; AI learns from the pattern
+    ; Store in memory for future use
+}
+
+; --- Debugging ---
+
+fn add_breakpoint(addr: u32) -> bool {
+    if vm.breakpoint_count >= 32 {
+        return false
+    }
+    vm.breakpoints[vm.breakpoint_count] = addr
+    vm.breakpoint_count = vm.breakpoint_count + 1
+    return true
+}
+
+fn remove_breakpoint(addr: u32) -> bool {
+    for i in 0..vm.breakpoint_count {
+        if vm.breakpoints[i] == addr {
+            ; Shift remaining
+            for j in i..(vm.breakpoint_count - 1) {
+                vm.breakpoints[j] = vm.breakpoints[j + 1]
+            }
+            vm.breakpoint_count = vm.breakpoint_count - 1
+            return true
+        }
+    }
+    return false
+}
+
+fn trace_instruction(addr: u32, opcode: u8) {
+    printf(string_from_cstr("[%x] %x\n"), [int(addr as i64), int(opcode as i64)])
+}
+
+; --- Self-Modification (for AGI) ---
+
+fn vm_patch(addr: u32, new_byte: u8) -> bool {
+    if not vm.hot_patch_enabled {
+        return false
+    }
+    
+    if vm.patch_count >= 16 {
+        return false
+    }
+    
+    let old = load_byte(addr)
+    store_byte(addr, new_byte)
+    
+    vm.patches[vm.patch_count] = Patch {
+        address: addr,
+        old_byte: old,
+        new_byte: new_byte,
+        applied: true
+    }
+    vm.patch_count = vm.patch_count + 1
+    
+    return true
+}
+
+fn vm_revert_patch(index: u32) -> bool {
+    if index >= vm.patch_count {
+        return false
+    }
+    
+    let p = vm.patches[index]
+    if p.applied {
+        store_byte(p.address, p.old_byte)
+        vm.patches[index].applied = false
+    }
+    
+    return true
+}
+
+fn vm_revert_all_patches() {
+    for i in 0..vm.patch_count {
+        vm_revert_patch(i)
+    }
+}
+
+; --- Introspection (for AGI) ---
+
+fn vm_get_state() -> VM {
+    return vm
+}
+
+fn vm_get_ip() -> u32 {
+    return vm.ip
+}
+
+fn vm_get_sp() -> u32 {
+    return vm.sp
+}
+
+fn vm_get_stack(depth: u32) -> [i64] {
+    var stack: [i64; 64]
+    let max = if depth > 64 { 64 } else { depth }
+    
+    for i in 0..max {
+        stack[i] = peek_at(i)
+    }
+    
+    return stack[0..max]
+}
+
+fn vm_get_stats() -> (u64, u64, u8) {
+    return (vm.instructions_executed, vm.cycles, vm.last_opcode)
+}
+
+fn vm_is_running() -> bool {
+    return vm.running
+}
+
+fn vm_get_error() -> ptr(Error) {
+    return vm.error
+}
+
+; --- Memory helpers ---
+
+fn load_i64(addr: u32) -> i64 {
+    var result: i64 = 0
+    for i in 0..8 {
+        result = result | ((load_byte(addr + i) as i64) << (i * 8))
+    }
+    return result
+}
+
+fn store_i64(addr: u32, value: i64) {
+    for i in 0..8 {
+        store_byte(addr + i, ((value >> (i * 8)) & 0xFF) as u8)
+    }
+}
+
+fn create_error(code: u16, msg: string) -> ptr(Error) {
+    let e = alloc(sizeof(Error)) as ptr(Error)
+    e.code = code
+    e.message = string_from_cstr(msg)
+    return e
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; END OF MODULE
+; ═══════════════════════════════════════════════════════════════════════════

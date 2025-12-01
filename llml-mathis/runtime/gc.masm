@@ -1,0 +1,476 @@
+; ═══════════════════════════════════════════════════════════════════════════
+; LLML-MATHIS: Garbage Collector
+; ═══════════════════════════════════════════════════════════════════════════
+;
+; AGI-Oriented GC:
+; - Mark-and-sweep collection
+; - Generational hints for AI objects
+; - AI can control when GC runs
+; - Memory pressure monitoring
+;
+; ═══════════════════════════════════════════════════════════════════════════
+
+; --- GC Configuration ---
+
+const GC_HEAP_START: u32     = 0x40000
+const GC_HEAP_SIZE: u32      = 0x40000  ; 256KB
+const GC_THRESHOLD: u32      = 0x30000  ; Trigger GC at 192KB
+const GC_MIN_BLOCK: u32      = 16
+const GC_HEADER_SIZE: u32    = 8
+
+; --- Block Header ---
+; Each allocated block has a header
+
+struct BlockHeader {
+    size: u32,          ; Block size including header
+    flags: u8,          ; Bit 0: allocated, Bit 1: marked, Bit 2: pinned
+    generation: u8,     ; 0=young, 1=mature, 2=old, 3=permanent
+    type_id: u16        ; Type for introspection
+}
+
+const FLAG_ALLOCATED: u8 = 0x01
+const FLAG_MARKED: u8    = 0x02
+const FLAG_PINNED: u8    = 0x04
+
+const GEN_YOUNG: u8      = 0
+const GEN_MATURE: u8     = 1
+const GEN_OLD: u8        = 2
+const GEN_PERMANENT: u8  = 3
+
+; --- GC State ---
+
+struct GCState {
+    heap_start: u32,
+    heap_end: u32,
+    free_ptr: u32,
+    
+    ; Statistics
+    total_allocated: u64,
+    total_freed: u64,
+    gc_runs: u32,
+    last_gc_time: u64,
+    
+    ; Roots
+    root_count: u32,
+    roots: [ptr; 256],
+    
+    ; Configuration
+    enabled: bool,
+    threshold: u32,
+    auto_gc: bool
+}
+
+var gc: GCState
+
+; --- Initialization ---
+
+fn gc_init() {
+    gc.heap_start = GC_HEAP_START
+    gc.heap_end = GC_HEAP_START + GC_HEAP_SIZE
+    gc.free_ptr = GC_HEAP_START
+    gc.total_allocated = 0
+    gc.total_freed = 0
+    gc.gc_runs = 0
+    gc.root_count = 0
+    gc.enabled = true
+    gc.threshold = GC_THRESHOLD
+    gc.auto_gc = true
+    
+    ; Initialize heap with one big free block
+    let header = gc.heap_start as ptr(BlockHeader)
+    header.size = GC_HEAP_SIZE
+    header.flags = 0  ; Not allocated
+    header.generation = GEN_YOUNG
+    header.type_id = 0
+}
+
+; --- Allocation ---
+
+fn gc_alloc(size: u32) -> ptr {
+    return gc_alloc_typed(size, 0)
+}
+
+fn gc_alloc_typed(size: u32, type_id: u16) -> ptr {
+    ; Align size
+    let aligned = (size + GC_HEADER_SIZE + GC_MIN_BLOCK - 1) & ~(GC_MIN_BLOCK - 1)
+    
+    ; Check if we need to collect
+    if gc.auto_gc and gc.free_ptr + aligned > gc.heap_start + gc.threshold {
+        gc_collect()
+    }
+    
+    ; Find a free block (first-fit)
+    let block = find_free_block(aligned)
+    
+    if block == null {
+        ; Try GC and retry
+        gc_collect()
+        block = find_free_block(aligned)
+        
+        if block == null {
+            ; Out of memory
+            return null
+        }
+    }
+    
+    ; Split block if too large
+    let header = block as ptr(BlockHeader)
+    if header.size >= aligned + GC_MIN_BLOCK + GC_HEADER_SIZE {
+        split_block(header, aligned)
+    }
+    
+    ; Mark as allocated
+    header.flags = FLAG_ALLOCATED
+    header.generation = GEN_YOUNG
+    header.type_id = type_id
+    
+    gc.total_allocated = gc.total_allocated + header.size as u64
+    
+    ; Return pointer after header
+    return (block + GC_HEADER_SIZE) as ptr
+}
+
+fn gc_alloc_pinned(size: u32) -> ptr {
+    ; Allocate pinned (won't be moved/freed by GC)
+    let ptr = gc_alloc(size)
+    if ptr != null {
+        let header = (ptr as u32 - GC_HEADER_SIZE) as ptr(BlockHeader)
+        header.flags = header.flags | FLAG_PINNED
+    }
+    return ptr
+}
+
+fn gc_alloc_permanent(size: u32) -> ptr {
+    ; Allocate permanent (never collected)
+    let ptr = gc_alloc(size)
+    if ptr != null {
+        let header = (ptr as u32 - GC_HEADER_SIZE) as ptr(BlockHeader)
+        header.generation = GEN_PERMANENT
+        header.flags = header.flags | FLAG_PINNED
+    }
+    return ptr
+}
+
+; --- Free ---
+
+fn gc_free(ptr: ptr) {
+    if ptr == null { return }
+    
+    let header = (ptr as u32 - GC_HEADER_SIZE) as ptr(BlockHeader)
+    
+    if (header.flags & FLAG_ALLOCATED) == 0 {
+        ; Double free - ignore
+        return
+    }
+    
+    if (header.flags & FLAG_PINNED) != 0 {
+        ; Can't free pinned memory
+        return
+    }
+    
+    gc.total_freed = gc.total_freed + header.size as u64
+    header.flags = 0  ; Mark as free
+    
+    ; Coalesce with adjacent free blocks
+    coalesce_free_blocks()
+}
+
+; --- Collection ---
+
+fn gc_collect() {
+    if not gc.enabled { return }
+    
+    let start_time = get_timestamp()
+    gc.gc_runs = gc.gc_runs + 1
+    
+    ; Phase 1: Clear all marks
+    clear_marks()
+    
+    ; Phase 2: Mark from roots
+    mark_from_roots()
+    
+    ; Phase 3: Sweep unmarked
+    sweep()
+    
+    ; Phase 4: Coalesce
+    coalesce_free_blocks()
+    
+    ; Phase 5: Promote surviving young objects
+    promote_survivors()
+    
+    gc.last_gc_time = get_timestamp() - start_time
+}
+
+fn clear_marks() {
+    var addr = gc.heap_start
+    while addr < gc.heap_end {
+        let header = addr as ptr(BlockHeader)
+        header.flags = header.flags & ~FLAG_MARKED
+        addr = addr + header.size
+    }
+}
+
+fn mark_from_roots() {
+    ; Mark from registered roots
+    for i in 0..gc.root_count {
+        mark_object(gc.roots[i])
+    }
+    
+    ; Mark from VM stack
+    mark_vm_stack()
+    
+    ; Mark from globals
+    mark_globals()
+}
+
+fn mark_object(ptr: ptr) {
+    if ptr == null { return }
+    
+    let addr = ptr as u32
+    if addr < gc.heap_start or addr >= gc.heap_end {
+        return  ; Not in GC heap
+    }
+    
+    let header = (addr - GC_HEADER_SIZE) as ptr(BlockHeader)
+    
+    if (header.flags & FLAG_MARKED) != 0 {
+        return  ; Already marked
+    }
+    
+    header.flags = header.flags | FLAG_MARKED
+    
+    ; Recursively mark referenced objects
+    ; This requires type info - for now, scan conservatively
+    scan_block_for_pointers(ptr, header.size - GC_HEADER_SIZE)
+}
+
+fn scan_block_for_pointers(start: ptr, size: u32) {
+    ; Conservative scanning - treat any aligned value as potential pointer
+    var addr = start as u32
+    let end = addr + size
+    
+    while addr + 4 <= end {
+        let value = load_u32(addr)
+        if value >= gc.heap_start and value < gc.heap_end {
+            ; Might be a pointer
+            mark_object(value as ptr)
+        }
+        addr = addr + 4
+    }
+}
+
+fn mark_vm_stack() {
+    ; Mark objects referenced from VM stack
+    let sp = vm_get_sp()
+    let stack_top = STACK_BASE + STACK_SIZE
+    
+    var addr = sp
+    while addr < stack_top {
+        let value = load_u32(addr)
+        if value >= gc.heap_start and value < gc.heap_end {
+            mark_object(value as ptr)
+        }
+        addr = addr + 4
+    }
+}
+
+fn mark_globals() {
+    ; Mark objects in global variables
+    var addr = GLOBALS_BASE
+    while addr < GLOBALS_BASE + 0x1000 {  ; 4KB of globals
+        let value = load_u32(addr)
+        if value >= gc.heap_start and value < gc.heap_end {
+            mark_object(value as ptr)
+        }
+        addr = addr + 4
+    }
+}
+
+fn sweep() {
+    var addr = gc.heap_start
+    
+    while addr < gc.heap_end {
+        let header = addr as ptr(BlockHeader)
+        
+        if (header.flags & FLAG_ALLOCATED) != 0 {
+            ; Allocated block
+            if (header.flags & FLAG_MARKED) == 0 {
+                ; Not marked - free it
+                if (header.flags & FLAG_PINNED) == 0 {
+                    gc.total_freed = gc.total_freed + header.size as u64
+                    header.flags = 0
+                }
+            }
+        }
+        
+        addr = addr + header.size
+    }
+}
+
+fn promote_survivors() {
+    ; Young objects that survive GC become mature
+    var addr = gc.heap_start
+    
+    while addr < gc.heap_end {
+        let header = addr as ptr(BlockHeader)
+        
+        if (header.flags & FLAG_ALLOCATED) != 0 and 
+           (header.flags & FLAG_MARKED) != 0 {
+            if header.generation == GEN_YOUNG {
+                header.generation = GEN_MATURE
+            } else if header.generation == GEN_MATURE {
+                header.generation = GEN_OLD
+            }
+        }
+        
+        addr = addr + header.size
+    }
+}
+
+; --- Block Management ---
+
+fn find_free_block(size: u32) -> ptr {
+    var addr = gc.heap_start
+    
+    while addr < gc.heap_end {
+        let header = addr as ptr(BlockHeader)
+        
+        if (header.flags & FLAG_ALLOCATED) == 0 and header.size >= size {
+            return addr as ptr
+        }
+        
+        addr = addr + header.size
+    }
+    
+    return null
+}
+
+fn split_block(header: ptr(BlockHeader), size: u32) {
+    let remaining = header.size - size
+    
+    ; Create new free block
+    let new_block = (header as u32 + size) as ptr(BlockHeader)
+    new_block.size = remaining
+    new_block.flags = 0
+    new_block.generation = GEN_YOUNG
+    new_block.type_id = 0
+    
+    ; Shrink original
+    header.size = size
+}
+
+fn coalesce_free_blocks() {
+    var addr = gc.heap_start
+    
+    while addr < gc.heap_end {
+        let header = addr as ptr(BlockHeader)
+        
+        if (header.flags & FLAG_ALLOCATED) == 0 {
+            ; Try to merge with next block
+            var next_addr = addr + header.size
+            while next_addr < gc.heap_end {
+                let next = next_addr as ptr(BlockHeader)
+                if (next.flags & FLAG_ALLOCATED) != 0 {
+                    break
+                }
+                ; Merge
+                header.size = header.size + next.size
+                next_addr = next_addr + next.size
+            }
+        }
+        
+        addr = addr + header.size
+    }
+}
+
+; --- Root Management ---
+
+fn gc_add_root(ptr: ptr) {
+    if gc.root_count >= 256 { return }
+    gc.roots[gc.root_count] = ptr
+    gc.root_count = gc.root_count + 1
+}
+
+fn gc_remove_root(ptr: ptr) {
+    for i in 0..gc.root_count {
+        if gc.roots[i] == ptr {
+            for j in i..(gc.root_count - 1) {
+                gc.roots[j] = gc.roots[j + 1]
+            }
+            gc.root_count = gc.root_count - 1
+            return
+        }
+    }
+}
+
+; --- Statistics (for AGI) ---
+
+fn gc_stats() -> GCStats {
+    return GCStats {
+        total_allocated: gc.total_allocated,
+        total_freed: gc.total_freed,
+        current_used: gc.total_allocated - gc.total_freed,
+        gc_runs: gc.gc_runs,
+        last_gc_time: gc.last_gc_time,
+        heap_size: GC_HEAP_SIZE
+    }
+}
+
+struct GCStats {
+    total_allocated: u64,
+    total_freed: u64,
+    current_used: u64,
+    gc_runs: u32,
+    last_gc_time: u64,
+    heap_size: u32
+}
+
+fn gc_memory_pressure() -> f64 {
+    ; Returns 0.0 - 1.0 indicating memory pressure
+    let used = gc.total_allocated - gc.total_freed
+    return (used as f64) / (GC_HEAP_SIZE as f64)
+}
+
+fn gc_should_collect() -> bool {
+    return gc_memory_pressure() > 0.75
+}
+
+; --- AI Control ---
+
+fn gc_enable() {
+    gc.enabled = true
+}
+
+fn gc_disable() {
+    gc.enabled = false
+}
+
+fn gc_set_auto(enabled: bool) {
+    gc.auto_gc = enabled
+}
+
+fn gc_set_threshold(threshold: u32) {
+    gc.threshold = threshold
+}
+
+fn gc_force_collect() {
+    ; AI can force collection
+    let was_enabled = gc.enabled
+    gc.enabled = true
+    gc_collect()
+    gc.enabled = was_enabled
+}
+
+; --- Helpers ---
+
+fn load_u32(addr: u32) -> u32 {
+    let b0 = load_byte(addr) as u32
+    let b1 = load_byte(addr + 1) as u32
+    let b2 = load_byte(addr + 2) as u32
+    let b3 = load_byte(addr + 3) as u32
+    return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; END OF MODULE
+; ═══════════════════════════════════════════════════════════════════════════

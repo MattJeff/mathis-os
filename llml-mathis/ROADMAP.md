@@ -19,10 +19,10 @@ Réécrire entièrement LLML en Mathis natif pour créer un écosystème AGI aut
 - [x] map.masm - HashMap + Knowledge Base + Cache (450 lignes)
 - [x] io.masm - Console + Files + Serial AI comm (550 lignes)
 
-### Phase 3: Runtime (Semaine 5-6)
-- [ ] vm.masm - Machine virtuelle
-- [ ] gc.masm - Garbage collector
-- [ ] scheduler.masm - Scheduler de tâches
+### Phase 3: Runtime (Semaine 5-6) ✅ COMPLETE
+- [x] vm.masm - Full VM with 60+ opcodes + AI opcodes (650 lignes)
+- [x] gc.masm - Mark-sweep GC with generations (450 lignes)
+- [x] scheduler.masm - Priority scheduler + Mutex/Semaphore (550 lignes)
 
 ### Phase 4: Compiler (Semaine 7-10)
 - [ ] lexer.masm - Tokenization
