@@ -1,97 +1,84 @@
-# MATHIS OS 🚀
+# MATHIS OS
 
-**AI-First Operating System** - 100% Mathis, 0% Rust
+**AI-First Operating System** - 100% Assembly, 0 dependencies
 
-## Features
+## What is this?
 
-- ✅ Custom bootloader (16-bit → 32-bit protected mode)
-- ✅ Kernel with interactive shell
-- ✅ Mini VM for Mathis bytecode (.mbc)
-- ✅ **JARVIS AI Assistant** with 15+ commands
-- ✅ Self-hosted compiler (mathisc)
-- 📋 Filesystem (RAM disk) - Coming soon
-- 📋 Neural network integration - Planned
+A bare-metal operating system built from scratch with:
 
-## JARVIS Commands
-
-```
-> jarvis help     - List all AI commands
-> jarvis self     - Self-awareness mode
-> jarvis code     - Show kernel info
-> jarvis evolve   - Evolution mode
-> jarvis learn    - Learning mode
-> jarvis think    - Processing mode
-> jarvis build    - Build features
-> jarvis spawn    - Create AI instances
-> jarvis memory   - Memory status
-> jarvis goal     - Show objectives
-> jarvis roadmap  - Development roadmap
-> jarvis status   - System status
-```
+- **24KB Kernel** with 60+ VM opcodes
+- **JARVIS AI Assistant** with 15+ commands
+- **Self-hosted compiler** (MathisC) that compiles MathisScript to bytecode
+- **In-kernel compilation**: write, compile, and run code inside the OS
+- **Interactive shell** with command history
 
 ## Quick Start
 
 ```bash
 # Boot in QEMU
-cd boot
-qemu-system-i386 -fda mathis_jarvis.img -boot a -m 32M
+qemu-system-i386 -fda boot/mathis.img -boot a -m 32M
+
+# With JARVIS bridge (optional)
+./run_with_jarvis.sh
 ```
 
-## Architecture
+## Shell Commands
 
 ```
-MATHIS OS
+help          - Show available commands
+clear         - Clear screen
+jarvis <cmd>  - AI assistant (jarvis help for list)
+mathisc       - Show compiler info
+compile <f>   - Compile .mhs file to .mbc
+runmbc <f>    - Execute bytecode
+fs <cmd>      - Filesystem commands (ls, cat, write, mkdir)
+run <file>    - Run a program
+```
+
+## Project Structure
+
+```
+mathis-os/
 ├── boot/
-│   ├── boot.bin        # Bootloader
-│   ├── stage2.bin      # Stage 2 loader
-│   ├── kernel.asm      # Kernel source
-│   └── mathis_jarvis.img # Bootable image
-├── bootstrap/
-│   ├── masm            # Compiler binary
-│   ├── mathis          # VM binary
-│   └── *.mbc           # Pre-compiled modules
-├── masm/
-│   ├── mathisc_v1.masm # Self-hosted compiler
-│   ├── vm.masm         # VM in Mathis
-│   └── *.masm          # Other modules
-└── jarvis/
-    └── jarvis.py       # External AI bridge (optional)
+│   ├── boot.asm          # Boot sector (512 bytes)
+│   ├── stage2.asm        # Stage 2 loader (16→32 bit)
+│   ├── kernel.asm        # Main kernel (50KB source)
+│   └── mathis.img        # Bootable disk image
+├── mathisc/
+│   ├── mathisc_v7.masm   # Self-hosted compiler
+│   ├── lexer.masm        # Tokenizer
+│   ├── parser.masm       # Parser
+│   ├── codegen.masm      # Code generator
+│   └── mathisc.mhs       # Compiler in MathisScript
+├── examples/             # Demo programs (.masm)
+├── programs/             # Test programs
+├── jarvis/               # Python bridge for development
+└── llml-mathis/          # Future: AI/stdlib foundation
 ```
 
-## The Mathis Language
+## Build from Source
 
-Mathis is a stack-based assembly language with AI annotations:
-
-```masm
-.module "hello"
-.version "1.0.0"
-
-.func main
-    .arity 0
-    .locals 0
-    .ai_intent "Print hello world"
-    
-    CONST 0          ; Load "Hello, MATHIS OS!"
-    SYSCALL 0x0001   ; Print
-    RET
-.end
+```bash
+cd boot
+nasm -f bin boot.asm -o boot.bin
+nasm -f bin stage2.asm -o stage2.bin
+nasm -f bin kernel.asm -o kernel.bin
+cat boot.bin stage2.bin kernel.bin > mathis.img
 ```
 
-## Roadmap
+## Technical Specs
 
-1. ✅ Kernel + JARVIS
-2. 📋 Filesystem (RAM disk)
-3. 📋 Complete VM (all opcodes)
-4. 📋 Module loader
-5. 📋 AI opcodes (AI_CALL, AI_DECIDE)
-6. 📋 Self-modification
-7. 📋 Neural network integration
+- **Architecture**: x86 (i386), 32-bit protected mode
+- **Kernel size**: 24KB binary
+- **RAM disk**: 64KB at 0x30000
+- **VM**: Stack-based with 60+ opcodes
+- **Display**: VGA text mode (80x25)
+
+See `00-OVERVIEW.md` through `08-IMPLEMENTATION-GUIDE.md` for complete specs.
 
 ## Author
 
-**Mathis Higuinen** - Creator of MATHIS OS and the Mathis programming language
-
-One of less than 10 people in the world to create both a custom OS AND a custom programming language! 🏆
+**Mathis Higuinen**
 
 ## License
 
