@@ -1,0 +1,139 @@
+; ═══════════════════════════════════════════════════════════════════════════
+; LLML-MATHIS: Memory Management
+; ═══════════════════════════════════════════════════════════════════════════
+;
+; Simple bump allocator with future GC support
+;
+; Memory Layout:
+;   0x00000 - 0x0FFFF : Kernel (64KB)
+;   0x10000 - 0x1FFFF : VM Code (64KB)
+;   0x20000 - 0x2FFFF : VM Stack (64KB)
+;   0x30000 - 0x3FFFF : Filesystem (64KB)
+;   0x40000 - 0x7FFFF : Heap (256KB)
+;   0x80000 - 0xFFFFF : AI Memory Pool (512KB)
+;
+; ═══════════════════════════════════════════════════════════════════════════
+
+const HEAP_START    = 0x40000
+const HEAP_END      = 0x7FFFF
+const AI_POOL_START = 0x80000
+const AI_POOL_END   = 0xFFFFF
+
+; Global state
+var heap_ptr: u32 = HEAP_START
+var ai_pool_ptr: u32 = AI_POOL_START
+var total_allocated: u64 = 0
+var allocation_count: u64 = 0
+
+; --- Allocation ---
+
+fn alloc(size: u32) -> ptr {
+    ; Align to 8 bytes
+    let aligned_size = (size + 7) & ~7
+    
+    ; Check if we have space
+    if heap_ptr + aligned_size > HEAP_END {
+        ; Out of memory - trigger GC in future
+        return null
+    }
+    
+    ; Bump allocate
+    let result = heap_ptr
+    heap_ptr = heap_ptr + aligned_size
+    
+    ; Update stats
+    total_allocated = total_allocated + aligned_size
+    allocation_count = allocation_count + 1
+    
+    ; Zero memory
+    memset(result, 0, aligned_size)
+    
+    return result as ptr
+}
+
+fn alloc_ai(size: u32) -> ptr {
+    ; Allocate from AI pool (larger objects)
+    let aligned_size = (size + 7) & ~7
+    
+    if ai_pool_ptr + aligned_size > AI_POOL_END {
+        return null
+    }
+    
+    let result = ai_pool_ptr
+    ai_pool_ptr = ai_pool_ptr + aligned_size
+    
+    memset(result, 0, aligned_size)
+    
+    return result as ptr
+}
+
+; --- Deallocation (no-op for bump allocator) ---
+
+fn free(ptr: ptr) {
+    ; No-op for now
+    ; Future: mark for GC
+}
+
+; --- Memory Operations ---
+
+fn memset(dst: ptr, value: u8, count: u32) {
+    let p = dst as u32
+    for i in 0..count {
+        store_byte(p + i, value)
+    }
+}
+
+fn memcpy(dst: ptr, src: ptr, count: u32) {
+    let d = dst as u32
+    let s = src as u32
+    for i in 0..count {
+        let byte = load_byte(s + i)
+        store_byte(d + i, byte)
+    }
+}
+
+fn memcmp(a: ptr, b: ptr, count: u32) -> i32 {
+    let pa = a as u32
+    let pb = b as u32
+    for i in 0..count {
+        let ba = load_byte(pa + i)
+        let bb = load_byte(pb + i)
+        if ba < bb {
+            return -1
+        }
+        if ba > bb {
+            return 1
+        }
+    }
+    return 0
+}
+
+; --- Stats ---
+
+fn memory_stats() -> (u64, u64, u64) {
+    let used = heap_ptr - HEAP_START
+    let free = HEAP_END - heap_ptr
+    return (used, free, allocation_count)
+}
+
+fn ai_memory_stats() -> (u64, u64) {
+    let used = ai_pool_ptr - AI_POOL_START
+    let free = AI_POOL_END - ai_pool_ptr
+    return (used, free)
+}
+
+; --- Reset (for testing) ---
+
+fn reset_heap() {
+    heap_ptr = HEAP_START
+    total_allocated = 0
+    allocation_count = 0
+}
+
+fn reset_ai_pool() {
+    ai_pool_ptr = AI_POOL_START
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; END OF MODULE
+; ═══════════════════════════════════════════════════════════════════════════

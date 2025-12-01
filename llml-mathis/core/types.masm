@@ -1,0 +1,178 @@
+; ═══════════════════════════════════════════════════════════════════════════
+; LLML-MATHIS: Core Type System
+; ═══════════════════════════════════════════════════════════════════════════
+; 
+; Fundamental types for the Mathis AGI system
+; All types are represented as tagged values (type_id + data)
+;
+; Type IDs:
+;   0x00 = None
+;   0x01 = Bool
+;   0x02 = Int (64-bit signed)
+;   0x03 = Float (64-bit)
+;   0x04 = String
+;   0x05 = List
+;   0x06 = Map
+;   0x07 = Function
+;   0x08 = Object
+;   0x09 = Tensor (for AI)
+;   0x0A = Agent (for AGI)
+;
+; ═══════════════════════════════════════════════════════════════════════════
+
+; --- Type Constants ---
+const TYPE_NONE     = 0x00
+const TYPE_BOOL     = 0x01
+const TYPE_INT      = 0x02
+const TYPE_FLOAT    = 0x03
+const TYPE_STRING   = 0x04
+const TYPE_LIST     = 0x05
+const TYPE_MAP      = 0x06
+const TYPE_FUNCTION = 0x07
+const TYPE_OBJECT   = 0x08
+const TYPE_TENSOR   = 0x09
+const TYPE_AGENT    = 0x0A
+
+; --- Value Structure ---
+; Each value is 16 bytes:
+;   [0:1]  - type_id (u16)
+;   [2:3]  - flags (u16)
+;   [4:7]  - reserved
+;   [8:15] - data (u64 or pointer)
+
+struct Value {
+    type_id: u16,
+    flags: u16,
+    reserved: u32,
+    data: u64
+}
+
+; --- Constructors ---
+
+fn none() -> Value {
+    return Value {
+        type_id: TYPE_NONE,
+        flags: 0,
+        reserved: 0,
+        data: 0
+    }
+}
+
+fn bool(value: bool) -> Value {
+    return Value {
+        type_id: TYPE_BOOL,
+        flags: 0,
+        reserved: 0,
+        data: value as u64
+    }
+}
+
+fn int(value: i64) -> Value {
+    return Value {
+        type_id: TYPE_INT,
+        flags: 0,
+        reserved: 0,
+        data: value as u64
+    }
+}
+
+fn float(value: f64) -> Value {
+    return Value {
+        type_id: TYPE_FLOAT,
+        flags: 0,
+        reserved: 0,
+        data: value as u64
+    }
+}
+
+; --- Type Checking ---
+
+fn is_none(v: Value) -> bool {
+    return v.type_id == TYPE_NONE
+}
+
+fn is_bool(v: Value) -> bool {
+    return v.type_id == TYPE_BOOL
+}
+
+fn is_int(v: Value) -> bool {
+    return v.type_id == TYPE_INT
+}
+
+fn is_float(v: Value) -> bool {
+    return v.type_id == TYPE_FLOAT
+}
+
+fn is_numeric(v: Value) -> bool {
+    return v.type_id == TYPE_INT or v.type_id == TYPE_FLOAT
+}
+
+; --- Type Conversion ---
+
+fn to_int(v: Value) -> i64 {
+    if v.type_id == TYPE_INT {
+        return v.data as i64
+    }
+    if v.type_id == TYPE_FLOAT {
+        return v.data as f64 as i64
+    }
+    if v.type_id == TYPE_BOOL {
+        return v.data as i64
+    }
+    return 0
+}
+
+fn to_float(v: Value) -> f64 {
+    if v.type_id == TYPE_FLOAT {
+        return v.data as f64
+    }
+    if v.type_id == TYPE_INT {
+        return v.data as i64 as f64
+    }
+    return 0.0
+}
+
+fn to_bool(v: Value) -> bool {
+    if v.type_id == TYPE_BOOL {
+        return v.data != 0
+    }
+    if v.type_id == TYPE_INT {
+        return v.data != 0
+    }
+    if v.type_id == TYPE_NONE {
+        return false
+    }
+    return true
+}
+
+; --- Type Names ---
+
+fn type_name(v: Value) -> string {
+    match v.type_id {
+        TYPE_NONE => "none",
+        TYPE_BOOL => "bool",
+        TYPE_INT => "int",
+        TYPE_FLOAT => "float",
+        TYPE_STRING => "string",
+        TYPE_LIST => "list",
+        TYPE_MAP => "map",
+        TYPE_FUNCTION => "function",
+        TYPE_OBJECT => "object",
+        TYPE_TENSOR => "tensor",
+        TYPE_AGENT => "agent",
+        _ => "unknown"
+    }
+}
+
+; --- Equality ---
+
+fn equals(a: Value, b: Value) -> bool {
+    if a.type_id != b.type_id {
+        return false
+    }
+    return a.data == b.data
+}
+
+; ═══════════════════════════════════════════════════════════════════════════
+; END OF MODULE
+; ═══════════════════════════════════════════════════════════════════════════

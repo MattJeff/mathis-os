@@ -1,0 +1,64 @@
+# LLML 100% Mathis - Roadmap AGI
+
+## Vision
+Réécrire entièrement LLML en Mathis natif pour créer un écosystème AGI autonome.
+
+## Phases
+
+### Phase 1: Core (Semaine 1-2)
+- [ ] types.masm - Système de types
+- [ ] memory.masm - Gestion mémoire
+- [ ] error.masm - Gestion erreurs
+- [ ] string.masm - Manipulation strings
+
+### Phase 2: Stdlib (Semaine 3-4)
+- [ ] math.masm - Fonctions mathématiques
+- [ ] list.masm - Listes dynamiques
+- [ ] map.masm - Dictionnaires
+- [ ] io.masm - Entrées/Sorties
+
+### Phase 3: Runtime (Semaine 5-6)
+- [ ] vm.masm - Machine virtuelle
+- [ ] gc.masm - Garbage collector
+- [ ] scheduler.masm - Scheduler de tâches
+
+### Phase 4: Compiler (Semaine 7-10)
+- [ ] lexer.masm - Tokenization
+- [ ] parser.masm - AST
+- [ ] codegen.masm - Génération bytecode
+- [ ] optimizer.masm - Optimisations
+
+### Phase 5: Networking (Semaine 11-12)
+- [ ] tcp.masm - TCP/IP stack
+- [ ] http.masm - HTTP client/server
+- [ ] websocket.masm - WebSocket
+
+### Phase 6: Database (Semaine 13-14)
+- [ ] sql.masm - SQL parser
+- [ ] storage.masm - Stockage persistant
+- [ ] query.masm - Query engine
+
+### Phase 7: AI (Semaine 15-20)
+- [ ] tensor.masm - Tenseurs
+- [ ] neural.masm - Réseaux de neurones
+- [ ] training.masm - Entraînement
+- [ ] inference.masm - Inférence
+- [ ] agent.masm - Agent autonome
+
+### Phase 8: AGI (Semaine 21+)
+- [ ] reasoning.masm - Raisonnement
+- [ ] learning.masm - Apprentissage continu
+- [ ] self_modify.masm - Auto-modification
+- [ ] consciousness.masm - Méta-cognition
+
+## Progrès
+
+| Module | Status | Lignes | Tests |
+|--------|--------|--------|-------|
+| core/types | 🟡 En cours | 0 | 0 |
+| ... | ... | ... | ... |
+
+## Notes
+- Chaque module doit être testable indépendamment
+- Pas de dépendances externes (100% Mathis)
+- Documentation inline obligatoire
