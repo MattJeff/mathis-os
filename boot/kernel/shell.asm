@@ -47,6 +47,8 @@ shell_command:
     je .cmd_runmbc
     cmp dword [cmd_buffer], 'jarv'
     je .cmd_jarvis
+    ; cmp dword [cmd_buffer], 'mem'
+    ; je .cmd_mem  ; DISABLED - external memory module not loaded
     jmp .cmd_unknown
 
 .cmd_help:
@@ -76,6 +78,26 @@ shell_command:
 .cmd_jarvis:
     call jarvis_command
     jmp .done
+
+; .cmd_mem:  ; DISABLED - external memory module not loaded
+;     ; Display memory info
+;     call vga_newline
+;     mov esi, msg_mem_title
+;     mov ah, 0x0E
+;     call vga_print_line
+;     
+;     ; Show E820 entry count
+;     call vga_newline
+;     mov esi, msg_mem_e820
+;     mov ah, 0x07
+;     call vga_print_line
+;     
+;     ; Show paging status
+;     call vga_newline
+;     mov esi, msg_mem_paging
+;     mov ah, 0x0A
+;     call vga_print_line
+;     jmp .done
 
 .cmd_unknown:
     call vga_newline

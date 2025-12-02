@@ -18,6 +18,12 @@ start:
 .done_print:
 
     ; ═══════════════════════════════════════════════════════════════════
+    ; E820 MEMORY DETECTION (must be done in real mode!)
+    ; Stores memory map at 0x8000 for kernel to use
+    ; ═══════════════════════════════════════════════════════════════════
+    ; call detect_memory  ; DISABLED - not used without memory module
+
+    ; ═══════════════════════════════════════════════════════════════════
     ; Load kernel using CHS mode (LBA mode unreliable in QEMU floppy)
     ; kernel.bin is at LBA sector 9 (0-indexed), which is disk offset 0x1200
     ; boot.bin = sector 0, stage2.bin = sectors 1-8, kernel = sectors 9+
@@ -139,6 +145,17 @@ no_lba:
     int 0x10
     mov al, 'K'
     int 0x10
+    
+    ; ═══════════════════════════════════════════════════════════════════════
+    ; SKIP MEMORY MODULE LOADING FOR NOW
+    ; The issue is that we need to stay in real mode to use int 13h
+    ; but 0x80000 is beyond real mode's 1MB limit (segment:offset)
+    ; Solution: Load it to a lower address first, then copy in protected mode
+    ; ═══════════════════════════════════════════════════════════════════════
+    ; Print 'S' for Skip
+    mov ah, 0x0E
+    mov al, 'S'
+    int 0x10
 
     ; Stay in text mode (kernel uses VGA text buffer at 0xB8000)
     jmp enable_a20
@@ -150,6 +167,64 @@ disk_error:
     mov word [es:0], 0x4F45  ; 'E' in red
     cli
     hlt
+
+; ═══════════════════════════════════════════════════════════════════════════
+; E820 MEMORY DETECTION FUNCTION
+; Stores memory map at 0x8000, count at 0x8004
+; ═══════════════════════════════════════════════════════════════════════════
+E820_MAP        equ 0x8000
+E820_COUNT      equ 0x8004
+
+detect_memory:
+    push es
+    push di
+    push bp
+    
+    ; Set ES:DI to point to our buffer
+    xor ax, ax
+    mov es, ax
+    mov di, E820_MAP + 8        ; Start storing entries after header
+    xor ebx, ebx                ; Continuation value (must be 0 for first call)
+    xor bp, bp                  ; Entry counter
+    
+.e820_loop:
+    mov eax, 0xE820             ; E820 function
+    mov ecx, 24                 ; Ask for 24 bytes per entry
+    mov edx, 0x534D4150         ; 'SMAP' magic number
+    int 0x15
+    
+    jc .e820_done               ; Carry set = error or done
+    cmp eax, 0x534D4150         ; EAX should contain 'SMAP'
+    jne .e820_done
+    
+    ; Valid entry
+    inc bp                      ; Count this entry
+    add di, 24                  ; Move to next entry slot
+    
+    test ebx, ebx               ; EBX = 0 means we're done
+    jz .e820_done
+    
+    cmp bp, 20                  ; Max 20 entries (safety limit)
+    jl .e820_loop
+    
+.e820_done:
+    ; Store entry count
+    mov [E820_COUNT], bp
+    
+    ; Print memory detection status
+    mov ah, 0x0E
+    mov al, 'M'
+    int 0x10
+    mov al, '0'
+    add al, bl                  ; Show count (rough)
+    int 0x10
+    mov al, ' '
+    int 0x10
+    
+    pop bp
+    pop di
+    pop es
+    ret
 
 enable_a20:
     ; Enable A20 line (fast method)

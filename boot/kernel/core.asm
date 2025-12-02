@@ -40,6 +40,13 @@ kernel_entry:
     out 0xA1, al
     
     ; ══════════════════════════════════════════════════════════════════
+    ; INITIALIZE PAGING via external memory module at 0x80000
+    ; Tables are built but paging NOT enabled yet (for stability)
+    ; ══════════════════════════════════════════════════════════════════
+    ; call memory_init    ; DISABLED - testing if module loads correctly
+    ; Note: To enable 64-bit, uncomment: call memory_enable_64bit
+    
+    ; ══════════════════════════════════════════════════════════════════
     ; PATCH IDT - Résout l'adresse de keyboard_isr dynamiquement
     ; Ceci permet à keyboard.asm de grandir sans casser le système
     ; ══════════════════════════════════════════════════════════════════
@@ -126,17 +133,53 @@ serial_init:
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
-; PAD TO 0x200 - Keyboard ISR must be at 0x10200
+; MEMORY MODULE WRAPPERS - DISABLED (external module not loaded)
 ; ════════════════════════════════════════════════════════════════════════════
-    times 0x200 - ($ - $$) db 0x90
+; MEMORY_MODULE       equ 0x80000
+; 
+; memory_init:
+;     ; Call init_paging at 0x80000+0x00
+;     call MEMORY_MODULE
+;     ret
+; 
+; memory_enable_64bit:
+;     ; Call enable_long_mode at 0x80000+0x05
+;     call MEMORY_MODULE + 0x05
+;     ret
+; 
+; memory_alloc_page:
+;     ; Call alloc_page at 0x80000+0x0A
+;     call MEMORY_MODULE + 0x0A
+;     ret
+; 
+; memory_parse_e820:
+;     ; Call parse_e820_map at 0x80000+0x0F
+;     call MEMORY_MODULE + 0x0F
+;     ret
+; 
+; memory_get_info:
+;     ; Call get_memory_info at 0x80000+0x14
+;     ; Returns: EAX=total memory, EBX=usable memory
+;     call MEMORY_MODULE + 0x14
+;     ret
 
-; Include keyboard module (must be exactly at 0x10200)
-%include "keyboard.asm"
-
-; Include other modules
+; ════════════════════════════════════════════════════════════════════════════
+; RADICAL RESTRUCTURE: VGA FIRST, then keyboard
+; IDT is patched dynamically, so keyboard_isr can be ANYWHERE
+; ════════════════════════════════════════════════════════════════════════════
 %include "vga.asm"
+
+; Keyboard can now grow freely - IDT patching handles the address
+%include "keyboard.asm"
 %include "shell.asm"
 %include "vm.asm"
 %include "fs.asm"
 %include "parser.asm"
+
+; ════════════════════════════════════════════════════════════════════════════
+; MEMORY MANAGER - Paging, 64-bit preparation
+; DISABLED - Causes address disruption
+; ════════════════════════════════════════════════════════════════════════════
+; %include "memory.asm"
+
 %include "data.asm"
