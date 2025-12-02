@@ -39,7 +39,16 @@ kernel_entry:
     mov al, 0xFF
     out 0xA1, al
     
-    ; Load IDT (keyboard_isr is at fixed 0x10200)
+    ; ══════════════════════════════════════════════════════════════════
+    ; PATCH IDT - Résout l'adresse de keyboard_isr dynamiquement
+    ; Ceci permet à keyboard.asm de grandir sans casser le système
+    ; ══════════════════════════════════════════════════════════════════
+    mov eax, keyboard_isr           ; NASM calcule l'adresse réelle
+    mov word [idt + 0x21*8], ax     ; Bits 0-15 de l'adresse
+    shr eax, 16
+    mov word [idt + 0x21*8 + 6], ax ; Bits 16-31 de l'adresse
+    
+    ; Load IDT (maintenant avec la bonne adresse)
     lidt [idt_ptr]
     
     ; Clear screen first
