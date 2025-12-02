@@ -47,92 +47,95 @@ start:
     jmp enable_a20
 
 no_lba:
-    ; Fallback: Use CHS mode with multiple reads
-    ; Floppy: 18 sectors/track, 2 heads
-    ; Kernel starts at LBA 9 (sector 10 on track 0, head 0)
-    ; Need to read 48 sectors total (24KB kernel)
+    ; ═══════════════════════════════════════════════════════════════════
+    ; LOAD 64KB KERNEL (128 sectors) - Explicit reads for reliability
+    ; ═══════════════════════════════════════════════════════════════════
 
-    ; Print '1' before Read 1
-    mov ah, 0x0E
-    mov al, '1'
-    int 0x10
-
-    ; Read 1: 9 sectors from Track 0, Head 0, Sector 10 -> 0x10000
-    ; LBA 9-17 -> physical 0x10000-0x111FF (9 sectors = 0x1200 bytes)
+    ; Read 1: 9 sectors C0/H0/S10 -> 0x10000
     mov ax, 0x1000
     mov es, ax
-    xor bx, bx              ; ES:BX = 0x1000:0x0000 = 0x10000
-
-    mov ah, 0x02            ; Read sectors
-    mov al, 9               ; 9 sectors
-    mov ch, 0               ; Cylinder 0
-    mov cl, 10              ; Sector 10 (1-based)
-    mov dh, 0               ; Head 0
-    mov dl, 0               ; Drive 0
+    xor bx, bx
+    mov ah, 0x02
+    mov al, 9
+    mov cx, 0x000A          ; C=0, S=10
+    mov dx, 0x0000          ; H=0, Drive=0
     int 0x13
     jc disk_error
 
-    ; Print '2' before Read 2
-    mov ah, 0x0E
-    mov al, '2'
-    int 0x10
-
-    ; Read 2: 18 sectors from Track 0, Head 1, Sector 1 -> 0x11200
-    ; LBA 18-35 -> physical 0x11200-0x135FF (18 sectors = 0x2400 bytes)
-    mov ax, 0x1000
-    mov es, ax
-    mov bx, 0x1200          ; ES:BX = 0x1000:0x1200 = 0x11200
-
-    mov ah, 0x02            ; Read sectors
-    mov al, 18              ; 18 sectors (full track)
-    mov ch, 0               ; Cylinder 0
-    mov cl, 1               ; Sector 1
-    mov dh, 1               ; Head 1
-    mov dl, 0               ; Drive 0
+    ; Read 2: 18 sectors C0/H1/S1 -> 0x11200
+    mov bx, 0x1200
+    mov ah, 0x02
+    mov al, 18
+    mov cx, 0x0001          ; C=0, S=1
+    mov dx, 0x0100          ; H=1
     int 0x13
     jc disk_error
 
-    ; Print '3' before Read 3
-    mov ah, 0x0E
-    mov al, '3'
-    int 0x10
-
-    ; Read 3: 18 sectors from Track 1, Head 0, Sector 1 -> 0x13600
-    mov ax, 0x1000
-    mov es, ax
-    mov bx, 0x3600          ; ES:BX = 0x1000:0x3600 = 0x13600
-
-    mov ah, 0x02            ; Read sectors
-    mov al, 18              ; 18 sectors (full track)
-    mov ch, 1               ; Cylinder 1
-    mov cl, 1               ; Sector 1
-    mov dh, 0               ; Head 0
-    mov dl, 0               ; Drive 0
+    ; Read 3: 18 sectors C1/H0/S1 -> 0x13600
+    mov bx, 0x3600
+    mov ah, 0x02
+    mov al, 18
+    mov cx, 0x0101          ; C=1, S=1
+    mov dx, 0x0000          ; H=0
     int 0x13
     jc disk_error
 
-    ; Print '4' before Read 4
+    ; Read 4: 18 sectors C1/H1/S1 -> 0x15A00
+    mov bx, 0x5A00
+    mov ah, 0x02
+    mov al, 18
+    mov cx, 0x0101          ; C=1, S=1
+    mov dx, 0x0100          ; H=1
+    int 0x13
+    jc disk_error
+
+    ; Read 5: 18 sectors C2/H0/S1 -> 0x17E00
+    mov bx, 0x7E00
+    mov ah, 0x02
+    mov al, 18
+    mov cx, 0x0201          ; C=2, S=1
+    mov dx, 0x0000          ; H=0
+    int 0x13
+    jc disk_error
+
+    ; Read 6: 18 sectors C2/H1/S1 -> 0x1A200
+    mov ax, 0x1A20
+    mov es, ax
+    xor bx, bx
+    mov ah, 0x02
+    mov al, 18
+    mov cx, 0x0201          ; C=2, S=1
+    mov dx, 0x0100          ; H=1
+    int 0x13
+    jc disk_error
+
+    ; Read 7: 18 sectors C3/H0/S1 -> 0x1C600
+    mov ax, 0x1C60
+    mov es, ax
+    xor bx, bx
+    mov ah, 0x02
+    mov al, 18
+    mov cx, 0x0301          ; C=3, S=1
+    mov dx, 0x0000          ; H=0
+    int 0x13
+    jc disk_error
+
+    ; Read 8: 11 sectors C3/H1/S1 -> 0x1EA00 (128 total = 64KB)
+    mov ax, 0x1EA0
+    mov es, ax
+    xor bx, bx
+    mov ah, 0x02
+    mov al, 11
+    mov cx, 0x0301          ; C=3, S=1
+    mov dx, 0x0100          ; H=1
+    int 0x13
+    jc disk_error
+
+    ; 64KB loaded!
     mov ah, 0x0E
+    mov al, '6'
+    int 0x10
     mov al, '4'
-    int 0x10
-
-    ; Read 4: 3 sectors from Track 1, Head 1, Sector 1 -> 0x15A00
-    mov ax, 0x1000
-    mov es, ax
-    mov bx, 0x5A00          ; ES:BX = 0x1000:0x5A00 = 0x15A00
-
-    mov ah, 0x02            ; Read sectors
-    mov al, 3               ; 3 sectors to complete 48 total
-    mov ch, 1               ; Cylinder 1
-    mov cl, 1               ; Sector 1
-    mov dh, 1               ; Head 1
-    mov dl, 0               ; Drive 0
-    int 0x13
-    jc disk_error
-
-    ; Print 'OK' if all reads succeeded
-    mov ah, 0x0E
-    mov al, 'O'
     int 0x10
     mov al, 'K'
     int 0x10

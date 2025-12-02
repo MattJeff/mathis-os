@@ -85,6 +85,10 @@ keyboard_isr:
     cmp bl, 1
     je .edit_save
     
+    ; Backspace in edit mode (scancode 14)
+    cmp bl, 14
+    je .edit_backspace
+    
     ; Convert scancode
     movzx eax, bl
     cmp eax, 58
@@ -109,6 +113,19 @@ keyboard_isr:
     lea edi, [ebx + edi*2]
     mov [edi], ax
     inc dword [cursor_offset]
+    jmp .isr_done
+
+.edit_backspace:
+    cmp dword [file_content_len], 0
+    je .isr_done
+    dec dword [file_content_len]
+    dec dword [cursor_offset]
+    mov edi, [cursor_offset]
+    mov ebx, [prompt_line]
+    imul ebx, 160
+    add ebx, 0xB8000
+    lea edi, [ebx + edi*2]
+    mov word [edi], 0x0720
     jmp .isr_done
 
 .edit_save:
