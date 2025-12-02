@@ -39,7 +39,7 @@ kernel_entry:
     mov al, 0xFF
     out 0xA1, al
     
-    ; Load IDT
+    ; Load IDT (keyboard_isr is at fixed 0x10200)
     lidt [idt_ptr]
     
     ; Clear screen first
