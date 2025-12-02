@@ -4,159 +4,139 @@
 ; ════════════════════════════════════════════════════════════════════════════
 
 keyboard_isr:
-    pushad
     push eax
+    push ebx
+    push ecx
+    push edx
+    push esi
+    push edi
     
-    ; Read scancode
+    ; Read scancode FIRST
     in al, 0x60
+    mov bl, al
+    
+    ; Send EOI
+    mov al, 0x20
+    out 0x20, al
     
     ; Ignore key release
-    test al, 0x80
-    jnz .done
+    test bl, 0x80
+    jnz .isr_done
     
     ; Check edit mode
     cmp byte [edit_mode], 1
-    je .edit_mode_key
+    je .edit_key
     
-    ; Convert scancode to ASCII
-    movzx ebx, al
-    add ebx, scancode_table
-    mov al, [ebx]
-    
+    ; Convert scancode
+    movzx eax, bl
+    cmp eax, 58
+    jge .isr_done
+    mov al, [scancode_table + eax]
     test al, al
-    jz .done
+    jz .isr_done
     
-    ; Enter
+    ; Enter key
     cmp al, 0x0D
-    je .handle_enter
+    je .do_enter
     
     ; Backspace
     cmp al, 0x08
-    je .handle_backspace
+    je .do_backspace
     
-    ; Normal char
-    mov cl, al
+    ; Normal char - add to buffer
     mov edx, [cmd_length]
     cmp edx, 60
-    jge .done
-    mov [cmd_buffer + edx], cl
+    jge .isr_done
+    mov [cmd_buffer + edx], al
     inc dword [cmd_length]
     
-    ; Display
+    ; Display char
     mov ah, 0x0F
-    mov al, cl
     mov edi, [cursor_offset]
     mov ebx, [prompt_line]
     imul ebx, 160
     add ebx, 0xB8000
-    add edi, edi
-    add edi, ebx
+    lea edi, [ebx + edi*2]
     mov [edi], ax
     inc dword [cursor_offset]
-    jmp .done
+    jmp .isr_done
 
-.handle_enter:
+.do_enter:
     cmp dword [cmd_length], 0
-    je .done
+    je .isr_done
     call shell_command
-    jmp .done
+    jmp .isr_done
 
-.handle_backspace:
+.do_backspace:
     cmp dword [cmd_length], 0
-    je .done
+    je .isr_done
     dec dword [cmd_length]
     dec dword [cursor_offset]
     mov edi, [cursor_offset]
     mov ebx, [prompt_line]
     imul ebx, 160
     add ebx, 0xB8000
-    add edi, edi
-    add edi, ebx
+    lea edi, [ebx + edi*2]
     mov word [edi], 0x0720
-    jmp .done
+    jmp .isr_done
 
-.edit_mode_key:
-    ; ESC (scancode 1)
-    cmp al, 1
+.edit_key:
+    ; ESC = save (scancode 1)
+    cmp bl, 1
     je .edit_save
     
-    ; Backspace in edit mode (scancode 14)
-    cmp al, 14
-    je .edit_backspace
-    
-    movzx ebx, al
-    add ebx, scancode_table
-    mov al, [ebx]
+    ; Convert scancode
+    movzx eax, bl
+    cmp eax, 58
+    jge .isr_done
+    mov al, [scancode_table + eax]
     test al, al
-    jz .done
-    
-    ; Enter in edit mode
-    cmp al, 0x0D
-    je .edit_newline
+    jz .isr_done
     
     ; Add to file content
     mov edx, [file_content_len]
     cmp edx, 500
-    jge .done
+    jge .isr_done
     mov [file_content + edx], al
     inc dword [file_content_len]
     
-    ; Display yellow
+    ; Display in yellow
     mov ah, 0x0E
     mov edi, [cursor_offset]
     mov ebx, [prompt_line]
     imul ebx, 160
     add ebx, 0xB8000
-    add edi, edi
-    add edi, ebx
+    lea edi, [ebx + edi*2]
     mov [edi], ax
     inc dword [cursor_offset]
-    jmp .done
-
-.edit_backspace:
-    cmp dword [file_content_len], 0
-    je .done
-    dec dword [file_content_len]
-    cmp dword [cursor_offset], 0
-    je .done
-    dec dword [cursor_offset]
-    mov edi, [cursor_offset]
-    mov ebx, [prompt_line]
-    imul ebx, 160
-    add ebx, 0xB8000
-    add edi, edi
-    add edi, ebx
-    mov word [edi], 0x0720
-    jmp .done
-
-.edit_newline:
-    mov edx, [file_content_len]
-    mov byte [file_content + edx], ';'
-    inc dword [file_content_len]
-    inc dword [prompt_line]
-    mov dword [cursor_offset], 0
-    jmp .done
+    jmp .isr_done
 
 .edit_save:
-    ; Null-terminate the file content
     mov edx, [file_content_len]
     mov byte [file_content + edx], 0
-    
     mov byte [edit_mode], 0
     inc dword [prompt_line]
+    
     mov esi, msg_file_saved
     mov ebx, [prompt_line]
     imul ebx, 160
     add ebx, 0xB8000
     mov edi, ebx
     mov ah, 0x0A
-    call print_string
+.save_msg:
+    lodsb
+    test al, al
+    jz .save_done
+    stosw
+    jmp .save_msg
+.save_done:
     call shell_prompt
-    jmp .done
 
-.done:
-    mov al, 0x20
-    out 0x20, al
+.isr_done:
+    pop edi
+    pop esi
+    pop edx
+    pop ecx
+    pop ebx
     pop eax
-    popad
     iret
