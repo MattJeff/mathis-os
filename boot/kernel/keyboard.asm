@@ -117,10 +117,68 @@ process_key:
     jmp .done
 
 ; ════════════════════════════════════════════════════════════════════════════
-; EDIT MODE HANDLER (Simplified)
+; EDIT MODE HANDLER - TEST 4: Full (display + file write)
 ; ════════════════════════════════════════════════════════════════════════════
 .edit_mode_handler:
-    ; (Keep it simple for now to avoid complexity)
+    ; ESC = save (scancode 1)
+    cmp bl, 1
+    je .edit_save
+    
+    ; Backspace in edit mode (scancode 14)
+    cmp bl, 14
+    je .edit_backspace
+    
+    ; Normal char
+    movzx eax, bl
+    cmp eax, 58
+    jge .done
+    
+    ; Check Shift
+    cmp byte [shift_state], 1
+    je .edit_shift
+    mov al, [scancode_table + eax]
+    jmp .edit_got
+.edit_shift:
+    mov al, [shift_table + eax]
+.edit_got:
+    test al, al
+    jz .done
+    
+    ; TEST 4: BOTH - Write to file AND display
+    mov edx, [file_content_len]
+    cmp edx, 500
+    jge .done
+    mov [file_content + edx], al
+    inc dword [file_content_len]
+    
+    ; Display in Yellow (0x0E)
+    mov ah, 0x0E
+    call print_char_at_cursor
+    jmp .done
+
+.edit_backspace:
+    cmp dword [file_content_len], 0
+    je .done
+    dec dword [file_content_len]
+    dec dword [cursor_offset]
+    
+    ; Clear char
+    mov edi, [cursor_offset]
+    mov ebx, [prompt_line]
+    imul ebx, 160
+    add ebx, 0xB8000
+    lea edi, [ebx + edi*2]
+    mov word [edi], 0x0720
+    jmp .done
+
+.edit_save:
+    mov edx, [file_content_len]
+    mov byte [file_content + edx], 0 ; Null terminate
+    mov byte [edit_mode], 0
+    
+    ; New line and prompt
+    call vga_newline
+    call shell_prompt
     jmp .done
 
 .done:

@@ -1,7 +1,7 @@
 # MATHIS OS - État Actuel du Projet
 
 > **Dernière mise à jour** : 2 décembre 2025  
-> **Version** : v3.0 - Build fonctionnel avec shell interactif
+> **Version** : v3.1 - Edit Mode fonctionnel + Shell interactif
 
 ---
 
@@ -53,28 +53,23 @@
 
 ## ⚠️ Problèmes Connus
 
-### ❌ Edit Mode (`fs write`)
-**Statut** : Désactivé dans la version stable  
-**Symptôme** : Reboot (Triple Fault) lors de la saisie de texte en mode éditeur  
-**Cause identifiée** : Accès mémoire invalide ou corruption de registres dans `.edit_mode_handler`  
-**Workaround temporaire** : Le handler est réduit à un stub qui retourne immédiatement
-
-**Détails techniques** :
-- L'écriture dans `file_content` semble causer un GPF (General Protection Fault)
-- Le handler `print_char_at_cursor` peut avoir des problèmes de bounds checking
-- Nécessite un débogage plus approfondi avec QEMU + GDB
-
 ### ⚠️ Mémoire & Paging
 **Statut** : Désactivé  
 **Module** : `memory.asm` (commenté dans `core.asm`)  
 **Raison** : Conflit d'adresses lors du chargement à 0x80000  
 **Impact** : Pas de pagination, pas de mode 64-bit pour l'instant
 
-### 🐛 Keyboard Data Access Bug (RÉSOLU)
+### 🐛 Keyboard Data Access Bug (RÉSOLU v3.0)
 **Symptôme** : Reboot immédiat lors de la frappe  
 **Cause** : Accès à `cmd_buffer` et `scancode_table` situés dans `data.asm` (trop loin en mémoire)  
 **Fix** : Déplacement de toutes les variables vers `keyboard.asm` (local data)  
 **Résultat** : Shell stable et fonctionnel
+
+### 🐛 Edit Mode Bug (RÉSOLU v3.1)
+**Symptôme** : Reboot lors de la frappe en mode `fs write`  
+**Cause** : Appels à des fonctions helper non testées (`print_string_local`, etc.)  
+**Fix** : Version simplifiée avec appels directs à `vga_newline` et `shell_prompt`  
+**Résultat** : Edit mode 100% fonctionnel (affichage jaune + sauvegarde + backspace)
 
 ---
 
@@ -150,6 +145,13 @@
 ---
 
 ## 📝 Notes de Version
+
+### v3.1 (02/12/2025 - 11:55)
+- ✅ **Edit Mode fonctionnel** : `fs write` fonctionne sans crash
+- ✅ Affichage temps réel en jaune
+- ✅ Backspace et ESC pour sauvegarder
+- ✅ Pipeline complet : Edit → Compile → Run
+- 🔧 Fix : Version simplifiée sans helpers buggés
 
 ### v3.0 (02/12/2025)
 - ✅ Shell interactif stable
