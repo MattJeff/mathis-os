@@ -15,10 +15,11 @@ banner_line6: db "                                            v3.2  ", 0
 
 msg_info:       db "AI-First OS - Type 'help' for commands", 0
 msg_prompt:     db "> ", 0
-msg_help:       db "help, clear, fs, compile, runmbc, jarvis, go64", 0
+msg_help:       db "help, clear, fs, go64, reboot", 0
 msg_unknown:    db "Unknown command", 0
 msg_jarvis:     db "JARVIS> Ready. How can I help?", 0
 msg_go64:       db "Entering 64-bit Long Mode...", 0
+msg_reboot:     db "Rebooting...", 0
 
 msg_fs_help:    db "fs: init, list, write, read", 0
 msg_fs_init:    db "Filesystem initialized (64KB RAM disk)", 0
@@ -89,6 +90,11 @@ idt:
     db 0x8E
     dw 0x0000
     times (256-0x22) dq 0
+
+; Null IDT for triple fault reboot
+null_idt:
+    dw 0
+    dd 0
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; SECTION 5: VARIABLES À ADRESSES FIXES (0x1F000)

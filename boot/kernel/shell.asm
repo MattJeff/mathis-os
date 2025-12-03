@@ -49,6 +49,8 @@ shell_command:
     je .cmd_jarvis
     cmp dword [cmd_buffer], 'go64'
     je .cmd_go64
+    cmp dword [cmd_buffer], 'rebo'
+    je .cmd_reboot
     jmp .cmd_unknown
 
 .cmd_help:
@@ -85,6 +87,16 @@ shell_command:
     mov ah, 0x0E
     call vga_print_line
     call do_go64
+    jmp .done
+
+.cmd_reboot:
+    call vga_newline
+    mov esi, msg_reboot
+    mov ah, 0x0E
+    call vga_print_line
+    ; Triple fault method - load null IDT and trigger interrupt
+    lidt [null_idt]
+    int 0x00
     jmp .done
 
 ; .cmd_mem:  ; DISABLED - external memory module not loaded
