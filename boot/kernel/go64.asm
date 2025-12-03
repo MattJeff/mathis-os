@@ -1,23 +1,17 @@
 ; ════════════════════════════════════════════════════════════════════════════
-; GO64.ASM - Trampoline vers kernel 64-bit
-; ════════════════════════════════════════════════════════════════════════════
-; Ce fichier est inclus EN DERNIER avant data_all.asm
-; Modifier ce fichier ne décale pas keyboard_code.asm
+; GO64.ASM - Transition 32-bit vers 64-bit Long Mode
 ; ════════════════════════════════════════════════════════════════════════════
 
 do_go64:
-    mov byte [0xB8000], '6'
-    mov byte [0xB8001], 0x4E
-    mov byte [0xB8002], '4'
-    mov byte [0xB8003], 0x4E
+    cli
 
-    ; STEP 1: Clear page tables at 0x1000
+    ; Setup page tables at 0x1000 (identity map first 2MB)
+    ; PML4 at 0x1000, PDPT at 0x2000, PD at 0x3000
     mov edi, 0x1000
     mov ecx, 3072
     xor eax, eax
     rep stosd
 
-    ; Setup page tables (8-byte entries for 64-bit mode)
     ; PML4[0] -> PDPT at 0x2000
     mov dword [0x1000], 0x2003
     mov dword [0x1004], 0x0
@@ -28,53 +22,38 @@ do_go64:
     mov dword [0x3000], 0x00000083
     mov dword [0x3004], 0x0
 
-    mov byte [0xB8004], 'P'
-    mov byte [0xB8005], 0x0A
-
-    ; STEP 2: Enable PAE
+    ; Enable PAE in CR4
     mov eax, cr4
     or eax, 0x20
     mov cr4, eax
 
-    mov byte [0xB8006], 'A'
-    mov byte [0xB8007], 0x0A
-
-    ; STEP 3: Load CR3
+    ; Load CR3 with PML4 address
     mov eax, 0x1000
     mov cr3, eax
 
-    mov byte [0xB8008], '3'
-    mov byte [0xB8009], 0x0A
-
-    ; STEP 4: Enable Long Mode in EFER
+    ; Enable Long Mode in EFER MSR
     mov ecx, 0xC0000080
     rdmsr
     or eax, 0x100
     wrmsr
 
-    mov byte [0xB800A], 'L'
-    mov byte [0xB800B], 0x0A
-
     ; Load 64-bit GDT
     lgdt [gdt64_ptr]
 
-    mov byte [0xB800C], 'G'
-    mov byte [0xB800D], 0x0A
-
-    ; STEP 6: Enable Paging (this crashes)
+    ; Enable Paging (activates Long Mode)
     mov eax, cr0
     or eax, 0x80000000
     mov cr0, eax
 
-    ; STEP 7: Far jump to 64-bit code
+    ; Far jump to 64-bit code
     jmp 0x08:long_mode_entry
 
-; ══════════════════════════════════════════════════════════════════
-; 64-bit code entry point
-; ══════════════════════════════════════════════════════════════════
+; ════════════════════════════════════════════════════════════════════════════
+; 64-bit Long Mode Entry Point
+; ════════════════════════════════════════════════════════════════════════════
 [BITS 64]
 long_mode_entry:
-    ; Load 64-bit data segment
+    ; Setup 64-bit data segments
     mov ax, 0x10
     mov ds, ax
     mov es, ax
@@ -82,29 +61,39 @@ long_mode_entry:
     mov gs, ax
     mov ss, ax
 
-    ; Display "64!" in green - WE ARE IN 64-BIT MODE!
-    mov byte [0xB800E], '6'
-    mov byte [0xB800F], 0x0A
-    mov byte [0xB8010], '4'
-    mov byte [0xB8011], 0x0A
-    mov byte [0xB8012], '!'
-    mov byte [0xB8013], 0x0E
+    ; Clear screen and display 64-bit message
+    mov rdi, 0xB8000
+    mov rcx, 2000
+    mov rax, 0x0F200F20
+    rep stosq
 
-    cli
+    ; Display "MathisOS 64-bit Mode"
+    mov rdi, 0xB8000
+    mov rsi, msg_64bit
+    mov ah, 0x0A
+.print:
+    lodsb
+    test al, al
+    jz .done
+    mov [rdi], ax
+    add rdi, 2
+    jmp .print
+.done:
     hlt
+    jmp .done
+
+msg_64bit: db "MathisOS 64-bit Long Mode - Success!", 0
 
 [BITS 32]
 
-; ══════════════════════════════════════════════════════════════════
+; ════════════════════════════════════════════════════════════════════════════
 ; GDT 64-bit
-; ══════════════════════════════════════════════════════════════════
+; ════════════════════════════════════════════════════════════════════════════
 align 16
 gdt64:
     dq 0                         ; Null descriptor
-gdt64_code:
-    dq 0x00209A0000000000        ; 64-bit code segment
-gdt64_data:
-    dq 0x0000920000000000        ; 64-bit data segment
+    dq 0x00209A0000000000        ; 0x08: 64-bit code segment
+    dq 0x0000920000000000        ; 0x10: 64-bit data segment
 gdt64_end:
 
 gdt64_ptr:
