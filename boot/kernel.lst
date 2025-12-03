@@ -1,0 +1,1466 @@
+     1                                  ; ════════════════════════════════════════════════════════════════════════════
+     2                                  ; MATHIS KERNEL - CORE MODULE v3.2
+     3                                  ; ════════════════════════════════════════════════════════════════════════════
+     4                                  ; NOUVELLE ARCHITECTURE:
+     5                                  ;   1. CODE: Tout le code exécutable d'abord
+     6                                  ;   2. DATA: Toutes les données à la fin (data_all.asm)
+     7                                  ;
+     8                                  ; Règle: On peut ajouter du code ou des données sans casser les adresses
+     9                                  ; ════════════════════════════════════════════════════════════════════════════
+    10                                  
+    11                                  [BITS 32]
+    12                                  [ORG 0x10000]
+    13                                  
+    14                                  ; ════════════════════════════════════════════════════════════════════════════
+    15                                  ; ENTRY POINT
+    16                                  ; ════════════════════════════════════════════════════════════════════════════
+    17                                  
+    18                                  kernel_entry:
+    19 00000000 BCFFFF0200                  mov esp, 0x2FFFF
+    20                                  
+    21                                      ; Copy embedded bytecode to 0x20000
+    22 00000005 BE[A0100000]                mov esi, embedded_program
+    23 0000000A BF00000200                  mov edi, 0x20000
+    24 0000000F B946000000                  mov ecx, embedded_program_end - embedded_program
+    25 00000014 F3A4                        rep movsb
+    26                                  
+    27                                      ; Initialize PIC
+    28 00000016 B011                        mov al, 0x11
+    29 00000018 E620                        out 0x20, al
+    30 0000001A E6A0                        out 0xA0, al
+    31 0000001C B020                        mov al, 0x20
+    32 0000001E E621                        out 0x21, al
+    33 00000020 B028                        mov al, 0x28
+    34 00000022 E6A1                        out 0xA1, al
+    35 00000024 B004                        mov al, 0x04
+    36 00000026 E621                        out 0x21, al
+    37 00000028 B002                        mov al, 0x02
+    38 0000002A E6A1                        out 0xA1, al
+    39 0000002C B001                        mov al, 0x01
+    40 0000002E E621                        out 0x21, al
+    41 00000030 E6A1                        out 0xA1, al
+    42 00000032 B0FD                        mov al, 0xFD            ; Enable keyboard only
+    43 00000034 E621                        out 0x21, al
+    44 00000036 B0FF                        mov al, 0xFF
+    45 00000038 E6A1                        out 0xA1, al
+    46                                  
+    47                                      ; ══════════════════════════════════════════════════════════════════
+    48                                      ; PATCH IDT - Résout l'adresse de keyboard_isr dynamiquement
+    49                                      ; ══════════════════════════════════════════════════════════════════
+    50 0000003A B8[C1010000]                mov eax, keyboard_isr           ; NASM calcule l'adresse réelle
+    51 0000003F 66A3[FE110000]              mov word [idt + 0x21*8], ax     ; Bits 0-15 de l'adresse
+    52 00000045 C1E810                      shr eax, 16
+    53 00000048 66A3[04120000]              mov word [idt + 0x21*8 + 6], ax ; Bits 16-31 de l'adresse
+    54                                  
+    55                                      ; Load IDT
+    56 0000004E 0F011D[F0100000]            lidt [idt_ptr]
+    57                                  
+    58                                      ; Clear screen
+    59 00000055 BF00800B00                  mov edi, 0xB8000
+    60 0000005A B9D0070000                  mov ecx, 2000
+    61 0000005F B820070000                  mov eax, 0x0720
+    62 00000064 F3AB                        rep stosd
+    63                                  
+    64                                      ; Display banner
+    65 00000066 BE[CC090000]                mov esi, banner_line1
+    66 0000006B BF00800B00                  mov edi, 0xB8000
+    67 00000070 B40A                        mov ah, 0x0A
+    68 00000072 E88F000000                  call print_string
+    69                                  
+    70 00000077 BE[FF090000]                mov esi, banner_line2
+    71 0000007C BFA0800B00                  mov edi, 0xB80A0
+    72 00000081 E880000000                  call print_string
+    73                                  
+    74 00000086 BE[320A0000]                mov esi, banner_line3
+    75 0000008B BF40810B00                  mov edi, 0xB8140
+    76 00000090 E871000000                  call print_string
+    77                                  
+    78 00000095 BE[650A0000]                mov esi, banner_line4
+    79 0000009A BFE0810B00                  mov edi, 0xB81E0
+    80 0000009F E862000000                  call print_string
+    81                                  
+    82 000000A4 BE[980A0000]                mov esi, banner_line5
+    83 000000A9 BF80820B00                  mov edi, 0xB8280
+    84 000000AE E853000000                  call print_string
+    85                                  
+    86 000000B3 BE[CB0A0000]                mov esi, banner_line6
+    87 000000B8 BF20830B00                  mov edi, 0xB8320
+    88 000000BD E844000000                  call print_string
+    89                                  
+    90                                      ; Info message
+    91 000000C2 BE[FE0A0000]                mov esi, msg_info
+    92 000000C7 BF60840B00                  mov edi, 0xB8460
+    93 000000CC B407                        mov ah, 0x07
+    94 000000CE E833000000                  call print_string
+    95                                  
+    96                                      ; Prompt
+    97 000000D3 BE[250B0000]                mov esi, msg_prompt
+    98 000000D8 BF50850B00                  mov edi, 0xB8550
+    99 000000DD B40A                        mov ah, 0x0A
+   100 000000DF E822000000                  call print_string
+   101                                  
+   102                                      ; Initialize shell state
+   103 000000E4 C705[4E0D0000]0400-         mov dword [cursor_offset], 4
+   103 000000EC 0000               
+   104 000000EE C705[520D0000]0000-         mov dword [cmd_length], 0
+   104 000000F6 0000               
+   105 000000F8 C705[960D0000]0900-         mov dword [prompt_line], 9
+   105 00000100 0000               
+   106                                  
+   107                                      ; Enable interrupts
+   108 00000102 FB                          sti
+   109                                  
+   110                                  .halt:
+   111 00000103 F4                          hlt
+   112 00000104 EBFD                        jmp .halt
+   113                                  
+   114                                  ; ════════════════════════════════════════════════════════════════════════════
+   115                                  ; PRINT STRING - ESI=string, EDI=VGA offset, AH=color
+   116                                  ; ════════════════════════════════════════════════════════════════════════════
+   117                                  print_string:
+   118 00000106 AC                          lodsb
+   119 00000107 84C0                        test al, al
+   120 00000109 7404                        jz .done
+   121 0000010B 66AB                        stosw
+   122 0000010D EBF7                        jmp print_string
+   123                                  .done:
+   124 0000010F C3                          ret
+   125                                  
+   126                                  ; ════════════════════════════════════════════════════════════════════════════
+   127                                  ; SECTION CODE - Tous les modules de code
+   128                                  ; ════════════════════════════════════════════════════════════════════════════
+   129                                  
+   130                                  %include "vga.asm"
+     1                              <1> ; ════════════════════════════════════════════════════════════════════════════
+     2                              <1> ; MATHIS KERNEL - VGA MODULE
+     3                              <1> ; Display functions
+     4                              <1> ; ════════════════════════════════════════════════════════════════════════════
+     5                              <1> 
+     6                              <1> vga_clear:
+     7 00000110 50                  <1>     push eax
+     8 00000111 51                  <1>     push ecx
+     9 00000112 57                  <1>     push edi
+    10 00000113 BF00800B00          <1>     mov edi, 0xB8000
+    11 00000118 B9D0070000          <1>     mov ecx, 2000
+    12 0000011D B820070000          <1>     mov eax, 0x0720
+    13 00000122 F3AB                <1>     rep stosd
+    14 00000124 5F                  <1>     pop edi
+    15 00000125 59                  <1>     pop ecx
+    16 00000126 58                  <1>     pop eax
+    17 00000127 C3                  <1>     ret
+    18                              <1> 
+    19                              <1> vga_banner:
+    20 00000128 50                  <1>     push eax
+    21 00000129 56                  <1>     push esi
+    22 0000012A 57                  <1>     push edi
+    23                              <1>     
+    24 0000012B BE[CC090000]        <1>     mov esi, banner_line1
+    25 00000130 BF00800B00          <1>     mov edi, 0xB8000
+    26 00000135 B40A                <1>     mov ah, 0x0A
+    27 00000137 E8CAFFFFFF          <1>     call print_string
+    28                              <1>     
+    29 0000013C BE[FF090000]        <1>     mov esi, banner_line2
+    30 00000141 BFA0800B00          <1>     mov edi, 0xB80A0
+    31 00000146 E8BBFFFFFF          <1>     call print_string
+    32                              <1>     
+    33 0000014B BE[320A0000]        <1>     mov esi, banner_line3
+    34 00000150 BF40810B00          <1>     mov edi, 0xB8140
+    35 00000155 E8ACFFFFFF          <1>     call print_string
+    36                              <1>     
+    37 0000015A BE[650A0000]        <1>     mov esi, banner_line4
+    38 0000015F BFE0810B00          <1>     mov edi, 0xB81E0
+    39 00000164 E89DFFFFFF          <1>     call print_string
+    40                              <1>     
+    41 00000169 BE[980A0000]        <1>     mov esi, banner_line5
+    42 0000016E BF80820B00          <1>     mov edi, 0xB8280
+    43 00000173 E88EFFFFFF          <1>     call print_string
+    44                              <1>     
+    45 00000178 BE[CB0A0000]        <1>     mov esi, banner_line6
+    46 0000017D BF20830B00          <1>     mov edi, 0xB8320
+    47 00000182 E87FFFFFFF          <1>     call print_string
+    48                              <1>     
+    49                              <1>     ; Info message
+    50 00000187 BE[FE0A0000]        <1>     mov esi, msg_info
+    51 0000018C BF60840B00          <1>     mov edi, 0xB8460
+    52 00000191 B407                <1>     mov ah, 0x07
+    53 00000193 E86EFFFFFF          <1>     call print_string
+    54                              <1>     
+    55 00000198 5F                  <1>     pop edi
+    56 00000199 5E                  <1>     pop esi
+    57 0000019A 58                  <1>     pop eax
+    58 0000019B C3                  <1>     ret
+    59                              <1> 
+    60                              <1> vga_print_line:
+    61                              <1>     ; Print ESI at current prompt_line, color in AH
+    62 0000019C 53                  <1>     push ebx
+    63 0000019D 57                  <1>     push edi
+    64 0000019E 8B1D[960D0000]      <1>     mov ebx, [prompt_line]
+    65 000001A4 69DBA0000000        <1>     imul ebx, 160
+    66 000001AA 81C300800B00        <1>     add ebx, 0xB8000
+    67 000001B0 89DF                <1>     mov edi, ebx
+    68 000001B2 E84FFFFFFF          <1>     call print_string
+    69 000001B7 5F                  <1>     pop edi
+    70 000001B8 5B                  <1>     pop ebx
+    71 000001B9 C3                  <1>     ret
+    72                              <1> 
+    73                              <1> vga_newline:
+    74 000001BA FF05[960D0000]      <1>     inc dword [prompt_line]
+    75 000001C0 C3                  <1>     ret
+   131                                  %include "keyboard_code.asm"
+     1                              <1> ; ════════════════════════════════════════════════════════════════════════════
+     2                              <1> ; MATHIS KERNEL - KEYBOARD MODULE (CODE ONLY)
+     3                              <1> ; Data is in data_all.asm
+     4                              <1> ; ════════════════════════════════════════════════════════════════════════════
+     5                              <1> 
+     6                              <1> keyboard_isr:
+     7 000001C1 60                  <1>     pushad              ; Save all registers
+     8                              <1> 
+     9 000001C2 E460                <1>     in al, 0x60         ; Read scancode
+    10 000001C4 88C3                <1>     mov bl, al          ; Save scancode
+    11                              <1> 
+    12 000001C6 B020                <1>     mov al, 0x20        ; EOI
+    13 000001C8 E620                <1>     out 0x20, al        ; Send EOI
+    14                              <1> 
+    15 000001CA E802000000          <1>     call process_key    ; Process the key
+    16                              <1> 
+    17 000001CF 61                  <1>     popad               ; Restore registers
+    18 000001D0 CF                  <1>     iret
+    19                              <1> 
+    20                              <1> ; ════════════════════════════════════════════════════════════════════════════
+    21                              <1> ; KEY PROCESSING
+    22                              <1> ; ════════════════════════════════════════════════════════════════════════════
+    23                              <1> process_key:
+    24 000001D1 60                  <1>     pushad
+    25                              <1> 
+    26                              <1>     ; Check for key release (bit 7)
+    27 000001D2 F6C380              <1>     test bl, 0x80
+    28 000001D5 756F                <1>     jnz .check_release
+    29                              <1> 
+    30                              <1>     ; === PRESS HANDLING ===
+    31                              <1> 
+    32                              <1>     ; Shift Key Press
+    33 000001D7 80FB2A              <1>     cmp bl, 42          ; Left Shift
+    34 000001DA 747C                <1>     je .shift_on
+    35 000001DC 80FB36              <1>     cmp bl, 54          ; Right Shift
+    36 000001DF 7477                <1>     je .shift_on
+    37                              <1> 
+    38                              <1>     ; Check edit mode
+    39 000001E1 803D[9A0D0000]01    <1>     cmp byte [edit_mode], 1
+    40 000001E8 0F84D7000000        <1>     je .edit_mode_handler
+    41                              <1> 
+    42                              <1>     ; Normal Mode
+    43 000001EE 0FB6C3              <1>     movzx eax, bl
+    44 000001F1 83F83A              <1>     cmp eax, 58
+    45 000001F4 0F8D7A010000        <1>     jge .done
+    46                              <1> 
+    47                              <1>     ; Check Shift State
+    48 000001FA 803D[9F0F0000]01    <1>     cmp byte [shift_state], 1
+    49 00000201 7408                <1>     je .use_shift
+    50 00000203 8A80[A00F0000]      <1>     mov al, [scancode_table + eax]
+    51 00000209 EB06                <1>     jmp .got_char
+    52                              <1> .use_shift:
+    53 0000020B 8A80[20100000]      <1>     mov al, [shift_table + eax]
+    54                              <1> .got_char:
+    55                              <1> 
+    56 00000211 84C0                <1>     test al, al
+    57 00000213 0F845B010000        <1>     jz .done
+    58                              <1> 
+    59                              <1>     ; Handle Special Keys
+    60 00000219 3C0D                <1>     cmp al, 0x0D        ; Enter
+    61 0000021B 7453                <1>     je .handle_enter
+    62 0000021D 3C08                <1>     cmp al, 0x08        ; Backspace
+    63 0000021F 7466                <1>     je .handle_backspace
+    64                              <1> 
+    65                              <1>     ; Add to buffer
+    66 00000221 8B15[520D0000]      <1>     mov edx, [cmd_length]
+    67 00000227 83FA3C              <1>     cmp edx, 60
+    68 0000022A 0F8D44010000        <1>     jge .done
+    69 00000230 8882[560D0000]      <1>     mov [cmd_buffer + edx], al
+    70 00000236 FF05[520D0000]      <1>     inc dword [cmd_length]
+    71                              <1> 
+    72                              <1>     ; Display Character
+    73 0000023C E835010000          <1>     call print_char_at_cursor
+    74 00000241 E92E010000          <1>     jmp .done
+    75                              <1> 
+    76                              <1> .check_release:
+    77                              <1>     ; Shift Key Release
+    78 00000246 80E37F              <1>     and bl, 0x7F        ; Clear bit 7
+    79 00000249 80FB2A              <1>     cmp bl, 42
+    80 0000024C 7416                <1>     je .shift_off
+    81 0000024E 80FB36              <1>     cmp bl, 54
+    82 00000251 7411                <1>     je .shift_off
+    83 00000253 E91C010000          <1>     jmp .done
+    84                              <1> 
+    85                              <1> .shift_on:
+    86 00000258 C605[9F0F0000]01    <1>     mov byte [shift_state], 1
+    87 0000025F E910010000          <1>     jmp .done
+    88                              <1> 
+    89                              <1> .shift_off:
+    90 00000264 C605[9F0F0000]00    <1>     mov byte [shift_state], 0
+    91 0000026B E904010000          <1>     jmp .done
+    92                              <1> 
+    93                              <1> ; ════════════════════════════════════════════════════════════════════════════
+    94                              <1> ; COMMAND HANDLERS
+    95                              <1> ; ════════════════════════════════════════════════════════════════════════════
+    96                              <1> 
+    97                              <1> .handle_enter:
+    98 00000270 833D[520D0000]00    <1>     cmp dword [cmd_length], 0
+    99 00000277 0F84F7000000        <1>     je .done
+   100                              <1> 
+   101 0000027D E85E010000          <1>     call shell_command
+   102 00000282 E9ED000000          <1>     jmp .done
+   103                              <1> 
+   104                              <1> .handle_backspace:
+   105 00000287 833D[520D0000]00    <1>     cmp dword [cmd_length], 0
+   106 0000028E 0F84E0000000        <1>     je .done
+   107 00000294 FF0D[520D0000]      <1>     dec dword [cmd_length]
+   108 0000029A FF0D[4E0D0000]      <1>     dec dword [cursor_offset]
+   109                              <1> 
+   110                              <1>     ; Clear character on screen
+   111 000002A0 8B3D[4E0D0000]      <1>     mov edi, [cursor_offset]
+   112 000002A6 8B1D[960D0000]      <1>     mov ebx, [prompt_line]
+   113 000002AC 69DBA0000000        <1>     imul ebx, 160
+   114 000002B2 81C300800B00        <1>     add ebx, 0xB8000
+   115 000002B8 8D3C7B              <1>     lea edi, [ebx + edi*2]
+   116 000002BB 66C7072007          <1>     mov word [edi], 0x0720  ; Space
+   117 000002C0 E9AF000000          <1>     jmp .done
+   118                              <1> 
+   119                              <1> ; ════════════════════════════════════════════════════════════════════════════
+   120                              <1> ; EDIT MODE HANDLER
+   121                              <1> ; ════════════════════════════════════════════════════════════════════════════
+   122                              <1> .edit_mode_handler:
+   123                              <1>     ; ESC = save (scancode 1)
+   124 000002C5 80FB01              <1>     cmp bl, 1
+   125 000002C8 0F8486000000        <1>     je .edit_save
+   126                              <1> 
+   127                              <1>     ; Backspace in edit mode (scancode 14)
+   128 000002CE 80FB0E              <1>     cmp bl, 14
+   129 000002D1 744A                <1>     je .edit_backspace
+   130                              <1> 
+   131                              <1>     ; Normal char
+   132 000002D3 0FB6C3              <1>     movzx eax, bl
+   133 000002D6 83F83A              <1>     cmp eax, 58
+   134 000002D9 0F8D95000000        <1>     jge .done
+   135                              <1> 
+   136                              <1>     ; Check Shift
+   137 000002DF 803D[9F0F0000]01    <1>     cmp byte [shift_state], 1
+   138 000002E6 7408                <1>     je .edit_shift
+   139 000002E8 8A80[A00F0000]      <1>     mov al, [scancode_table + eax]
+   140 000002EE EB06                <1>     jmp .edit_got
+   141                              <1> .edit_shift:
+   142 000002F0 8A80[20100000]      <1>     mov al, [shift_table + eax]
+   143                              <1> .edit_got:
+   144 000002F6 84C0                <1>     test al, al
+   145 000002F8 747A                <1>     jz .done
+   146                              <1> 
+   147                              <1>     ; Write to file AND display
+   148 000002FA 8B15[9B0D0000]      <1>     mov edx, [file_content_len]
+   149 00000300 81FAF4010000        <1>     cmp edx, 500
+   150 00000306 7D6C                <1>     jge .done
+   151 00000308 8882[9F0D0000]      <1>     mov [file_content + edx], al
+   152 0000030E FF05[9B0D0000]      <1>     inc dword [file_content_len]
+   153                              <1> 
+   154                              <1>     ; Display in Yellow (0x0E)
+   155 00000314 B40E                <1>     mov ah, 0x0E
+   156 00000316 E85B000000          <1>     call print_char_at_cursor
+   157 0000031B EB57                <1>     jmp .done
+   158                              <1> 
+   159                              <1> .edit_backspace:
+   160 0000031D 833D[9B0D0000]00    <1>     cmp dword [file_content_len], 0
+   161 00000324 744E                <1>     je .done
+   162 00000326 FF0D[9B0D0000]      <1>     dec dword [file_content_len]
+   163 0000032C FF0D[4E0D0000]      <1>     dec dword [cursor_offset]
+   164                              <1> 
+   165                              <1>     ; Clear char
+   166 00000332 8B3D[4E0D0000]      <1>     mov edi, [cursor_offset]
+   167 00000338 8B1D[960D0000]      <1>     mov ebx, [prompt_line]
+   168 0000033E 69DBA0000000        <1>     imul ebx, 160
+   169 00000344 81C300800B00        <1>     add ebx, 0xB8000
+   170 0000034A 8D3C7B              <1>     lea edi, [ebx + edi*2]
+   171 0000034D 66C7072007          <1>     mov word [edi], 0x0720
+   172 00000352 EB20                <1>     jmp .done
+   173                              <1> 
+   174                              <1> .edit_save:
+   175 00000354 8B15[9B0D0000]      <1>     mov edx, [file_content_len]
+   176 0000035A C682[9F0D0000]00    <1>     mov byte [file_content + edx], 0 ; Null terminate
+   177 00000361 C605[9A0D0000]00    <1>     mov byte [edit_mode], 0
+   178                              <1> 
+   179                              <1>     ; New line and prompt
+   180 00000368 E84DFEFFFF          <1>     call vga_newline
+   181 0000036D E82B000000          <1>     call shell_prompt
+   182 00000372 EB00                <1>     jmp .done
+   183                              <1> 
+   184                              <1> .done:
+   185 00000374 61                  <1>     popad
+   186 00000375 C3                  <1>     ret
+   187                              <1> 
+   188                              <1> ; ════════════════════════════════════════════════════════════════════════════
+   189                              <1> ; HELPER FUNCTIONS
+   190                              <1> ; ════════════════════════════════════════════════════════════════════════════
+   191                              <1> print_char_at_cursor:
+   192 00000376 B40F                <1>     mov ah, 0x0F
+   193 00000378 8B3D[4E0D0000]      <1>     mov edi, [cursor_offset]
+   194 0000037E 8B1D[960D0000]      <1>     mov ebx, [prompt_line]
+   195 00000384 69DBA0000000        <1>     imul ebx, 160
+   196 0000038A 81C300800B00        <1>     add ebx, 0xB8000
+   197 00000390 8D3C7B              <1>     lea edi, [ebx + edi*2]
+   198 00000393 668907              <1>     mov [edi], ax
+   199 00000396 FF05[4E0D0000]      <1>     inc dword [cursor_offset]
+   200 0000039C C3                  <1>     ret
+   132                                  %include "shell.asm"
+     1                              <1> ; ════════════════════════════════════════════════════════════════════════════
+     2                              <1> ; MATHIS KERNEL - SHELL MODULE
+     3                              <1> ; Command handler
+     4                              <1> ; ════════════════════════════════════════════════════════════════════════════
+     5                              <1> 
+     6                              <1> shell_prompt:
+     7 0000039D 50                  <1>     push eax
+     8 0000039E 53                  <1>     push ebx
+     9 0000039F 56                  <1>     push esi
+    10 000003A0 57                  <1>     push edi
+    11                              <1> 
+    12 000003A1 C705[4E0D0000]0400- <1>     mov dword [cursor_offset], 4
+    12 000003A9 0000                <1>
+    13 000003AB C705[520D0000]0000- <1>     mov dword [cmd_length], 0
+    13 000003B3 0000                <1>
+    14 000003B5 FF05[960D0000]      <1>     inc dword [prompt_line]
+    15                              <1> 
+    16 000003BB BE[250B0000]        <1>     mov esi, msg_prompt
+    17 000003C0 8B1D[960D0000]      <1>     mov ebx, [prompt_line]
+    18 000003C6 69DBA0000000        <1>     imul ebx, 160
+    19 000003CC 81C300800B00        <1>     add ebx, 0xB8000
+    20 000003D2 89DF                <1>     mov edi, ebx
+    21 000003D4 B40A                <1>     mov ah, 0x0A
+    22 000003D6 E82BFDFFFF          <1>     call print_string
+    23                              <1> 
+    24 000003DB 5F                  <1>     pop edi
+    25 000003DC 5E                  <1>     pop esi
+    26 000003DD 5B                  <1>     pop ebx
+    27 000003DE 58                  <1>     pop eax
+    28 000003DF C3                  <1>     ret
+    29                              <1> 
+    30                              <1> shell_command:
+    31 000003E0 50                  <1>     push eax
+    32 000003E1 53                  <1>     push ebx
+    33 000003E2 51                  <1>     push ecx
+    34 000003E3 56                  <1>     push esi
+    35 000003E4 57                  <1>     push edi
+    36                              <1> 
+    37                              <1>     ; Check commands
+    38 000003E5 813D[560D0000]6865- <1>     cmp dword [cmd_buffer], 'help'
+    38 000003ED 6C70                <1>
+    39 000003EF 7449                <1>     je .cmd_help
+    40 000003F1 813D[560D0000]636C- <1>     cmp dword [cmd_buffer], 'clea'
+    40 000003F9 6561                <1>
+    41 000003FB 7450                <1>     je .cmd_clear
+    42 000003FD 66813D[560D0000]66- <1>     cmp word [cmd_buffer], 'fs'
+    42 00000405 73                  <1>
+    43 00000406 7456                <1>     je .cmd_fs
+    44 00000408 813D[560D0000]636F- <1>     cmp dword [cmd_buffer], 'comp'
+    44 00000410 6D70                <1>
+    45 00000412 7451                <1>     je .cmd_compile
+    46 00000414 813D[560D0000]7275- <1>     cmp dword [cmd_buffer], 'runm'
+    46 0000041C 6E6D                <1>
+    47 0000041E 744C                <1>     je .cmd_runmbc
+    48 00000420 813D[560D0000]6A61- <1>     cmp dword [cmd_buffer], 'jarv'
+    48 00000428 7276                <1>
+    49 0000042A 7447                <1>     je .cmd_jarvis
+    50 0000042C 813D[560D0000]676F- <1>     cmp dword [cmd_buffer], 'go64'
+    50 00000434 3634                <1>
+    51 00000436 7442                <1>     je .cmd_go64
+    52 00000438 EB53                <1>     jmp .cmd_unknown
+    53                              <1> 
+    54                              <1> .cmd_help:
+    55 0000043A E87BFDFFFF          <1>     call vga_newline
+    56 0000043F BE[280B0000]        <1>     mov esi, msg_help
+    57 00000444 B40E                <1>     mov ah, 0x0E
+    58 00000446 E851FDFFFF          <1>     call vga_print_line
+    59 0000044B EB53                <1>     jmp .done
+    60                              <1> 
+    61                              <1> .cmd_clear:
+    62 0000044D E8BEFCFFFF          <1>     call vga_clear
+    63 00000452 C705[960D0000]0000- <1>     mov dword [prompt_line], 0
+    63 0000045A 0000                <1>
+    64 0000045C EB42                <1>     jmp .done
+    65                              <1> 
+    66                              <1> .cmd_fs:
+    67 0000045E E8E7020000          <1>     call fs_command
+    68 00000463 EB3B                <1>     jmp .done
+    69                              <1> 
+    70                              <1> .cmd_compile:
+    71 00000465 E8DC030000          <1>     call compile_command
+    72 0000046A EB34                <1>     jmp .done
+    73                              <1> 
+    74                              <1> .cmd_runmbc:
+    75 0000046C E84C000000          <1>     call vm_run
+    76 00000471 EB2D                <1>     jmp .done
+    77                              <1> 
+    78                              <1> .cmd_jarvis:
+    79 00000473 E833000000          <1>     call jarvis_command
+    80 00000478 EB26                <1>     jmp .done
+    81                              <1> 
+    82                              <1> .cmd_go64:
+    83 0000047A E83BFDFFFF          <1>     call vga_newline
+    84 0000047F BE[860B0000]        <1>     mov esi, msg_go64
+    85 00000484 B40E                <1>     mov ah, 0x0E
+    86 00000486 E811FDFFFF          <1>     call vga_print_line
+    87 0000048B EB13                <1>     jmp .done
+    88                              <1> 
+    89                              <1> ; .cmd_mem:  ; DISABLED - external memory module not loaded
+    90                              <1> ;     ; Display memory info
+    91                              <1> ;     call vga_newline
+    92                              <1> ;     mov esi, msg_mem_title
+    93                              <1> ;     mov ah, 0x0E
+    94                              <1> ;     call vga_print_line
+    95                              <1> ;
+    96                              <1> ;     ; Show E820 entry count
+    97                              <1> ;     call vga_newline
+    98                              <1> ;     mov esi, msg_mem_e820
+    99                              <1> ;     mov ah, 0x07
+   100                              <1> ;     call vga_print_line
+   101                              <1> ;
+   102                              <1> ;     ; Show paging status
+   103                              <1> ;     call vga_newline
+   104                              <1> ;     mov esi, msg_mem_paging
+   105                              <1> ;     mov ah, 0x0A
+   106                              <1> ;     call vga_print_line
+   107                              <1> ;     jmp .done
+   108                              <1> 
+   109                              <1> .cmd_unknown:
+   110 0000048D E828FDFFFF          <1>     call vga_newline
+   111 00000492 BE[570B0000]        <1>     mov esi, msg_unknown
+   112 00000497 B40C                <1>     mov ah, 0x0C
+   113 00000499 E8FEFCFFFF          <1>     call vga_print_line
+   114 0000049E EB00                <1>     jmp .done
+   115                              <1> 
+   116                              <1> .done:
+   117 000004A0 E8F8FEFFFF          <1>     call shell_prompt
+   118 000004A5 5F                  <1>     pop edi
+   119 000004A6 5E                  <1>     pop esi
+   120 000004A7 59                  <1>     pop ecx
+   121 000004A8 5B                  <1>     pop ebx
+   122 000004A9 58                  <1>     pop eax
+   123 000004AA C3                  <1>     ret
+   124                              <1> 
+   125                              <1> ; ════════════════════════════════════════════════════════════════════════════
+   126                              <1> ; JARVIS COMMAND (simplified for now)
+   127                              <1> ; ════════════════════════════════════════════════════════════════════════════
+   128                              <1> jarvis_command:
+   129 000004AB E80AFDFFFF          <1>     call vga_newline
+   130 000004B0 BE[670B0000]        <1>     mov esi, msg_jarvis
+   131 000004B5 B40B                <1>     mov ah, 0x0B
+   132 000004B7 E8E0FCFFFF          <1>     call vga_print_line
+   133 000004BC C3                  <1>     ret
+   133                                  %include "vm.asm"
+     1                              <1> ; ════════════════════════════════════════════════════════════════════════════
+     2                              <1> ; MATHIS KERNEL - VM MODULE (MODULAR)
+     3                              <1> ; Bytecode virtual machine - Split into submodules
+     4                              <1> ; ════════════════════════════════════════════════════════════════════════════
+     5                              <1> ;
+     6                              <1> ; Structure:
+     7                              <1> ;   vm/core.asm  - Main loop, dispatch, print_number
+     8                              <1> ;   vm/math.asm  - Arithmetic (ADD, SUB, MUL, DIV, MOD)
+     9                              <1> ;   vm/stack.asm - Stack ops (DUP, POP, SWAP, OVER, ROT)
+    10                              <1> ;   vm/io.asm    - I/O (PRINT_INT, PRINT_STRING)
+    11                              <1> ;
+    12                              <1> ; All modules use global vm_* labels to avoid conflicts
+    13                              <1> ; ════════════════════════════════════════════════════════════════════════════
+    14                              <1> 
+    15                              <1> %include "vm/core.asm"
+     1                              <2> ; ════════════════════════════════════════════════════════════════════════════
+     2                              <2> ; MATHIS VM - CORE MODULE
+     3                              <2> ; Main loop and opcode dispatch
+     4                              <2> ; ════════════════════════════════════════════════════════════════════════════
+     5                              <2> ; Uses GLOBAL labels (vm_*) to avoid conflicts with includes
+     6                              <2> ; ════════════════════════════════════════════════════════════════════════════
+     7                              <2> 
+     8                              <2> VM_STACK    equ 0x25000
+     9                              <2> VM_HEAP     equ 0x26000
+    10                              <2> 
+    11                              <2> vm_run:
+    12 000004BD 50                  <2>     push eax
+    13 000004BE 53                  <2>     push ebx
+    14 000004BF 51                  <2>     push ecx
+    15 000004C0 52                  <2>     push edx
+    16 000004C1 56                  <2>     push esi
+    17 000004C2 57                  <2>     push edi
+    18 000004C3 55                  <2>     push ebp
+    19                              <2>     
+    20 000004C4 E8F1FCFFFF          <2>     call vga_newline
+    21 000004C9 BE[B30C0000]        <2>     mov esi, msg_vm_running
+    22 000004CE B40D                <2>     mov ah, 0x0D
+    23 000004D0 E8C7FCFFFF          <2>     call vga_print_line
+    24                              <2>     
+    25                              <2>     ; Initialize VM
+    26 000004D5 BE00000200          <2>     mov esi, 0x20000        ; Bytecode at 0x20000
+    27 000004DA BD00500200          <2>     mov ebp, VM_STACK       ; Stack pointer
+    28 000004DF BF00600200          <2>     mov edi, VM_HEAP        ; Heap pointer
+    29                              <2>     
+    30                              <2>     ; Check magic "MASM"
+    31 000004E4 813E4D41534D        <2>     cmp dword [esi], 0x4D53414D
+    32 000004EA 0F85F4010000        <2>     jne vm_error
+    33                              <2>     
+    34                              <2>     ; Skip 64-byte header
+    35 000004F0 83C640              <2>     add esi, 0x40
+    36                              <2> 
+    37                              <2> ; ════════════════════════════════════════════════════════════════════════════
+    38                              <2> ; MAIN VM LOOP - Global label for jumps from all modules
+    39                              <2> ; ════════════════════════════════════════════════════════════════════════════
+    40                              <2> vm_loop:
+    41 000004F3 0FB606              <2>     movzx eax, byte [esi]
+    42 000004F6 46                  <2>     inc esi
+    43                              <2>     
+    44                              <2>     ; Control
+    45 000004F7 3C00                <2>     cmp al, 0x00
+    46 000004F9 74F8                <2>     je vm_loop              ; NOP
+    47 000004FB 3C01                <2>     cmp al, 0x01
+    48 000004FD 0F84B5010000        <2>     je vm_done              ; HALT
+    49 00000503 3C68                <2>     cmp al, 0x68
+    50 00000505 0F84AD010000        <2>     je vm_done              ; RET
+    51                              <2>     
+    52                              <2>     ; Constants (0x17-0x19)
+    53 0000050B 3C17                <2>     cmp al, 0x17
+    54 0000050D 7436                <2>     je vm_op_const_small
+    55 0000050F 3C18                <2>     cmp al, 0x18
+    56 00000511 743E                <2>     je vm_op_const_int
+    57                              <2>     
+    58                              <2>     ; Math (0x30-0x35)
+    59 00000513 3C30                <2>     cmp al, 0x30
+    60 00000515 7447                <2>     je vm_op_add
+    61 00000517 3C31                <2>     cmp al, 0x31
+    62 00000519 744E                <2>     je vm_op_sub
+    63 0000051B 3C32                <2>     cmp al, 0x32
+    64 0000051D 7458                <2>     je vm_op_mul
+    65 0000051F 3C33                <2>     cmp al, 0x33
+    66 00000521 7466                <2>     je vm_op_div
+    67                              <2>     
+    68                              <2>     ; Stack (0x50-0x54)
+    69 00000523 3C50                <2>     cmp al, 0x50
+    70 00000525 0F84B0000000        <2>     je vm_op_dup
+    71 0000052B 3C51                <2>     cmp al, 0x51
+    72 0000052D 0F84B6000000        <2>     je vm_op_pop
+    73 00000533 3C52                <2>     cmp al, 0x52
+    74 00000535 0F84B6000000        <2>     je vm_op_swap
+    75                              <2>     
+    76                              <2>     ; I/O (0xC3-0xC6)
+    77 0000053B 3CC3                <2>     cmp al, 0xC3
+    78 0000053D 0F84E4000000        <2>     je vm_op_print_int
+    79                              <2>     
+    80                              <2>     ; Unknown - skip
+    81 00000543 EBAE                <2>     jmp vm_loop
+    82                              <2> 
+    83                              <2> ; ════════════════════════════════════════════════════════════════════════════
+    84                              <2> ; INCLUDE MODULES (all use global vm_* labels)
+    85                              <2> ; ════════════════════════════════════════════════════════════════════════════
+    86                              <2> %include "vm/math.asm"
+     1                              <3> ; ════════════════════════════════════════════════════════════════════════════
+     2                              <3> ; MATHIS VM - MATH MODULE
+     3                              <3> ; Arithmetic operations - Uses global vm_* labels
+     4                              <3> ; ════════════════════════════════════════════════════════════════════════════
+     5                              <3> 
+     6                              <3> vm_op_const_small:
+     7 00000545 0FB606              <3>     movzx eax, byte [esi]
+     8 00000548 46                  <3>     inc esi
+     9 00000549 83ED04              <3>     sub ebp, 4
+    10 0000054C 894500              <3>     mov [ebp], eax
+    11 0000054F EBA2                <3>     jmp vm_loop
+    12                              <3> 
+    13                              <3> vm_op_const_int:
+    14 00000551 8B06                <3>     mov eax, [esi]
+    15 00000553 83C604              <3>     add esi, 4
+    16 00000556 83ED04              <3>     sub ebp, 4
+    17 00000559 894500              <3>     mov [ebp], eax
+    18 0000055C EB95                <3>     jmp vm_loop
+    19                              <3> 
+    20                              <3> vm_op_add:
+    21 0000055E 8B4500              <3>     mov eax, [ebp]
+    22 00000561 83C504              <3>     add ebp, 4
+    23 00000564 014500              <3>     add [ebp], eax
+    24 00000567 EB8A                <3>     jmp vm_loop
+    25                              <3> 
+    26                              <3> vm_op_sub:
+    27 00000569 8B4500              <3>     mov eax, [ebp]
+    28 0000056C 83C504              <3>     add ebp, 4
+    29 0000056F 294500              <3>     sub [ebp], eax
+    30 00000572 E97CFFFFFF          <3>     jmp vm_loop
+    31                              <3> 
+    32                              <3> vm_op_mul:
+    33 00000577 8B4500              <3>     mov eax, [ebp]
+    34 0000057A 83C504              <3>     add ebp, 4
+    35 0000057D 0FAF4500            <3>     imul eax, [ebp]
+    36 00000581 894500              <3>     mov [ebp], eax
+    37 00000584 E96AFFFFFF          <3>     jmp vm_loop
+    38                              <3> 
+    39                              <3> vm_op_div:
+    40 00000589 8B5D00              <3>     mov ebx, [ebp]
+    41 0000058C 83C504              <3>     add ebp, 4
+    42 0000058F 8B4500              <3>     mov eax, [ebp]
+    43 00000592 31D2                <3>     xor edx, edx
+    44 00000594 85DB                <3>     test ebx, ebx
+    45 00000596 740A                <3>     jz vm_div_zero
+    46 00000598 F7FB                <3>     idiv ebx
+    47 0000059A 894500              <3>     mov [ebp], eax
+    48 0000059D E951FFFFFF          <3>     jmp vm_loop
+    49                              <3> vm_div_zero:
+    50 000005A2 C7450000000000      <3>     mov dword [ebp], 0
+    51 000005A9 E945FFFFFF          <3>     jmp vm_loop
+    52                              <3> 
+    53                              <3> vm_op_mod:
+    54 000005AE 8B5D00              <3>     mov ebx, [ebp]
+    55 000005B1 83C504              <3>     add ebp, 4
+    56 000005B4 8B4500              <3>     mov eax, [ebp]
+    57 000005B7 31D2                <3>     xor edx, edx
+    58 000005B9 85DB                <3>     test ebx, ebx
+    59 000005BB 740A                <3>     jz vm_mod_zero
+    60 000005BD F7FB                <3>     idiv ebx
+    61 000005BF 895500              <3>     mov [ebp], edx
+    62 000005C2 E92CFFFFFF          <3>     jmp vm_loop
+    63                              <3> vm_mod_zero:
+    64 000005C7 C7450000000000      <3>     mov dword [ebp], 0
+    65 000005CE E920FFFFFF          <3>     jmp vm_loop
+    66                              <3> 
+    67                              <3> vm_op_neg:
+    68 000005D3 F75D00              <3>     neg dword [ebp]
+    69 000005D6 E918FFFFFF          <3>     jmp vm_loop
+    87                              <2> %include "vm/stack.asm"
+     1                              <3> ; ════════════════════════════════════════════════════════════════════════════
+     2                              <3> ; MATHIS VM - STACK MODULE
+     3                              <3> ; Stack manipulation - Uses global vm_* labels
+     4                              <3> ; ════════════════════════════════════════════════════════════════════════════
+     5                              <3> 
+     6                              <3> vm_op_dup:
+     7 000005DB 8B4500              <3>     mov eax, [ebp]
+     8 000005DE 83ED04              <3>     sub ebp, 4
+     9 000005E1 894500              <3>     mov [ebp], eax
+    10 000005E4 E90AFFFFFF          <3>     jmp vm_loop
+    11                              <3> 
+    12                              <3> vm_op_pop:
+    13 000005E9 83C504              <3>     add ebp, 4
+    14 000005EC E902FFFFFF          <3>     jmp vm_loop
+    15                              <3> 
+    16                              <3> vm_op_swap:
+    17 000005F1 8B4500              <3>     mov eax, [ebp]
+    18 000005F4 8B5D04              <3>     mov ebx, [ebp+4]
+    19 000005F7 895D00              <3>     mov [ebp], ebx
+    20 000005FA 894504              <3>     mov [ebp+4], eax
+    21 000005FD E9F1FEFFFF          <3>     jmp vm_loop
+    22                              <3> 
+    23                              <3> vm_op_over:
+    24 00000602 8B4504              <3>     mov eax, [ebp+4]
+    25 00000605 83ED04              <3>     sub ebp, 4
+    26 00000608 894500              <3>     mov [ebp], eax
+    27 0000060B E9E3FEFFFF          <3>     jmp vm_loop
+    28                              <3> 
+    29                              <3> vm_op_rot:
+    30 00000610 8B4500              <3>     mov eax, [ebp]
+    31 00000613 8B5D04              <3>     mov ebx, [ebp+4]
+    32 00000616 8B4D08              <3>     mov ecx, [ebp+8]
+    33 00000619 894D00              <3>     mov [ebp], ecx
+    34 0000061C 894504              <3>     mov [ebp+4], eax
+    35 0000061F 895D08              <3>     mov [ebp+8], ebx
+    36 00000622 E9CCFEFFFF          <3>     jmp vm_loop
+    88                              <2> %include "vm/io.asm"
+     1                              <3> ; ════════════════════════════════════════════════════════════════════════════
+     2                              <3> ; MATHIS VM - I/O MODULE
+     3                              <3> ; Input/Output - Uses global vm_* labels
+     4                              <3> ; ════════════════════════════════════════════════════════════════════════════
+     5                              <3> 
+     6                              <3> vm_op_print_int:
+     7 00000627 8B4500              <3>     mov eax, [ebp]
+     8 0000062A A3[B4060000]        <3>     mov [vm_print_value], eax
+     9 0000062F E9BFFEFFFF          <3>     jmp vm_loop
+    10                              <3> 
+    11                              <3> vm_op_print_string:
+    12 00000634 56                  <3>     push esi
+    13 00000635 57                  <3>     push edi
+    14                              <3>     
+    15 00000636 8B7500              <3>     mov esi, [ebp]
+    16 00000639 83C604              <3>     add esi, 4
+    17 0000063C 83C504              <3>     add ebp, 4
+    18                              <3>     
+    19 0000063F E876FBFFFF          <3>     call vga_newline
+    20                              <3>     
+    21 00000644 8B1D[960D0000]      <3>     mov ebx, [prompt_line]
+    22 0000064A 69DBA0000000        <3>     imul ebx, 160
+    23 00000650 81C300800B00        <3>     add ebx, 0xB8000
+    24 00000656 89DF                <3>     mov edi, ebx
+    25 00000658 B40F                <3>     mov ah, 0x0F
+    26                              <3> 
+    27                              <3> vm_print_str_loop:
+    28 0000065A AC                  <3>     lodsb
+    29 0000065B 84C0                <3>     test al, al
+    30 0000065D 7404                <3>     jz vm_print_str_done
+    31 0000065F 66AB                <3>     stosw
+    32 00000661 EBF7                <3>     jmp vm_print_str_loop
+    33                              <3>     
+    34                              <3> vm_print_str_done:
+    35 00000663 5F                  <3>     pop edi
+    36 00000664 5E                  <3>     pop esi
+    37 00000665 E989FEFFFF          <3>     jmp vm_loop
+    38                              <3> 
+    39                              <3> vm_op_print_char:
+    40 0000066A 57                  <3>     push edi
+    41                              <3>     
+    42 0000066B 8B4500              <3>     mov eax, [ebp]
+    43 0000066E 83C504              <3>     add ebp, 4
+    44                              <3>     
+    45 00000671 8B1D[960D0000]      <3>     mov ebx, [prompt_line]
+    46 00000677 69DBA0000000        <3>     imul ebx, 160
+    47 0000067D 81C300800B00        <3>     add ebx, 0xB8000
+    48 00000683 8B0D[4E0D0000]      <3>     mov ecx, [cursor_offset]
+    49 00000689 D1E1                <3>     shl ecx, 1
+    50 0000068B 01CB                <3>     add ebx, ecx
+    51 0000068D 89DF                <3>     mov edi, ebx
+    52                              <3>     
+    53 0000068F B40F                <3>     mov ah, 0x0F
+    54 00000691 66AB                <3>     stosw
+    55 00000693 FF05[4E0D0000]      <3>     inc dword [cursor_offset]
+    56                              <3>     
+    57 00000699 5F                  <3>     pop edi
+    58 0000069A E954FEFFFF          <3>     jmp vm_loop
+    59                              <3> 
+    60                              <3> vm_op_print_nl:
+    61 0000069F FF05[960D0000]      <3>     inc dword [prompt_line]
+    62 000006A5 C705[4E0D0000]0000- <3>     mov dword [cursor_offset], 0
+    62 000006AD 0000                <3>
+    63 000006AF E93FFEFFFF          <3>     jmp vm_loop
+    64                              <3> 
+    65 000006B4 00000000            <3> vm_print_value: dd 0
+    89                              <2> 
+    90                              <2> ; ════════════════════════════════════════════════════════════════════════════
+    91                              <2> ; VM END HANDLERS
+    92                              <2> ; ════════════════════════════════════════════════════════════════════════════
+    93                              <2> vm_done:
+    94 000006B8 E8FDFAFFFF          <2>     call vga_newline
+    95 000006BD BE[C90C0000]        <2>     mov esi, msg_vm_done
+    96 000006C2 B40A                <2>     mov ah, 0x0A
+    97 000006C4 E8D3FAFFFF          <2>     call vga_print_line
+    98                              <2>     
+    99 000006C9 E8ECFAFFFF          <2>     call vga_newline
+   100 000006CE BE[FD0C0000]        <2>     mov esi, msg_result
+   101 000006D3 B40E                <2>     mov ah, 0x0E
+   102 000006D5 E8C2FAFFFF          <2>     call vga_print_line
+   103                              <2>     
+   104 000006DA 8B4500              <2>     mov eax, [ebp]
+   105 000006DD E81B000000          <2>     call vm_print_number
+   106 000006E2 EB11                <2>     jmp vm_exit
+   107                              <2> 
+   108                              <2> vm_error:
+   109 000006E4 E8D1FAFFFF          <2>     call vga_newline
+   110 000006E9 BE[E00C0000]        <2>     mov esi, msg_vm_error
+   111 000006EE B40C                <2>     mov ah, 0x0C
+   112 000006F0 E8A7FAFFFF          <2>     call vga_print_line
+   113                              <2> 
+   114                              <2> vm_exit:
+   115 000006F5 5D                  <2>     pop ebp
+   116 000006F6 5F                  <2>     pop edi
+   117 000006F7 5E                  <2>     pop esi
+   118 000006F8 5A                  <2>     pop edx
+   119 000006F9 59                  <2>     pop ecx
+   120 000006FA 5B                  <2>     pop ebx
+   121 000006FB 58                  <2>     pop eax
+   122 000006FC C3                  <2>     ret
+   123                              <2> 
+   124                              <2> ; ════════════════════════════════════════════════════════════════════════════
+   125                              <2> ; VM PRINT NUMBER
+   126                              <2> ; ════════════════════════════════════════════════════════════════════════════
+   127                              <2> vm_print_number:
+   128 000006FD 50                  <2>     push eax
+   129 000006FE 53                  <2>     push ebx
+   130 000006FF 51                  <2>     push ecx
+   131 00000700 52                  <2>     push edx
+   132 00000701 57                  <2>     push edi
+   133                              <2>     
+   134 00000702 8B1D[960D0000]      <2>     mov ebx, [prompt_line]
+   135 00000708 69DBA0000000        <2>     imul ebx, 160
+   136 0000070E 81C300800B00        <2>     add ebx, 0xB8000
+   137 00000714 83C310              <2>     add ebx, 16
+   138 00000717 89DF                <2>     mov edi, ebx
+   139                              <2>     
+   140 00000719 85C0                <2>     test eax, eax
+   141 0000071B 790A                <2>     jns vm_print_positive
+   142 0000071D F7D8                <2>     neg eax
+   143 0000071F 50                  <2>     push eax
+   144 00000720 B02D                <2>     mov al, '-'
+   145 00000722 B40F                <2>     mov ah, 0x0F
+   146 00000724 66AB                <2>     stosw
+   147 00000726 58                  <2>     pop eax
+   148                              <2> vm_print_positive:
+   149 00000727 B900000000          <2>     mov ecx, 0
+   150 0000072C BB0A000000          <2>     mov ebx, 10
+   151                              <2> vm_print_div:
+   152 00000731 31D2                <2>     xor edx, edx
+   153 00000733 F7F3                <2>     div ebx
+   154 00000735 52                  <2>     push edx
+   155 00000736 41                  <2>     inc ecx
+   156 00000737 85C0                <2>     test eax, eax
+   157 00000739 75F6                <2>     jnz vm_print_div
+   158                              <2> 
+   159                              <2> vm_print_digits:
+   160 0000073B 58                  <2>     pop eax
+   161 0000073C 0430                <2>     add al, '0'
+   162 0000073E B40F                <2>     mov ah, 0x0F
+   163 00000740 66AB                <2>     stosw
+   164 00000742 E2F7                <2>     loop vm_print_digits
+   165                              <2>     
+   166 00000744 5F                  <2>     pop edi
+   167 00000745 5A                  <2>     pop edx
+   168 00000746 59                  <2>     pop ecx
+   169 00000747 5B                  <2>     pop ebx
+   170 00000748 58                  <2>     pop eax
+   171 00000749 C3                  <2>     ret
+   134                                  %include "fs.asm"
+     1                              <1> ; ════════════════════════════════════════════════════════════════════════════
+     2                              <1> ; MATHIS KERNEL - FILESYSTEM MODULE
+     3                              <1> ; RAM disk at 0x30000
+     4                              <1> ; ════════════════════════════════════════════════════════════════════════════
+     5                              <1> 
+     6                              <1> FS_BASE     equ 0x30000
+     7                              <1> FS_DIR      equ 0x30200
+     8                              <1> FS_DATA     equ 0x30A00
+     9                              <1> 
+    10                              <1> fs_command:
+    11 0000074A 50                  <1>     push eax
+    12 0000074B 56                  <1>     push esi
+    13                              <1>     
+    14                              <1>     ; Check subcommand at cmd_buffer+3
+    15 0000074C 813D[590D0000]696E- <1>     cmp dword [cmd_buffer+3], 'init'
+    15 00000754 6974                <1>
+    16 00000756 7429                <1>     je .fs_init
+    17 00000758 813D[590D0000]6C69- <1>     cmp dword [cmd_buffer+3], 'list'
+    17 00000760 7374                <1>
+    18 00000762 7435                <1>     je .fs_list
+    19 00000764 813D[590D0000]7772- <1>     cmp dword [cmd_buffer+3], 'writ'
+    19 0000076C 6974                <1>
+    20 0000076E 743C                <1>     je .fs_write
+    21 00000770 813D[590D0000]7265- <1>     cmp dword [cmd_buffer+3], 'read'
+    21 00000778 6164                <1>
+    22 0000077A 7462                <1>     je .fs_read
+    23 0000077C E983000000          <1>     jmp .fs_help
+    24                              <1> 
+    25                              <1> .fs_init:
+    26 00000781 E894000000          <1>     call fs_initialize
+    27 00000786 E82FFAFFFF          <1>     call vga_newline
+    28 0000078B BE[BF0B0000]        <1>     mov esi, msg_fs_init
+    29 00000790 B40A                <1>     mov ah, 0x0A
+    30 00000792 E805FAFFFF          <1>     call vga_print_line
+    31 00000797 EB7E                <1>     jmp .done
+    32                              <1> 
+    33                              <1> .fs_list:
+    34 00000799 E81CFAFFFF          <1>     call vga_newline
+    35 0000079E BE[E60B0000]        <1>     mov esi, msg_fs_list
+    36 000007A3 B40E                <1>     mov ah, 0x0E
+    37 000007A5 E8F2F9FFFF          <1>     call vga_print_line
+    38 000007AA EB6B                <1>     jmp .done
+    39                              <1> 
+    40                              <1> .fs_write:
+    41 000007AC E809FAFFFF          <1>     call vga_newline
+    42 000007B1 BE[080C0000]        <1>     mov esi, msg_fs_write
+    43 000007B6 B40E                <1>     mov ah, 0x0E
+    44 000007B8 E8DFF9FFFF          <1>     call vga_print_line
+    45                              <1>     ; Enter edit mode
+    46 000007BD C605[9A0D0000]01    <1>     mov byte [edit_mode], 1
+    47 000007C4 C705[9B0D0000]0000- <1>     mov dword [file_content_len], 0
+    47 000007CC 0000                <1>
+    48                              <1>     ; Clear buffer completely (512 bytes)
+    49 000007CE BF[9F0D0000]        <1>     mov edi, file_content
+    50 000007D3 B900020000          <1>     mov ecx, 512
+    51 000007D8 31C0                <1>     xor eax, eax
+    52 000007DA F3AA                <1>     rep stosb
+    53 000007DC EB39                <1>     jmp .done
+    54                              <1> 
+    55                              <1> .fs_read:
+    56 000007DE E8D7F9FFFF          <1>     call vga_newline
+    57 000007E3 BE[9F0D0000]        <1>     mov esi, file_content
+    58 000007E8 803E00              <1>     cmp byte [esi], 0
+    59 000007EB 7409                <1>     je .fs_empty
+    60 000007ED B40F                <1>     mov ah, 0x0F
+    61 000007EF E8A8F9FFFF          <1>     call vga_print_line
+    62 000007F4 EB21                <1>     jmp .done
+    63                              <1> .fs_empty:
+    64 000007F6 BE[2C0C0000]        <1>     mov esi, msg_fs_empty
+    65 000007FB B407                <1>     mov ah, 0x07
+    66 000007FD E89AF9FFFF          <1>     call vga_print_line
+    67 00000802 EB13                <1>     jmp .done
+    68                              <1> 
+    69                              <1> .fs_help:
+    70 00000804 E8B1F9FFFF          <1>     call vga_newline
+    71 00000809 BE[A30B0000]        <1>     mov esi, msg_fs_help
+    72 0000080E B40E                <1>     mov ah, 0x0E
+    73 00000810 E887F9FFFF          <1>     call vga_print_line
+    74 00000815 EB00                <1>     jmp .done
+    75                              <1> 
+    76                              <1> .done:
+    77 00000817 5E                  <1>     pop esi
+    78 00000818 58                  <1>     pop eax
+    79 00000819 C3                  <1>     ret
+    80                              <1> 
+    81                              <1> fs_initialize:
+    82 0000081A 50                  <1>     push eax
+    83 0000081B 51                  <1>     push ecx
+    84 0000081C 57                  <1>     push edi
+    85                              <1>     
+    86 0000081D BF00000300          <1>     mov edi, FS_BASE
+    87 00000822 B900400000          <1>     mov ecx, 16384
+    88 00000827 31C0                <1>     xor eax, eax
+    89 00000829 F3AB                <1>     rep stosd
+    90                              <1>     
+    91                              <1>     ; Write magic
+    92 0000082B BF00000300          <1>     mov edi, FS_BASE
+    93 00000830 C7074D544853        <1>     mov dword [edi], 'MTHS'
+    94 00000836 66C747044653        <1>     mov word [edi+4], 'FS'
+    95 0000083C 66C747060100        <1>     mov word [edi+6], 1
+    96                              <1>     
+    97 00000842 5F                  <1>     pop edi
+    98 00000843 59                  <1>     pop ecx
+    99 00000844 58                  <1>     pop eax
+   100 00000845 C3                  <1>     ret
+   135                                  %include "parser.asm"
+     1                              <1> ; ════════════════════════════════════════════════════════════════════════════
+     2                              <1> ; MATHIS KERNEL - PARSER MODULE
+     3                              <1> ; Parse MathisScript and compile to bytecode
+     4                              <1> ; ════════════════════════════════════════════════════════════════════════════
+     5                              <1> 
+     6                              <1> compile_command:
+     7 00000846 50                  <1>     push eax
+     8 00000847 53                  <1>     push ebx
+     9 00000848 56                  <1>     push esi
+    10 00000849 57                  <1>     push edi
+    11                              <1>     
+    12                              <1>     ; Check if we have content
+    13 0000084A 833D[9B0D0000]00    <1>     cmp dword [file_content_len], 0
+    14 00000851 743F                <1>     je .no_content
+    15                              <1>     
+    16                              <1>     ; Show what we're compiling
+    17 00000853 E862F9FFFF          <1>     call vga_newline
+    18 00000858 BE[690C0000]        <1>     mov esi, msg_compiling
+    19 0000085D B40D                <1>     mov ah, 0x0D
+    20 0000085F E838F9FFFF          <1>     call vga_print_line
+    21                              <1>     
+    22 00000864 E851F9FFFF          <1>     call vga_newline
+    23 00000869 BE[9F0D0000]        <1>     mov esi, file_content
+    24 0000086E B407                <1>     mov ah, 0x07
+    25 00000870 E827F9FFFF          <1>     call vga_print_line
+    26                              <1>     
+    27                              <1>     ; Parse expression
+    28 00000875 E82E000000          <1>     call parse_expression
+    29                              <1>     
+    30                              <1>     ; Generate bytecode at 0x21000
+    31 0000087A E8BC000000          <1>     call generate_bytecode
+    32                              <1>     
+    33                              <1>     ; Success
+    34 0000087F E836F9FFFF          <1>     call vga_newline
+    35 00000884 BE[760C0000]        <1>     mov esi, msg_compiled
+    36 00000889 B40A                <1>     mov ah, 0x0A
+    37 0000088B E80CF9FFFF          <1>     call vga_print_line
+    38 00000890 EB11                <1>     jmp .done
+    39                              <1> 
+    40                              <1> .no_content:
+    41 00000892 E823F9FFFF          <1>     call vga_newline
+    42 00000897 BE[940C0000]        <1>     mov esi, msg_no_content
+    43 0000089C B40C                <1>     mov ah, 0x0C
+    44 0000089E E8F9F8FFFF          <1>     call vga_print_line
+    45                              <1> 
+    46                              <1> .done:
+    47 000008A3 5F                  <1>     pop edi
+    48 000008A4 5E                  <1>     pop esi
+    49 000008A5 5B                  <1>     pop ebx
+    50 000008A6 58                  <1>     pop eax
+    51 000008A7 C3                  <1>     ret
+    52                              <1> 
+    53                              <1> ; ════════════════════════════════════════════════════════════════════════════
+    54                              <1> ; PARSE EXPRESSION - Extract NUM OP NUM from file_content
+    55                              <1> ; ════════════════════════════════════════════════════════════════════════════
+    56                              <1> parse_expression:
+    57 000008A8 50                  <1>     push eax
+    58 000008A9 53                  <1>     push ebx
+    59 000008AA 56                  <1>     push esi
+    60                              <1>     
+    61 000008AB C705[BC090000]0000- <1>     mov dword [parse_num1], 0
+    61 000008B3 0000                <1>
+    62 000008B5 C705[C0090000]0000- <1>     mov dword [parse_num2], 0
+    62 000008BD 0000                <1>
+    63 000008BF C605[C4090000]2B    <1>     mov byte [parse_op], '+'
+    64                              <1>     
+    65 000008C6 BE[9F0D0000]        <1>     mov esi, file_content
+    66                              <1>     
+    67                              <1> .find_num1:
+    68 000008CB AC                  <1>     lodsb
+    69 000008CC 84C0                <1>     test al, al
+    70 000008CE 7467                <1>     jz .parse_done
+    71 000008D0 3C30                <1>     cmp al, '0'
+    72 000008D2 7CF7                <1>     jl .find_num1
+    73 000008D4 3C39                <1>     cmp al, '9'
+    74 000008D6 7FF3                <1>     jg .find_num1
+    75                              <1>     
+    76                              <1>     ; Parse first number
+    77 000008D8 31DB                <1>     xor ebx, ebx
+    78                              <1> .parse_num1:
+    79 000008DA 2C30                <1>     sub al, '0'
+    80 000008DC 0FB6C0              <1>     movzx eax, al
+    81 000008DF 6BDB0A              <1>     imul ebx, 10
+    82 000008E2 01C3                <1>     add ebx, eax
+    83 000008E4 AC                  <1>     lodsb
+    84 000008E5 3C30                <1>     cmp al, '0'
+    85 000008E7 7C04                <1>     jl .num1_done
+    86 000008E9 3C39                <1>     cmp al, '9'
+    87 000008EB 7EED                <1>     jle .parse_num1
+    88                              <1> .num1_done:
+    89 000008ED 891D[BC090000]      <1>     mov [parse_num1], ebx
+    90                              <1>     
+    91                              <1> .find_op:
+    92 000008F3 3C2B                <1>     cmp al, '+'
+    93 000008F5 7413                <1>     je .found_op
+    94 000008F7 3C2D                <1>     cmp al, '-'
+    95 000008F9 740F                <1>     je .found_op
+    96 000008FB 3C2A                <1>     cmp al, '*'
+    97 000008FD 740B                <1>     je .found_op
+    98 000008FF 3C2F                <1>     cmp al, '/'
+    99 00000901 7407                <1>     je .found_op
+   100 00000903 AC                  <1>     lodsb
+   101 00000904 84C0                <1>     test al, al
+   102 00000906 742F                <1>     jz .parse_done
+   103 00000908 EBE9                <1>     jmp .find_op
+   104                              <1> .found_op:
+   105 0000090A A2[C4090000]        <1>     mov [parse_op], al
+   106                              <1>     
+   107                              <1> .find_num2:
+   108 0000090F AC                  <1>     lodsb
+   109 00000910 84C0                <1>     test al, al
+   110 00000912 7423                <1>     jz .parse_done
+   111 00000914 3C30                <1>     cmp al, '0'
+   112 00000916 7CF7                <1>     jl .find_num2
+   113 00000918 3C39                <1>     cmp al, '9'
+   114 0000091A 7FF3                <1>     jg .find_num2
+   115                              <1>     
+   116 0000091C 31DB                <1>     xor ebx, ebx
+   117                              <1> .parse_num2:
+   118 0000091E 2C30                <1>     sub al, '0'
+   119 00000920 0FB6C0              <1>     movzx eax, al
+   120 00000923 6BDB0A              <1>     imul ebx, 10
+   121 00000926 01C3                <1>     add ebx, eax
+   122 00000928 AC                  <1>     lodsb
+   123 00000929 3C30                <1>     cmp al, '0'
+   124 0000092B 7C04                <1>     jl .num2_done
+   125 0000092D 3C39                <1>     cmp al, '9'
+   126 0000092F 7EED                <1>     jle .parse_num2
+   127                              <1> .num2_done:
+   128 00000931 891D[C0090000]      <1>     mov [parse_num2], ebx
+   129                              <1> 
+   130                              <1> .parse_done:
+   131 00000937 5E                  <1>     pop esi
+   132 00000938 5B                  <1>     pop ebx
+   133 00000939 58                  <1>     pop eax
+   134 0000093A C3                  <1>     ret
+   135                              <1> 
+   136                              <1> ; ════════════════════════════════════════════════════════════════════════════
+   137                              <1> ; GENERATE BYTECODE - Create .mbc at 0x21000
+   138                              <1> ; ════════════════════════════════════════════════════════════════════════════
+   139                              <1> generate_bytecode:
+   140 0000093B 50                  <1>     push eax
+   141 0000093C 57                  <1>     push edi
+   142                              <1>     
+   143                              <1>     ; Write header
+   144 0000093D BF00100200          <1>     mov edi, 0x21000
+   145 00000942 C7074D41534D        <1>     mov dword [edi], 0x4D53414D     ; "MASM"
+   146 00000948 C7470401000000      <1>     mov dword [edi+4], 0x00000001   ; Version
+   147                              <1>     
+   148                              <1>     ; Pad header to 0x40
+   149 0000094F 83C708              <1>     add edi, 8
+   150 00000952 B938000000          <1>     mov ecx, 56
+   151 00000957 31C0                <1>     xor eax, eax
+   152 00000959 F3AA                <1>     rep stosb
+   153                              <1>     
+   154                              <1>     ; Write bytecode at 0x21040
+   155 0000095B BF40100200          <1>     mov edi, 0x21040
+   156                              <1>     
+   157                              <1>     ; CONST_SMALL num1
+   158 00000960 C60717              <1>     mov byte [edi], 0x17
+   159 00000963 A1[BC090000]        <1>     mov eax, [parse_num1]
+   160 00000968 884701              <1>     mov [edi+1], al
+   161                              <1>     
+   162                              <1>     ; CONST_SMALL num2
+   163 0000096B C6470217            <1>     mov byte [edi+2], 0x17
+   164 0000096F A1[C0090000]        <1>     mov eax, [parse_num2]
+   165 00000974 884703              <1>     mov [edi+3], al
+   166                              <1>     
+   167                              <1>     ; Operator
+   168 00000977 A0[C4090000]        <1>     mov al, [parse_op]
+   169 0000097C 3C2B                <1>     cmp al, '+'
+   170 0000097E 740E                <1>     je .gen_add
+   171 00000980 3C2D                <1>     cmp al, '-'
+   172 00000982 7410                <1>     je .gen_sub
+   173 00000984 3C2A                <1>     cmp al, '*'
+   174 00000986 7412                <1>     je .gen_mul
+   175 00000988 3C2F                <1>     cmp al, '/'
+   176 0000098A 7414                <1>     je .gen_div
+   177 0000098C EB00                <1>     jmp .gen_add
+   178                              <1> .gen_add:
+   179 0000098E C6470430            <1>     mov byte [edi+4], 0x30
+   180 00000992 EB10                <1>     jmp .gen_end
+   181                              <1> .gen_sub:
+   182 00000994 C6470431            <1>     mov byte [edi+4], 0x31
+   183 00000998 EB0A                <1>     jmp .gen_end
+   184                              <1> .gen_mul:
+   185 0000099A C6470432            <1>     mov byte [edi+4], 0x32
+   186 0000099E EB04                <1>     jmp .gen_end
+   187                              <1> .gen_div:
+   188 000009A0 C6470433            <1>     mov byte [edi+4], 0x33
+   189                              <1> .gen_end:
+   190 000009A4 C6470568            <1>     mov byte [edi+5], 0x68          ; RET
+   191                              <1>     
+   192                              <1>     ; Copy to execution area
+   193 000009A8 BE00100200          <1>     mov esi, 0x21000
+   194 000009AD BF00000200          <1>     mov edi, 0x20000
+   195 000009B2 B980000000          <1>     mov ecx, 128
+   196 000009B7 F3A4                <1>     rep movsb
+   197                              <1>     
+   198 000009B9 5F                  <1>     pop edi
+   199 000009BA 58                  <1>     pop eax
+   200 000009BB C3                  <1>     ret
+   201                              <1> 
+   202                              <1> ; Parser state
+   203 000009BC 00000000            <1> parse_num1: dd 0
+   204 000009C0 00000000            <1> parse_num2: dd 0
+   205 000009C4 2B                  <1> parse_op:   db '+'
+   136                                  %include "go64.asm"
+     1                              <1> ; ════════════════════════════════════════════════════════════════════════════
+     2                              <1> ; GO64.ASM - Trampoline vers kernel 64-bit
+     3                              <1> ; ════════════════════════════════════════════════════════════════════════════
+     4                              <1> ; Ce fichier est inclus EN DERNIER avant data_all.asm
+     5                              <1> ; Modifier ce fichier ne décale pas keyboard_code.asm
+     6                              <1> ; ════════════════════════════════════════════════════════════════════════════
+     7                              <1> 
+     8                              <1> do_go64:
+     9 000009C5 B800002000          <1>     mov eax, 0x200000
+    10 000009CA FFE0                <1>     jmp eax
+   137                                  
+   138                                  ; ════════════════════════════════════════════════════════════════════════════
+   139                                  ; SECTION DATA - Toutes les données (strings, variables, tables, IDT)
+   140                                  ; ════════════════════════════════════════════════════════════════════════════
+   141                                  
+   142                                  %include "data_all.asm"
+     1                              <1> ; ════════════════════════════════════════════════════════════════════════════
+     2                              <1> ; MATHIS KERNEL - DATA MODULE (ALL DATA IN ONE PLACE)
+     3                              <1> ; ════════════════════════════════════════════════════════════════════════════
+     4                              <1> ; RÈGLE: Tout le code est AVANT ce fichier, toutes les données sont ICI
+     5                              <1> ; On peut ajouter des strings/variables ici sans casser le code
+     6                              <1> ; ════════════════════════════════════════════════════════════════════════════
+     7                              <1> 
+     8                              <1> ; ════════════════════════════════════════════════════════════════════════════
+     9                              <1> ; SECTION 1: STRINGS (messages affichés)
+    10                              <1> ; ════════════════════════════════════════════════════════════════════════════
+    11                              <1> 
+    12                              <1> ; Banner
+    13 000009CC 205F5F20205F5F2020- <1> banner_line1: db " __  __    _  _____ _   _ ___ ____     ___  ____  ", 0
+    13 000009D5 20205F20205F5F5F5F- <1>
+    13 000009DE 5F205F2020205F205F- <1>
+    13 000009E7 5F5F205F5F5F5F2020- <1>
+    13 000009F0 2020205F5F5F20205F- <1>
+    13 000009F9 5F5F5F202000        <1>
+    14 000009FF 7C20205C2F20207C20- <1> banner_line2: db "|  \/  |  / \|_   _| | | |_ _/ ___|   / _ \/ ___| ", 0
+    14 00000A08 202F205C7C5F202020- <1>
+    14 00000A11 5F7C207C207C207C5F- <1>
+    14 00000A1A 205F2F205F5F5F7C20- <1>
+    14 00000A23 20202F205F205C2F20- <1>
+    14 00000A2C 5F5F5F7C2000        <1>
+    15 00000A32 7C207C5C2F7C207C20- <1> banner_line3: db "| |\/| | / _ \ | | | |_| || |\___ \  | | | \___ \ ", 0
+    15 00000A3B 2F205F205C207C207C- <1>
+    15 00000A44 207C207C5F7C207C7C- <1>
+    15 00000A4D 207C5C5F5F5F205C20- <1>
+    15 00000A56 207C207C207C205C5F- <1>
+    15 00000A5F 5F5F205C2000        <1>
+    16 00000A65 7C207C20207C207C2F- <1> banner_line4: db "| |  | |/ ___ \| | |  _  || | ___) | | |_| |___) |", 0
+    16 00000A6E 205F5F5F205C7C207C- <1>
+    16 00000A77 207C20205F20207C7C- <1>
+    16 00000A80 207C205F5F5F29207C- <1>
+    16 00000A89 207C207C5F7C207C5F- <1>
+    16 00000A92 5F5F29207C00        <1>
+    17 00000A98 7C5F7C20207C5F2F5F- <1> banner_line5: db "|_|  |_/_/   \_\_| |_| |_|___|____/   \___/|____/ ", 0
+    17 00000AA1 2F2020205C5F5C5F7C- <1>
+    17 00000AAA 207C5F7C207C5F7C5F- <1>
+    17 00000AB3 5F5F7C5F5F5F5F2F20- <1>
+    17 00000ABC 20205C5F5F5F2F7C5F- <1>
+    17 00000AC5 5F5F5F2F2000        <1>
+    18 00000ACB 202020202020202020- <1> banner_line6: db "                                            v3.2  ", 0
+    18 00000AD4 202020202020202020- <1>
+    18 00000ADD 202020202020202020- <1>
+    18 00000AE6 202020202020202020- <1>
+    18 00000AEF 202020202020202076- <1>
+    18 00000AF8 332E32202000        <1>
+    19                              <1> 
+    20                              <1> ; Shell messages
+    21 00000AFE 41492D466972737420- <1> msg_info:       db "AI-First OS - Type 'help' for commands", 0
+    21 00000B07 4F53202D2054797065- <1>
+    21 00000B10 202768656C70272066- <1>
+    21 00000B19 6F7220636F6D6D616E- <1>
+    21 00000B22 647300              <1>
+    22 00000B25 3E2000              <1> msg_prompt:     db "> ", 0
+    23 00000B28 68656C702C20636C65- <1> msg_help:       db "help, clear, fs, compile, runmbc, jarvis, go64", 0
+    23 00000B31 61722C2066732C2063- <1>
+    23 00000B3A 6F6D70696C652C2072- <1>
+    23 00000B43 756E6D62632C206A61- <1>
+    23 00000B4C 727669732C20676F36- <1>
+    23 00000B55 3400                <1>
+    24 00000B57 556E6B6E6F776E2063- <1> msg_unknown:    db "Unknown command", 0
+    24 00000B60 6F6D6D616E6400      <1>
+    25 00000B67 4A41525649533E2052- <1> msg_jarvis:     db "JARVIS> Ready. How can I help?", 0
+    25 00000B70 656164792E20486F77- <1>
+    25 00000B79 2063616E2049206865- <1>
+    25 00000B82 6C703F00            <1>
+    26 00000B86 456E746572696E6720- <1> msg_go64:       db "Entering 64-bit Long Mode...", 0
+    26 00000B8F 36342D626974204C6F- <1>
+    26 00000B98 6E67204D6F64652E2E- <1>
+    26 00000BA1 2E00                <1>
+    27                              <1> 
+    28                              <1> ; FS messages
+    29 00000BA3 66733A20696E69742C- <1> msg_fs_help:    db "fs: init, list, write, read", 0
+    29 00000BAC 206C6973742C207772- <1>
+    29 00000BB5 6974652C2072656164- <1>
+    29 00000BBE 00                  <1>
+    30 00000BBF 46696C657379737465- <1> msg_fs_init:    db "Filesystem initialized (64KB RAM disk)", 0
+    30 00000BC8 6D20696E697469616C- <1>
+    30 00000BD1 697A6564202836344B- <1>
+    30 00000BDA 422052414D20646973- <1>
+    30 00000BE3 6B2900              <1>
+    31 00000BE6 46696C65733A202875- <1> msg_fs_list:    db "Files: (use 'fs write' to create)", 0
+    31 00000BEF 736520276673207772- <1>
+    31 00000BF8 6974652720746F2063- <1>
+    31 00000C01 72656174652900      <1>
+    32 00000C08 45646974206D6F6465- <1> msg_fs_write:   db "Edit mode - Type code, ESC to save:", 0
+    32 00000C11 202D20547970652063- <1>
+    32 00000C1A 6F64652C2045534320- <1>
+    32 00000C23 746F20736176653A00  <1>
+    33 00000C2C 286E6F20636F6E7465- <1> msg_fs_empty:   db "(no content - use 'fs write')", 0
+    33 00000C35 6E74202D2075736520- <1>
+    33 00000C3E 276673207772697465- <1>
+    33 00000C47 272900              <1>
+    34 00000C4A 536176656421205573- <1> msg_file_saved: db "Saved! Use 'compile' to build.", 0
+    34 00000C53 652027636F6D70696C- <1>
+    34 00000C5C 652720746F20627569- <1>
+    34 00000C65 6C642E00            <1>
+    35                              <1> 
+    36                              <1> ; Compiler messages
+    37 00000C69 436F6D70696C696E67- <1> msg_compiling:  db "Compiling...", 0
+    37 00000C72 2E2E2E00            <1>
+    38 00000C76 537563636573732120- <1> msg_compiled:   db "Success! Use 'runmbc' to run.", 0
+    38 00000C7F 557365202772756E6D- <1>
+    38 00000C88 62632720746F207275- <1>
+    38 00000C91 6E2E00              <1>
+    39 00000C94 4E6F20636F64652E20- <1> msg_no_content: db "No code. Use 'fs write' first.", 0
+    39 00000C9D 557365202766732077- <1>
+    39 00000CA6 726974652720666972- <1>
+    39 00000CAF 73742E00            <1>
+    40                              <1> 
+    41                              <1> ; VM messages
+    42 00000CB3 457865637574696E67- <1> msg_vm_running: db "Executing bytecode...", 0
+    42 00000CBC 2062797465636F6465- <1>
+    42 00000CC5 2E2E2E00            <1>
+    43 00000CC9 564D3A204578656375- <1> msg_vm_done:    db "VM: Execution complete", 0
+    43 00000CD2 74696F6E20636F6D70- <1>
+    43 00000CDB 6C65746500          <1>
+    44 00000CE0 564D3A204572726F72- <1> msg_vm_error:   db "VM: Error - invalid bytecode", 0
+    44 00000CE9 202D20696E76616C69- <1>
+    44 00000CF2 642062797465636F64- <1>
+    44 00000CFB 6500                <1>
+    45 00000CFD 526573756C743A2000  <1> msg_result:     db "Result: ", 0
+    46                              <1> 
+    47                              <1> ; Memory messages (for future use)
+    48 00000D06 3D3D3D204D454D4F52- <1> msg_mem_title:  db "=== MEMORY INFO ===", 0
+    48 00000D0F 5920494E464F203D3D- <1>
+    48 00000D18 3D00                <1>
+    49 00000D1A 45383230204D61703A- <1> msg_mem_e820:   db "E820 Map: Detected at boot", 0
+    49 00000D23 204465746563746564- <1>
+    49 00000D2C 20617420626F6F7400  <1>
+    50 00000D35 506167696E673A2052- <1> msg_mem_paging: db "Paging: Ready for 64-bit", 0
+    50 00000D3E 6561647920666F7220- <1>
+    50 00000D47 36342D62697400      <1>
+    51                              <1> 
+    52                              <1> ; ════════════════════════════════════════════════════════════════════════════
+    53                              <1> ; SECTION 2: VARIABLES (état du système)
+    54                              <1> ; ════════════════════════════════════════════════════════════════════════════
+    55                              <1> 
+    56 00000D4E 04000000            <1> cursor_offset:      dd 4        ; Position curseur après "> "
+    57 00000D52 00000000            <1> cmd_length:         dd 0        ; Longueur commande courante
+    58 00000D56 00<rep 40h>         <1> cmd_buffer:         times 64 db 0   ; Buffer commande (64 bytes max)
+    59 00000D96 09000000            <1> prompt_line:        dd 9        ; Ligne du prompt
+    60 00000D9A 00                  <1> edit_mode:          db 0        ; 0=normal, 1=edit mode
+    61 00000D9B 00000000            <1> file_content_len:   dd 0        ; Longueur du fichier
+    62 00000D9F 00<rep 200h>        <1> file_content:       times 512 db 0  ; Contenu fichier (512 bytes max)
+    63 00000F9F 00                  <1> shift_state:        db 0        ; État touche Shift
+    64                              <1> 
+    65                              <1> ; ════════════════════════════════════════════════════════════════════════════
+    66                              <1> ; SECTION 3: TABLES (scancode, etc.)
+    67                              <1> ; ════════════════════════════════════════════════════════════════════════════
+    68                              <1> 
+    69                              <1> scancode_table:
+    70 00000FA0 001B31323334353637- <1>     db 0, 27, '1234567890-=', 8, 9
+    70 00000FA9 3839302D3D0809      <1>
+    71 00000FB0 71776572747975696F- <1>     db 'qwertyuiop[]', 13, 0
+    71 00000FB9 705B5D0D00          <1>
+    72 00000FBE 6173646667686A6B6C- <1>     db 'asdfghjkl', 0x3B, 0x27, '`', 0, '\'
+    72 00000FC7 3B2760005C          <1>
+    73 00000FCC 7A786376626E6D2C2E- <1>     db 'zxcvbnm,./', 0, '*', 0, ' '
+    73 00000FD5 2F002A0020          <1>
+    74 00000FDA 00<rep 46h>         <1>     times 70 db 0
+    75                              <1> 
+    76                              <1> shift_table:
+    77 00001020 001B21402324255E26- <1>     db 0, 27, '!@#$%^&*()_+', 8, 9
+    77 00001029 2A28295F2B0809      <1>
+    78 00001030 51574552545955494F- <1>     db 'QWERTYUIOP{}', 13, 0
+    78 00001039 507B7D0D00          <1>
+    79 0000103E 4153444647484A4B4C- <1>     db 'ASDFGHJKL:"~', 0, '|'
+    79 00001047 3A227E007C          <1>
+    80 0000104C 5A584356424E4D3C3E- <1>     db 'ZXCVBNM<>?', 0, '*', 0, ' '
+    80 00001055 3F002A0020          <1>
+    81 0000105A 00<rep 46h>         <1>     times 70 db 0
+    82                              <1> 
+    83                              <1> ; ════════════════════════════════════════════════════════════════════════════
+    84                              <1> ; SECTION 4: EMBEDDED BYTECODE (exemple)
+    85                              <1> ; ════════════════════════════════════════════════════════════════════════════
+    86                              <1> 
+    87                              <1> embedded_program:
+    88 000010A0 4D41534D            <1>     db 'M', 'A', 'S', 'M'       ; Magic
+    89 000010A4 01000000            <1>     db 1, 0, 0, 0               ; Version
+    90 000010A8 00<rep 38h>         <1>     times 0x38 db 0             ; Header padding
+    91 000010E0 172A                <1>     db 0x17, 42                 ; PUSH 42
+    92 000010E2 173A                <1>     db 0x17, 58                 ; PUSH 58
+    93 000010E4 30                  <1>     db 0x30                     ; ADD
+    94 000010E5 68                  <1>     db 0x68                     ; PRINT
+    95                              <1> embedded_program_end:
+    96                              <1> 
+    97                              <1> ; ════════════════════════════════════════════════════════════════════════════
+    98                              <1> ; SECTION 5: IDT (Interrupt Descriptor Table)
+    99                              <1> ; ════════════════════════════════════════════════════════════════════════════
+   100                              <1> 
+   101 000010E6 90<rep Ah>          <1> align 16
+   102                              <1> idt_ptr:
+   103 000010F0 FF07                <1>     dw 256*8 - 1                ; Limit
+   104 000010F2 [F6100000]          <1>     dd idt                      ; Base (adresse dynamique)
+   105                              <1> 
+   106                              <1> idt:
+   107 000010F6 0000000000000000-   <1>     times 0x21 dq 0             ; Entrées 0x00-0x20 vides
+   107 000010F6 <rep 21h>           <1>
+   108                              <1>     ; Keyboard entry (0x21) - sera patché dynamiquement par core.asm
+   109 000011FE 0000                <1>     dw 0x0000                   ; Offset low (patché)
+   110 00001200 0800                <1>     dw 0x08                     ; Selector
+   111 00001202 00                  <1>     db 0                        ; Zero
+   112 00001203 8E                  <1>     db 0x8E                     ; Type: 32-bit interrupt gate
+   113 00001204 0000                <1>     dw 0x0000                   ; Offset high (patché)
+   114 00001206 0000000000000000-   <1>     times (256-0x22) dq 0       ; Reste des entrées
+   114 00001206 <rep DEh>           <1>
+   115                              <1> 
+   116                              <1> ; ════════════════════════════════════════════════════════════════════════════
+   117                              <1> ; PADDING TO 64KB
+   118                              <1> ; NOTE: On utilise une adresse absolue pour éviter les problèmes de $$
+   119                              <1> ; ════════════════════════════════════════════════════════════════════════════
+   120                              <1> 
+   121                              <1> ; Le kernel commence à 0x10000 et doit faire 64KB
+   122                              <1> ; Cette directive pad jusqu'à ce que le fichier fasse 64KB depuis 0x10000
+   123                              <1> 
+   124                              <1> KERNEL_END:
+   143                                  
+   144                                  ; ════════════════════════════════════════════════════════════════════════════
+   145                                  ; PADDING TO 64KB
+   146                                  ; ════════════════════════════════════════════════════════════════════════════
+   147 000018F6 00<rep E70Ah>           times 0x10000 - ($ - $$) db 0

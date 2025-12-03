@@ -133,6 +133,7 @@ print_string:
 %include "vm.asm"
 %include "fs.asm"
 %include "parser.asm"
+%include "go64.asm"
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; SECTION DATA - Toutes les données (strings, variables, tables, IDT)
