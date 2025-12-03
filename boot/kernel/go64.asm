@@ -61,9 +61,13 @@ do_go64:
     mov byte [0xB800C], 'G'
     mov byte [0xB800D], 0x0A
 
-    ; TEST: Simple instruction (not paging) to see if crash is paging-specific
-    xor eax, eax
-    mov byte [0xB800E], 'X'
+    ; STEP 6: Enable Paging (this crashes)
+    mov eax, cr0
+    or eax, 0x80000000
+    mov cr0, eax
+
+    ; If we get here, it worked
+    mov byte [0xB800E], '!'
     mov byte [0xB800F], 0x0E
 
     cli
