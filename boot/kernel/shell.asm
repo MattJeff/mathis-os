@@ -84,7 +84,7 @@ shell_command:
     mov esi, msg_go64
     mov ah, 0x0E
     call vga_print_line
-    ; PAS DE JUMP - debug
+    ; PAS DE JUMP
     jmp .done
 
 ; .cmd_mem:  ; DISABLED - external memory module not loaded

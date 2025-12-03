@@ -146,22 +146,9 @@ no_lba:
     mov al, 'K'
     int 0x10
 
-    ; ═══════════════════════════════════════════════════════════════════════
-    ; LOAD KERNEL64.BIN TO 0x30000
-    ; kernel64 is at sector 137 (after boot+stage2+kernel = 1+8+128)
-    ; ═══════════════════════════════════════════════════════════════════════
-    mov ax, 0x3000
-    mov es, ax
-    xor bx, bx
-    mov ah, 0x02
-    mov al, 8               ; 8 sectors = 4KB
-    mov cx, 0x030C          ; C=3, S=12
-    mov dx, 0x0100          ; H=1
-    int 0x13
-    jc disk_error
-
+    ; kernel64 loading disabled for debug
     mov ah, 0x0E
-    mov al, '+'
+    mov al, 'S'
     int 0x10
 
     jmp enable_a20
@@ -270,13 +257,6 @@ pm_entry:
     mov es, ax
     mov ss, ax
     mov esp, 0x90000
-
-    ; Copy kernel64 from 0x30000 to 0x200000
-    mov esi, 0x30000
-    mov edi, 0x200000
-    mov ecx, 1024           ; 4KB / 4 = 1024 dwords
-    cld
-    rep movsd
 
     ; Jump to kernel at 0x10000
     jmp 0x08:0x10000
