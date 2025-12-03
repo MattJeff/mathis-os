@@ -53,6 +53,9 @@ do_go64:
 ; ════════════════════════════════════════════════════════════════════════════
 [BITS 64]
 long_mode_entry:
+    ; Disable interrupts - no 64-bit IDT yet
+    cli
+
     ; Setup 64-bit data segments
     mov ax, 0x10
     mov ds, ax
@@ -67,22 +70,37 @@ long_mode_entry:
     mov rax, 0x0F200F20
     rep stosq
 
-    ; Display "MathisOS 64-bit Mode"
+    ; Display line 1
     mov rdi, 0xB8000
-    mov rsi, msg_64bit
+    mov rsi, msg_line1
     mov ah, 0x0A
-.print:
+.print1:
+    lodsb
+    test al, al
+    jz .line2
+    mov [rdi], ax
+    add rdi, 2
+    jmp .print1
+
+.line2:
+    ; Display line 2
+    mov rdi, 0xB8000 + 160
+    mov rsi, msg_line2
+    mov ah, 0x0E
+.print2:
     lodsb
     test al, al
     jz .done
     mov [rdi], ax
     add rdi, 2
-    jmp .print
+    jmp .print2
+
 .done:
     hlt
     jmp .done
 
-msg_64bit: db "MathisOS 64-bit Long Mode - Success!", 0
+msg_line1: db "MATHIS OS - 64-bit Long Mode", 0
+msg_line2: db "Type 'reboot' in 32-bit shell to return", 0
 
 [BITS 32]
 
