@@ -146,17 +146,6 @@ no_lba:
     mov al, 'K'
     int 0x10
 
-    ; LOAD KERNEL64 to 0x30000 (no copy yet)
-    mov ax, 0x3000
-    mov es, ax
-    xor bx, bx
-    mov ah, 0x02
-    mov al, 8               ; 8 sectors = 4KB
-    mov cx, 0x030C          ; C=3, S=12
-    mov dx, 0x0100          ; H=1
-    int 0x13
-    jc disk_error
-
     mov ah, 0x0E
     mov al, '+'
     int 0x10
@@ -268,12 +257,7 @@ pm_entry:
     mov ss, ax
     mov esp, 0x90000
 
-    ; Copy kernel64 from 0x30000 to 0x200000
-    mov esi, 0x30000
-    mov edi, 0x200000
-    mov ecx, 1024           ; 4KB / 4 = 1024 dwords
-    cld
-    rep movsd
+    ; Pas de copie kernel64 - sera inclus dans le kernel 32-bit
 
     ; Jump to kernel at 0x10000
     jmp 0x08:0x10000
