@@ -268,6 +268,13 @@ pm_entry:
     mov ss, ax
     mov esp, 0x90000
 
+    ; Copy kernel64 from 0x30000 to 0x200000
+    mov esi, 0x30000
+    mov edi, 0x200000
+    mov ecx, 1024           ; 4KB / 4 = 1024 dwords
+    cld
+    rep movsd
+
     ; Jump to kernel at 0x10000
     jmp 0x08:0x10000
 
