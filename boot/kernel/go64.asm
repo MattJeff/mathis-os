@@ -66,12 +66,34 @@ do_go64:
     or eax, 0x80000000
     mov cr0, eax
 
-    ; If we get here, it worked
-    mov byte [0xB800E], '!'
-    mov byte [0xB800F], 0x0E
+    ; STEP 7: Far jump to 64-bit code
+    jmp 0x08:long_mode_entry
+
+; ══════════════════════════════════════════════════════════════════
+; 64-bit code entry point
+; ══════════════════════════════════════════════════════════════════
+[BITS 64]
+long_mode_entry:
+    ; Load 64-bit data segment
+    mov ax, 0x10
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    mov ss, ax
+
+    ; Display "64!" in green - WE ARE IN 64-BIT MODE!
+    mov byte [0xB800E], '6'
+    mov byte [0xB800F], 0x0A
+    mov byte [0xB8010], '4'
+    mov byte [0xB8011], 0x0A
+    mov byte [0xB8012], '!'
+    mov byte [0xB8013], 0x0E
 
     cli
     hlt
+
+[BITS 32]
 
 ; ══════════════════════════════════════════════════════════════════
 ; GDT 64-bit
