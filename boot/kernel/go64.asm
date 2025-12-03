@@ -17,13 +17,16 @@ do_go64:
     xor eax, eax
     rep stosd
 
-    ; Setup page tables
+    ; Setup page tables (8-byte entries for 64-bit mode)
     ; PML4[0] -> PDPT at 0x2000
     mov dword [0x1000], 0x2003
+    mov dword [0x1004], 0x0
     ; PDPT[0] -> PD at 0x3000
     mov dword [0x2000], 0x3003
+    mov dword [0x2004], 0x0
     ; PD[0] -> 2MB page at 0 (Present + RW + PS)
     mov dword [0x3000], 0x00000083
+    mov dword [0x3004], 0x0
 
     mov byte [0xB8004], 'P'
     mov byte [0xB8005], 0x0A
