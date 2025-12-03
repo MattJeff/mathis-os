@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir:*)",
+      "Bash(./build.sh:*)",
+      "Bash(pkill:*)",
+      "Bash(ndisasm:*)",
+      "Bash(xxd:*)",
+      "Bash(wc:*)",
+      "Bash(done)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nfeat: Restructure kernel + add go64 command (step 2)\n\n- New modular architecture: keyboard_code.asm (code) + data_all.asm (data)\n- Added go64 command with message (jump not yet implemented)\n- Clean separation allows adding code/data without breaking kernel\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git push)",
+      "Bash(git commit:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

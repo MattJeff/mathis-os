@@ -145,19 +145,25 @@ no_lba:
     int 0x10
     mov al, 'K'
     int 0x10
-    
+
     ; ═══════════════════════════════════════════════════════════════════════
-    ; SKIP MEMORY MODULE LOADING FOR NOW
-    ; The issue is that we need to stay in real mode to use int 13h
-    ; but 0x80000 is beyond real mode's 1MB limit (segment:offset)
-    ; Solution: Load it to a lower address first, then copy in protected mode
+    ; LOAD KERNEL64.BIN TO 0x30000
+    ; kernel64 is at sector 137 (after boot+stage2+kernel = 1+8+128)
     ; ═══════════════════════════════════════════════════════════════════════
-    ; Print 'S' for Skip
+    mov ax, 0x3000
+    mov es, ax
+    xor bx, bx
+    mov ah, 0x02
+    mov al, 8               ; 8 sectors = 4KB
+    mov cx, 0x030C          ; C=3, S=12
+    mov dx, 0x0100          ; H=1
+    int 0x13
+    jc disk_error
+
     mov ah, 0x0E
-    mov al, 'S'
+    mov al, '+'
     int 0x10
 
-    ; Stay in text mode (kernel uses VGA text buffer at 0xB8000)
     jmp enable_a20
 
 disk_error:
@@ -265,9 +271,13 @@ pm_entry:
     mov ss, ax
     mov esp, 0x90000
 
-    ; We're now in VGA Mode 13h (320x200 graphics)
-    ; No text mode VGA writes - kernel will draw JARVIS UI
-    
+    ; Copy kernel64 from 0x30000 to 0x200000
+    mov esi, 0x30000
+    mov edi, 0x200000
+    mov ecx, 1024           ; 4KB / 4 = 1024 dwords
+    cld
+    rep movsd
+
     ; Jump to kernel at 0x10000
     jmp 0x08:0x10000
 
