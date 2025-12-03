@@ -8,11 +8,11 @@ shell_prompt:
     push ebx
     push esi
     push edi
-    
+
     mov dword [cursor_offset], 4
     mov dword [cmd_length], 0
     inc dword [prompt_line]
-    
+
     mov esi, msg_prompt
     mov ebx, [prompt_line]
     imul ebx, 160
@@ -20,7 +20,7 @@ shell_prompt:
     mov edi, ebx
     mov ah, 0x0A
     call print_string
-    
+
     pop edi
     pop esi
     pop ebx
@@ -33,7 +33,7 @@ shell_command:
     push ecx
     push esi
     push edi
-    
+
     ; Check commands
     cmp dword [cmd_buffer], 'help'
     je .cmd_help
@@ -47,8 +47,8 @@ shell_command:
     je .cmd_runmbc
     cmp dword [cmd_buffer], 'jarv'
     je .cmd_jarvis
-    ; cmp dword [cmd_buffer], 'mem'
-    ; je .cmd_mem  ; DISABLED - external memory module not loaded
+    cmp dword [cmd_buffer], 'go64'
+    je .cmd_go64
     jmp .cmd_unknown
 
 .cmd_help:
@@ -79,19 +79,27 @@ shell_command:
     call jarvis_command
     jmp .done
 
+.cmd_go64:
+    call vga_newline
+    mov esi, msg_go64
+    mov ah, 0x0E
+    call vga_print_line
+    ; PAS DE JUMP pour l'instant - juste le message
+    jmp .done
+
 ; .cmd_mem:  ; DISABLED - external memory module not loaded
 ;     ; Display memory info
 ;     call vga_newline
 ;     mov esi, msg_mem_title
 ;     mov ah, 0x0E
 ;     call vga_print_line
-;     
+;
 ;     ; Show E820 entry count
 ;     call vga_newline
 ;     mov esi, msg_mem_e820
 ;     mov ah, 0x07
 ;     call vga_print_line
-;     
+;
 ;     ; Show paging status
 ;     call vga_newline
 ;     mov esi, msg_mem_paging
