@@ -61,6 +61,11 @@ do_go64:
     mov byte [0xB800C], 'G'
     mov byte [0xB800D], 0x0A
 
+    ; TEST: Simple instruction (not paging) to see if crash is paging-specific
+    xor eax, eax
+    mov byte [0xB800E], 'X'
+    mov byte [0xB800F], 0x0E
+
     cli
     hlt
 
