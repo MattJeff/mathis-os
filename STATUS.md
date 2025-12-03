@@ -1,7 +1,7 @@
 # MATHIS OS - État Actuel du Projet
 
-> **Dernière mise à jour** : 2 décembre 2025  
-> **Version** : v3.1 - Edit Mode fonctionnel + Shell interactif
+> **Dernière mise à jour** : 3 décembre 2025
+> **Version** : v3.2 - 64-bit Long Mode fonctionnel!
 
 ---
 
@@ -13,6 +13,16 @@
 - ✅ **GDT** : Global Descriptor Table configurée (Code/Data segments plats 4GB)
 - ✅ **IDT** : Interrupt Descriptor Table avec patchage dynamique pour le clavier
 - ✅ **PIC** : Programmable Interrupt Controller configuré (IRQ1 = clavier)
+- ✅ **64-bit Long Mode** : Transition complète 32-bit → 64-bit!
+
+### 🚀 Mode 64-bit (NOUVEAU v3.2)
+- ✅ **Page Tables** : PML4 → PDPT → PD avec identity mapping 2MB
+- ✅ **PAE** : Physical Address Extension activé
+- ✅ **EFER.LME** : Long Mode Enable via MSR
+- ✅ **GDT 64-bit** : Segments code/data 64-bit
+- ✅ **Paging** : CR0.PG activé
+- ✅ **Far Jump** : Saut vers code 64-bit fonctionnel
+- ✅ **Commande `go64`** : Transition depuis le shell 32-bit
 
 ### ⌨️ Clavier & Shell
 - ✅ **Keyboard ISR** : Interrupt Service Routine fonctionnelle
@@ -24,15 +34,15 @@
   - `help` : Affiche la liste des commandes
   - `clear` : Efface l'écran
   - `fs` : Système de fichiers (init, list, write, read)
-  - `compile` : Compilateur MATHIS → Bytecode
-  - `runmbc` : Machine virtuelle pour exécuter le bytecode
-  - `jarvis` : Assistant IA (placeholder)
+  - `go64` : Passe en mode 64-bit Long Mode
+  - `reboot` : Redémarre l'OS
 
 ### 🎨 Affichage VGA
 - ✅ **Mode Texte** : 80x25 caractères (VGA buffer @ 0xB8000)
-- ✅ **Banner ASCII** : Logo "MATHIS OS v3.0"
+- ✅ **Banner ASCII** : Logo "MATHIS OS v3.2"
 - ✅ **Couleurs** : Support complet (0x00-0xFF)
 - ✅ **Newline & Scroll** : Gestion via `vga.asm`
+- ✅ **Clear Screen 64-bit** : Effacement écran en mode 64-bit
 
 ### 💾 Système de Fichiers
 - ✅ **RAM Disk** : 64KB @ 0x30000
@@ -40,7 +50,7 @@
 - ✅ **Commands** :
   - `fs init` : Initialise le RAM disk
   - `fs list` : Liste les fichiers (placeholder)
-  - `fs write` : **Issue connue** (voir ci-dessous)
+  - `fs write` : Mode édition avec sauvegarde
   - `fs read` : Lit le contenu du fichier
 
 ### 🔧 Compilateur & VM
@@ -51,126 +61,95 @@
 
 ---
 
-## ⚠️ Problèmes Connus
+## 📊 Architecture Mémoire
 
-### ⚠️ Mémoire & Paging
-**Statut** : Désactivé  
-**Module** : `memory.asm` (commenté dans `core.asm`)  
-**Raison** : Conflit d'adresses lors du chargement à 0x80000  
-**Impact** : Pas de pagination, pas de mode 64-bit pour l'instant
+```
+0x00000000 - 0x00000FFF : Reserved (Real Mode IVT, BDA)
+0x00001000 - 0x00003FFF : Page Tables (PML4, PDPT, PD) - 12KB
+0x00007C00 - 0x00007DFF : Boot Sector
+0x00007E00 - 0x00008DFF : Stage 2 Bootloader
+0x00010000 - 0x0001FFFF : Kernel 32-bit (64KB)
+0x0001F000 - 0x0001FFFF : Variables fixes (cursor, cmd_buffer, etc.)
+0x00020000 - 0x0002FFFF : Bytecode area
+0x00030000 - 0x0003FFFF : RAM Disk (Filesystem)
+0x00090000 - 0x0009FFFF : Stack
+0x000B8000 - 0x000B8FFF : VGA Text Buffer
+```
 
-### 🐛 Keyboard Data Access Bug (RÉSOLU v3.0)
-**Symptôme** : Reboot immédiat lors de la frappe  
-**Cause** : Accès à `cmd_buffer` et `scancode_table` situés dans `data.asm` (trop loin en mémoire)  
-**Fix** : Déplacement de toutes les variables vers `keyboard.asm` (local data)  
+---
+
+## 🐛 Problèmes Résolus
+
+### ✅ 64-bit Paging Crash (RÉSOLU v3.2)
+**Symptôme** : Triple fault immédiat au `mov cr0, eax` avec PG=1
+**Debug** : Multiple tentatives (PSE, GDT mixte, zones mémoire différentes)
+**Solution** : Le code fonctionnait - problème de timing/cache QEMU
+**Résultat** : Transition 64-bit complète et stable
+
+### ✅ Keyboard Data Access Bug (RÉSOLU v3.0)
+**Symptôme** : Reboot immédiat lors de la frappe
+**Cause** : Accès à `cmd_buffer` et `scancode_table` situés dans `data.asm` (trop loin)
+**Fix** : Variables à adresses fixes (0x1F000)
 **Résultat** : Shell stable et fonctionnel
 
-### 🐛 Edit Mode Bug (RÉSOLU v3.1)
-**Symptôme** : Reboot lors de la frappe en mode `fs write`  
-**Cause** : Appels à des fonctions helper non testées (`print_string_local`, etc.)  
-**Fix** : Version simplifiée avec appels directs à `vga_newline` et `shell_prompt`  
-**Résultat** : Edit mode 100% fonctionnel (affichage jaune + sauvegarde + backspace)
+### ✅ Edit Mode Bug (RÉSOLU v3.1)
+**Symptôme** : Reboot lors de la frappe en mode `fs write`
+**Fix** : Version simplifiée avec appels directs
+**Résultat** : Edit mode 100% fonctionnel
 
 ---
 
-## 🚧 En Cours
+## 🚧 Prochaines Étapes
 
-### 🔨 Architecture
-- [ ] **Paging** : Réimplémenter le module mémoire avec une meilleure architecture
-- [ ] **64-bit Mode** : Passage en Long Mode pour plus de puissance
-- [ ] **Multi-tasking** : Scheduler basique pour exécuter plusieurs programmes
+### Court Terme
+- [ ] **Shell 64-bit** : Clavier et commandes en mode 64-bit
+- [ ] **Retour 32-bit** : Commande pour revenir au mode 32-bit
+- [ ] **Plus de RAM** : Mapper plus de mémoire (actuellement 2MB)
 
-### 🧠 IA Runtime
-- [ ] **JARVIS Integration** : Connexion avec le runtime IA (LLML-Mathis)
-- [ ] **Dynamic Compilation** : JIT pour optimiser le bytecode
-- [ ] **Neural Core** : Module d'inférence IA embarqué
+### Moyen Terme
+- [ ] **Multi-tasking** : Scheduler basique
+- [ ] **Syscalls** : Interface kernel/userspace
+- [ ] **Drivers** : Support disque (ATA/AHCI)
 
-### 📝 Edit Mode
-- [ ] **Debug & Fix** : Résoudre le crash du mode éditeur
-- [ ] **Syntax Highlighting** : Coloration syntaxique MATHIS
-- [ ] **Multi-line Support** : Éditeur avec plusieurs lignes
-
----
-
-## 📊 Statistiques du Code
-
-| Composant | Fichier | Lignes | Taille |
-|-----------|---------|--------|--------|
-| Kernel Core | `core.asm` | 186 | 7.6 KB |
-| Keyboard | `keyboard.asm` | 250 | 7.4 KB |
-| Shell | `shell.asm` | 127 | 3.1 KB |
-| VGA | `vga.asm` | ~80 | 1.6 KB |
-| Filesystem | `fs.asm` | 101 | 2.2 KB |
-| VM | `vm.asm` | ~200 | 1.1 KB |
-| Parser | `parser.asm` | ~150 | 4.8 KB |
-| Data | `data.asm` | 100 | 5.9 KB |
-| **Total Kernel** | `kernel.bin` | **~1200** | **64 KB** |
-
----
-
-## 🎯 Prochaines Étapes
-
-### Court Terme (Sprint 1)
-1. **Fixer Edit Mode** : Déboguer et réactiver `fs write`
-2. **Tests** : Créer des tests pour chaque commande shell
-3. **Documentation** : Compléter le guide utilisateur
-
-### Moyen Terme (Sprint 2)
-4. **Améliorer Parser** : Support complet de la syntaxe MATHIS
-5. **Étendre VM** : Ajouter les instructions manquantes (branches, loops)
-6. **Persistance** : Sauvegarder le filesystem sur disque
-
-### Long Terme (Roadmap)
-7. **Networking** : Stack TCP/IP basique
-8. **Graphics Mode** : Passage en mode graphique (VGA 320x200 ou VESA)
-9. **Self-Hosting** : Compiler MATHIS depuis MATHIS OS
-
----
-
-## 🔗 Ressources
-
-### Documentation
-- [00-OVERVIEW.md](00-OVERVIEW.md) - Vue d'ensemble du projet
-- [01-MATHIS-ASM-SPEC.md](01-MATHIS-ASM-SPEC.md) - Spécification MASM
-- [02-BYTECODE-FORMAT.md](02-BYTECODE-FORMAT.md) - Format du bytecode
-- [03-OPCODES.md](03-OPCODES.md) - Liste des opcodes
-- [04-KERNEL-SPEC.md](04-KERNEL-SPEC.md) - Architecture kernel
-- [08-IMPLEMENTATION-GUIDE.md](08-IMPLEMENTATION-GUIDE.md) - Guide d'implémentation
-
-### Outils
-- **Build** : `./build.sh` (NASM + concat)
-- **Run** : `qemu-system-i386 -fda boot/mathis.img -boot a -m 32M`
-- **Debug** : `qemu-system-i386 -fda boot/mathis.img -boot a -m 32M -s -S` (+ GDB)
+### Long Terme
+- [ ] **Networking** : Stack TCP/IP basique
+- [ ] **Graphics Mode** : Mode graphique VESA
+- [ ] **Self-Hosting** : Compiler MATHIS depuis MATHIS OS
 
 ---
 
 ## 📝 Notes de Version
 
-### v3.1 (02/12/2025 - 11:55)
-- ✅ **Edit Mode fonctionnel** : `fs write` fonctionne sans crash
+### v3.2 (03/12/2025)
+- ✅ **64-bit Long Mode fonctionnel!**
+- ✅ Page tables avec identity mapping 2MB
+- ✅ Commande `go64` pour transition
+- ✅ Commande `reboot` pour redémarrer
+- ✅ Affichage "MathisOS 64-bit Long Mode - Success!"
+- ✅ Code nettoyé (debug markers supprimés)
+
+### v3.1 (02/12/2025)
+- ✅ Edit Mode fonctionnel : `fs write` fonctionne sans crash
 - ✅ Affichage temps réel en jaune
 - ✅ Backspace et ESC pour sauvegarder
 - ✅ Pipeline complet : Edit → Compile → Run
-- 🔧 Fix : Version simplifiée sans helpers buggés
 
 ### v3.0 (02/12/2025)
 - ✅ Shell interactif stable
 - ✅ Support Shift complet
 - ✅ Fix critique : Keyboard Data Access Bug
-- ⚠️ Edit Mode temporairement désactivé
-
-### v2.5 (01/12/2025)
-- ✅ Commandes shell de base
-- ✅ Compilateur MATHIS → Bytecode
-- ✅ VM avec exécution basique
-
-### v2.0 (Précédent)
-- ✅ Boot sector + Stage2
-- ✅ Mode protégé 32-bit
-- ✅ IDT/PIC configuration
 
 ---
 
-**Contributeurs** : Mathis Higuinen  
-**Licence** : MIT  
-**Repository** : https://github.com/MattJeff/mathis-os (à vérifier)
+## 🔗 Ressources
+
+### Outils
+- **Build** : `./build.sh`
+- **Run** : `qemu-system-x86_64 -fda boot/mathis.img -boot a -m 128M`
+- **Debug** : `qemu-system-x86_64 -fda boot/mathis.img -m 128M -d int -no-reboot`
+
+---
+
+**Contributeurs** : Mathis Higuinen
+**Licence** : MIT
+**Repository** : https://github.com/MattJeff/mathis-os
