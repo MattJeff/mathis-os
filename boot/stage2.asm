@@ -146,9 +146,19 @@ no_lba:
     mov al, 'K'
     int 0x10
 
-    ; kernel64 loading disabled for debug
+    ; LOAD KERNEL64 to 0x30000 (no copy yet)
+    mov ax, 0x3000
+    mov es, ax
+    xor bx, bx
+    mov ah, 0x02
+    mov al, 8               ; 8 sectors = 4KB
+    mov cx, 0x030C          ; C=3, S=12
+    mov dx, 0x0100          ; H=1
+    int 0x13
+    jc disk_error
+
     mov ah, 0x0E
-    mov al, 'S'
+    mov al, '+'
     int 0x10
 
     jmp enable_a20
