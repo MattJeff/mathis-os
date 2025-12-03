@@ -11,16 +11,19 @@ do_go64:
     mov byte [0xB8002], '4'
     mov byte [0xB8003], 0x4E
 
-    ; STEP 1: Clear page tables
-    mov edi, 0x70000
+    ; STEP 1: Clear page tables at 0x1000
+    mov edi, 0x1000
     mov ecx, 3072
     xor eax, eax
     rep stosd
 
     ; Setup page tables
-    mov dword [0x70000], 0x71003
-    mov dword [0x71000], 0x72003
-    mov dword [0x72000], 0x00000083
+    ; PML4[0] -> PDPT at 0x2000
+    mov dword [0x1000], 0x2003
+    ; PDPT[0] -> PD at 0x3000
+    mov dword [0x2000], 0x3003
+    ; PD[0] -> 2MB page at 0 (Present + RW + PS)
+    mov dword [0x3000], 0x00000083
 
     mov byte [0xB8004], 'P'
     mov byte [0xB8005], 0x0A
@@ -34,7 +37,7 @@ do_go64:
     mov byte [0xB8007], 0x0A
 
     ; STEP 3: Load CR3
-    mov eax, 0x70000
+    mov eax, 0x1000
     mov cr3, eax
 
     mov byte [0xB8008], '3'
@@ -49,5 +52,27 @@ do_go64:
     mov byte [0xB800A], 'L'
     mov byte [0xB800B], 0x0A
 
+    ; Load 64-bit GDT
+    lgdt [gdt64_ptr]
+
+    mov byte [0xB800C], 'G'
+    mov byte [0xB800D], 0x0A
+
     cli
     hlt
+
+; ══════════════════════════════════════════════════════════════════
+; GDT 64-bit
+; ══════════════════════════════════════════════════════════════════
+align 16
+gdt64:
+    dq 0                         ; Null descriptor
+gdt64_code:
+    dq 0x00209A0000000000        ; 64-bit code segment
+gdt64_data:
+    dq 0x0000920000000000        ; 64-bit data segment
+gdt64_end:
+
+gdt64_ptr:
+    dw gdt64_end - gdt64 - 1
+    dd gdt64
