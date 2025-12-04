@@ -70,8 +70,9 @@ long_mode_entry:
     mov gs, ax
     mov ss, ax
 
-    ; Initialize angle to 0
-    xor r12, r12              ; r12 = angle (0-63 for full rotation)
+    ; Initialize angles to 0
+    xor r12, r12              ; r12 = angleY (0-63 for full rotation)
+    mov qword [angleX], 0     ; angleX stored in memory
 
 .main_loop:
     ; Clear screen (black)
@@ -80,109 +81,93 @@ long_mode_entry:
     xor rax, rax
     rep stosq
 
-    ; Get sin and cos from lookup table (angle 0-63)
+    ; Get sinY and cosY from lookup table
     mov rax, r12
-    and rax, 0x3F             ; 0-63 range
-
-    ; cos = sin_table[(angle + 16) & 63]  (phase shift by 90 degrees)
+    and rax, 0x3F
     mov rbx, rax
     add rbx, 16
     and rbx, 0x3F
+    movsx r13, byte [sin_table + rax]   ; r13 = sinY * 32
+    movsx r14, byte [sin_table + rbx]   ; r14 = cosY * 32
 
-    movsx r13, byte [sin_table + rax]   ; r13 = sin(angle) * 32
-    movsx r14, byte [sin_table + rbx]   ; r14 = cos(angle) * 32
+    ; Get sinX and cosX (angleX rotates slower for nice tumbling effect)
+    mov rax, [angleX]
+    and rax, 0x3F
+    mov rbx, rax
+    add rbx, 16
+    and rbx, 0x3F
+    movsx r8, byte [sin_table + rax]    ; r8 = sinX * 32
+    movsx r9, byte [sin_table + rbx]    ; r9 = cosX * 32
 
-    ; Define cube vertices in 3D: (-1,-1,-1) to (1,1,1) scaled by 40
-    ; Apply Y-axis rotation: x' = x*cos + z*sin, z' = -x*sin + z*cos
-    ; Then project: screen_x = center + x' * scale / (z' + distance)
+    ; ══════════════════════════════════════════════════════════════════
+    ; TRANSFORM 8 VERTICES with full 3D rotation (Y then X)
+    ; Rotation Y: x' = x*cosY + z*sinY, z' = -x*sinY + z*cosY
+    ; Rotation X: y' = y*cosX - z'*sinX, z'' = y*sinX + z'*cosX
+    ; ══════════════════════════════════════════════════════════════════
 
-    ; Vertex 0: (-40, -40, -40) -> front-top-left
-    mov rax, -40
-    imul rax, r14             ; x * cos
-    mov rcx, -40
-    imul rcx, r13             ; z * sin
-    add rax, rcx              ; x' = x*cos + z*sin
-    sar rax, 5                ; divide by 32
-    add rax, CENTER_X
+    ; Vertex 0: (-40, -40, -40)
+    mov rdi, -40
+    mov rsi, -40
+    mov rdx, -40
+    call transform_vertex
     mov [v0x], rax
-    mov qword [v0y], CENTER_Y - 30
+    mov [v0y], rbx
 
-    ; Vertex 1: (40, -40, -40) -> front-top-right
-    mov rax, 40
-    imul rax, r14
-    mov rcx, -40
-    imul rcx, r13
-    add rax, rcx
-    sar rax, 5
-    add rax, CENTER_X
+    ; Vertex 1: (40, -40, -40)
+    mov rdi, 40
+    mov rsi, -40
+    mov rdx, -40
+    call transform_vertex
     mov [v1x], rax
-    mov qword [v1y], CENTER_Y - 30
+    mov [v1y], rbx
 
-    ; Vertex 2: (40, 40, -40) -> front-bottom-right
-    mov rax, 40
-    imul rax, r14
-    mov rcx, -40
-    imul rcx, r13
-    add rax, rcx
-    sar rax, 5
-    add rax, CENTER_X
+    ; Vertex 2: (40, 40, -40)
+    mov rdi, 40
+    mov rsi, 40
+    mov rdx, -40
+    call transform_vertex
     mov [v2x], rax
-    mov qword [v2y], CENTER_Y + 30
+    mov [v2y], rbx
 
-    ; Vertex 3: (-40, 40, -40) -> front-bottom-left
-    mov rax, -40
-    imul rax, r14
-    mov rcx, -40
-    imul rcx, r13
-    add rax, rcx
-    sar rax, 5
-    add rax, CENTER_X
+    ; Vertex 3: (-40, 40, -40)
+    mov rdi, -40
+    mov rsi, 40
+    mov rdx, -40
+    call transform_vertex
     mov [v3x], rax
-    mov qword [v3y], CENTER_Y + 30
+    mov [v3y], rbx
 
-    ; Vertex 4: (-40, -40, 40) -> back-top-left
-    mov rax, -40
-    imul rax, r14
-    mov rcx, 40
-    imul rcx, r13
-    add rax, rcx
-    sar rax, 5
-    add rax, CENTER_X
+    ; Vertex 4: (-40, -40, 40)
+    mov rdi, -40
+    mov rsi, -40
+    mov rdx, 40
+    call transform_vertex
     mov [v4x], rax
-    mov qword [v4y], CENTER_Y - 25
+    mov [v4y], rbx
 
-    ; Vertex 5: (40, -40, 40) -> back-top-right
-    mov rax, 40
-    imul rax, r14
-    mov rcx, 40
-    imul rcx, r13
-    add rax, rcx
-    sar rax, 5
-    add rax, CENTER_X
+    ; Vertex 5: (40, -40, 40)
+    mov rdi, 40
+    mov rsi, -40
+    mov rdx, 40
+    call transform_vertex
     mov [v5x], rax
-    mov qword [v5y], CENTER_Y - 25
+    mov [v5y], rbx
 
-    ; Vertex 6: (40, 40, 40) -> back-bottom-right
-    mov rax, 40
-    imul rax, r14
-    mov rcx, 40
-    imul rcx, r13
-    add rax, rcx
-    sar rax, 5
-    add rax, CENTER_X
+    ; Vertex 6: (40, 40, 40)
+    mov rdi, 40
+    mov rsi, 40
+    mov rdx, 40
+    call transform_vertex
     mov [v6x], rax
-    mov qword [v6y], CENTER_Y + 25
+    mov [v6y], rbx
 
-    ; Vertex 7: (-40, 40, 40) -> back-bottom-left
-    mov rax, -40
-    imul rax, r14
-    mov rcx, 40
-    imul rcx, r13
-    add rax, rcx
-    sar rax, 5
-    add rax, CENTER_X
+    ; Vertex 7: (-40, 40, 40)
+    mov rdi, -40
+    mov rsi, 40
+    mov rdx, 40
+    call transform_vertex
     mov [v7x], rax
-    mov qword [v7y], CENTER_Y + 25
+    mov [v7y], rbx
 
     ; ══════════════════════════════════════════════════════════════════
     ; DRAW 12 EDGES OF CUBE
@@ -275,11 +260,14 @@ long_mode_entry:
     mov r8, 11
     call draw_line
 
-    ; Increment angle
+    ; Increment angles (Y faster, X slower for tumbling effect)
     inc r12
+    mov rax, [angleX]
+    add rax, 1              ; X rotates at same speed but different phase
+    mov [angleX], rax
 
     ; Delay (slower rotation)
-    mov rcx, 15000000
+    mov rcx, 8000000
 .delay:
     dec rcx
     jnz .delay
@@ -287,9 +275,70 @@ long_mode_entry:
     jmp .main_loop
 
 ; ════════════════════════════════════════════════════════════════════════════
+; TRANSFORM VERTEX - Apply Y and X rotation, project to 2D
+; Input: rdi=x, rsi=y, rdx=z
+; Output: rax=screen_x, rbx=screen_y
+; Uses: r8=sinX, r9=cosX, r13=sinY, r14=cosY (set before calling)
+; ════════════════════════════════════════════════════════════════════════════
+transform_vertex:
+    push rcx
+    push r10
+    push r11
+
+    ; Step 1: Rotate around Y axis
+    ; x' = x*cosY + z*sinY
+    ; z' = -x*sinY + z*cosY
+    mov rax, rdi
+    imul rax, r14             ; x * cosY
+    mov rcx, rdx
+    imul rcx, r13             ; z * sinY
+    add rax, rcx              ; x' = x*cosY + z*sinY
+    sar rax, 5                ; divide by 32
+    mov r10, rax              ; r10 = x'
+
+    mov rax, rdi
+    imul rax, r13             ; x * sinY
+    neg rax                   ; -x * sinY
+    mov rcx, rdx
+    imul rcx, r14             ; z * cosY
+    add rax, rcx              ; z' = -x*sinY + z*cosY
+    sar rax, 5
+    mov r11, rax              ; r11 = z'
+
+    ; Step 2: Rotate around X axis
+    ; y' = y*cosX - z'*sinX
+    ; z'' = y*sinX + z'*cosX
+    mov rax, rsi
+    imul rax, r9              ; y * cosX
+    mov rcx, r11
+    imul rcx, r8              ; z' * sinX
+    sub rax, rcx              ; y' = y*cosX - z'*sinX
+    sar rax, 5
+    mov rbx, rax              ; rbx = y' (will become screen_y)
+
+    ; z'' for perspective (optional, we use simple projection)
+    mov rax, rsi
+    imul rax, r8              ; y * sinX
+    mov rcx, r11
+    imul rcx, r9              ; z' * cosX
+    add rax, rcx              ; z'' = y*sinX + z'*cosX
+    sar rax, 5                ; r11 = z'' (depth, could use for perspective)
+
+    ; Project to screen coordinates
+    mov rax, r10
+    add rax, CENTER_X         ; screen_x = x' + center
+    add rbx, CENTER_Y         ; screen_y = y' + center
+
+    pop r11
+    pop r10
+    pop rcx
+    ret
+
+; ════════════════════════════════════════════════════════════════════════════
 ; VERTEX STORAGE (in BSS-like area)
 ; ════════════════════════════════════════════════════════════════════════════
 align 8
+angleX: dq 0
 v0x: dq 0
 v0y: dq 0
 v1x: dq 0
