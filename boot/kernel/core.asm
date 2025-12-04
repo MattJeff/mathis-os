@@ -1,12 +1,21 @@
 ; ════════════════════════════════════════════════════════════════════════════
-; MATHIS KERNEL - CORE MODULE v3.2
+; MATHIS KERNEL - CORE MODULE v4.0 (3D Edition)
 ; ════════════════════════════════════════════════════════════════════════════
 ; NOUVELLE ARCHITECTURE:
 ;   1. CODE: Tout le code exécutable d'abord
 ;   2. DATA: Toutes les données à la fin (data_all.asm)
+;   3. GRAPHICS: VESA framebuffer + 3D engine
 ;
 ; Règle: On peut ajouter du code ou des données sans casser les adresses
 ; ════════════════════════════════════════════════════════════════════════════
+
+; Framebuffer info (set by stage2 at 0x500)
+FB_ENABLED      equ 0x500
+FB_ADDRESS      equ 0x510
+FB_WIDTH        equ 0x514
+FB_HEIGHT       equ 0x518
+FB_PITCH        equ 0x51C
+FB_BPP          equ 0x520
 
 [BITS 32]
 [ORG 0x10000]
@@ -18,6 +27,12 @@
 kernel_entry:
     mov esp, 0x2FFFF
 
+    ; ══════════════════════════════════════════════════════════════════
+    ; DIRECT BOOT TO 64-BIT GRAPHICS MODE
+    ; ══════════════════════════════════════════════════════════════════
+    jmp do_go64
+
+    ; Old shell code (kept for reference, not executed)
     ; Copy embedded bytecode to 0x20000
     mov esi, embedded_program
     mov edi, 0x20000
@@ -128,6 +143,9 @@ print_string:
 ; ════════════════════════════════════════════════════════════════════════════
 
 %include "vga.asm"
+; %include "vga_minimal.asm"      ; DISABLED - testing keyboard
+; %include "vga13h.asm"           ; DISABLED
+; %include "graphics3d_simple.asm" ; DISABLED
 %include "keyboard_code.asm"
 %include "shell.asm"
 %include "vm.asm"

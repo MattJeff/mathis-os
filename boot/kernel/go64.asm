@@ -1,6 +1,10 @@
 ; ════════════════════════════════════════════════════════════════════════════
-; GO64.ASM - Transition 32-bit vers 64-bit Long Mode
+; GO64.ASM - Transition 32-bit vers 64-bit Long Mode + Graphics
 ; ════════════════════════════════════════════════════════════════════════════
+
+GFX64_FB    equ 0xA0000
+GFX64_W     equ 320
+GFX64_H     equ 200
 
 do_go64:
     cli
@@ -53,7 +57,6 @@ do_go64:
 ; ════════════════════════════════════════════════════════════════════════════
 [BITS 64]
 long_mode_entry:
-    ; Disable interrupts - no 64-bit IDT yet
     cli
 
     ; Setup 64-bit data segments
@@ -64,43 +67,37 @@ long_mode_entry:
     mov gs, ax
     mov ss, ax
 
-    ; Clear screen and display 64-bit message
-    mov rdi, 0xB8000
-    mov rcx, 2000
-    mov rax, 0x0F200F20
-    rep stosq
+.draw_demo:
+    ; Draw colored bars to VGA framebuffer (now visible in mode 13h!)
+    mov rdi, GFX64_FB
+    xor rdx, rdx
+.row_loop:
+    mov rax, rdx
+    mov rcx, GFX64_W
+    rep stosb
+    inc rdx
+    cmp rdx, GFX64_H
+    jb .row_loop
 
-    ; Display line 1
-    mov rdi, 0xB8000
-    mov rsi, msg_line1
-    mov ah, 0x0A
-.print1:
-    lodsb
-    test al, al
-    jz .line2
-    mov [rdi], ax
-    add rdi, 2
-    jmp .print1
+.main_loop:
+    ; Simple animation - rotate colors
+    mov rdi, GFX64_FB
+    mov rcx, GFX64_W * GFX64_H
+.shift_loop:
+    inc byte [rdi]
+    inc rdi
+    dec rcx
+    jnz .shift_loop
 
-.line2:
-    ; Display line 2
-    mov rdi, 0xB8000 + 160
-    mov rsi, msg_line2
-    mov ah, 0x0E
-.print2:
-    lodsb
-    test al, al
-    jz .done
-    mov [rdi], ax
-    add rdi, 2
-    jmp .print2
+    ; Delay
+    mov rcx, 1000000
+.delay:
+    dec rcx
+    jnz .delay
 
-.done:
-    hlt
-    jmp .done
+    jmp .main_loop
 
-msg_line1: db "MATHIS OS - 64-bit Long Mode", 0
-msg_line2: db "Type 'reboot' in 32-bit shell to return", 0
+msg64_title: db "MATHIS OS 64-BIT MODE", 0
 
 [BITS 32]
 

@@ -41,6 +41,11 @@ msg_mem_title:  db "=== MEMORY INFO ===", 0
 msg_mem_e820:   db "E820 Map: Detected at boot", 0
 msg_mem_paging: db "Paging: Ready for 64-bit", 0
 
+; Graphics messages
+msg_no_vesa:    db "VESA not available - Text mode only", 0
+msg_vesa_ok:    db "VESA 3D Graphics initialized", 0
+msg_3d_demo:    db "Running 3D demo...", 0
+
 ; ════════════════════════════════════════════════════════════════════════════
 ; SECTION 2: TABLES (scancode, etc.)
 ; ════════════════════════════════════════════════════════════════════════════

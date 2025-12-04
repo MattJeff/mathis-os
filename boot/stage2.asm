@@ -1,9 +1,21 @@
-; Stage 2 Bootloader - Loads kernel using INT 13h extensions (LBA mode)
-; Loads at 0x7E00, jumps to protected mode, then to kernel at 0x10000
+; Stage 2 Bootloader - MATHIS OS 3D Edition
+; Loads kernel, initializes VESA graphics, enters protected mode
 ; Uses LBA mode for reliable multi-sector reads
 
 [BITS 16]
 [ORG 0x7E00]
+
+; ═══════════════════════════════════════════════════════════════════════════
+; VESA CONSTANTS
+; ═══════════════════════════════════════════════════════════════════════════
+VESA_INFO       equ 0x9000      ; VBE controller info
+VESA_MODE_INFO  equ 0x9200      ; VBE mode info
+VESA_MODE       equ 0x4118      ; 1024x768x32 (or try 0x4115 for 800x600x32)
+; Common VESA modes:
+; 0x4101 = 640x480x8    0x4111 = 640x480x16   0x4112 = 640x480x32
+; 0x4103 = 800x600x8    0x4114 = 800x600x16   0x4115 = 800x600x32
+; 0x4105 = 1024x768x8   0x4117 = 1024x768x16  0x4118 = 1024x768x32
+; 0x4107 = 1280x1024x8  0x411A = 1280x1024x16 0x411B = 1280x1024x32
 
 start:
     ; Print "Loading..."
@@ -18,43 +30,17 @@ start:
 .done_print:
 
     ; ═══════════════════════════════════════════════════════════════════
-    ; E820 MEMORY DETECTION (must be done in real mode!)
-    ; Stores memory map at 0x8000 for kernel to use
+    ; Stay in TEXT MODE for now - graphics via kernel later
     ; ═══════════════════════════════════════════════════════════════════
-    ; call detect_memory  ; DISABLED - not used without memory module
+    mov byte [vesa_enabled], 0
+    mov dword [vesa_fb_addr], 0xA0000
+    mov word [vesa_width], 320
+    mov word [vesa_height], 200
+    mov word [vesa_pitch], 320
+    mov byte [vesa_bpp], 8
 
     ; ═══════════════════════════════════════════════════════════════════
     ; Load kernel using CHS mode (LBA mode unreliable in QEMU floppy)
-    ; kernel.bin is at LBA sector 9 (0-indexed), which is disk offset 0x1200
-    ; boot.bin = sector 0, stage2.bin = sectors 1-8, kernel = sectors 9+
-    ; Need to load 32 sectors (16KB kernel)
-    ; ═══════════════════════════════════════════════════════════════════
-
-    ; Skip LBA detection and go straight to CHS mode
-    jmp no_lba
-
-    ; (LBA code below is kept but not used)
-    ; First, check if INT 13h extensions are available
-    mov ah, 0x41
-    mov bx, 0x55AA
-    mov dl, 0x00            ; Drive 0 (floppy A)
-    int 0x13
-    jc no_lba               ; Extensions not available
-    cmp bx, 0xAA55
-    jne no_lba              ; Extensions not available
-
-    ; Use LBA mode to load 32 sectors starting from LBA 9
-    mov si, dap
-    mov ah, 0x42
-    mov dl, 0x00            ; Drive 0 (floppy A)
-    int 0x13
-    jc disk_error
-
-    jmp enable_a20
-
-no_lba:
-    ; ═══════════════════════════════════════════════════════════════════
-    ; LOAD 64KB KERNEL (128 sectors) - Explicit reads for reliability
     ; ═══════════════════════════════════════════════════════════════════
 
     ; Read 1: 9 sectors C0/H0/S10 -> 0x10000
@@ -137,7 +123,7 @@ no_lba:
     int 0x13
     jc disk_error
 
-    ; 64KB loaded!
+    ; Print "64K+"
     mov ah, 0x0E
     mov al, '6'
     int 0x10
@@ -145,9 +131,13 @@ no_lba:
     int 0x10
     mov al, 'K'
     int 0x10
-
-    mov ah, 0x0E
     mov al, '+'
+    int 0x10
+
+    ; ═══════════════════════════════════════════════════════════════════
+    ; SET VGA MODE 13h (320x200x256) - BIOS call in real mode
+    ; ═══════════════════════════════════════════════════════════════════
+    mov ax, 0x0013
     int 0x10
 
     jmp enable_a20
@@ -161,62 +151,103 @@ disk_error:
     hlt
 
 ; ═══════════════════════════════════════════════════════════════════════════
-; E820 MEMORY DETECTION FUNCTION
-; Stores memory map at 0x8000, count at 0x8004
+; VESA INITIALIZATION (Real Mode)
 ; ═══════════════════════════════════════════════════════════════════════════
-E820_MAP        equ 0x8000
-E820_COUNT      equ 0x8004
-
-detect_memory:
+init_vesa:
     push es
     push di
-    push bp
-    
-    ; Set ES:DI to point to our buffer
-    xor ax, ax
-    mov es, ax
-    mov di, E820_MAP + 8        ; Start storing entries after header
-    xor ebx, ebx                ; Continuation value (must be 0 for first call)
-    xor bp, bp                  ; Entry counter
-    
-.e820_loop:
-    mov eax, 0xE820             ; E820 function
-    mov ecx, 24                 ; Ask for 24 bytes per entry
-    mov edx, 0x534D4150         ; 'SMAP' magic number
-    int 0x15
-    
-    jc .e820_done               ; Carry set = error or done
-    cmp eax, 0x534D4150         ; EAX should contain 'SMAP'
-    jne .e820_done
-    
-    ; Valid entry
-    inc bp                      ; Count this entry
-    add di, 24                  ; Move to next entry slot
-    
-    test ebx, ebx               ; EBX = 0 means we're done
-    jz .e820_done
-    
-    cmp bp, 20                  ; Max 20 entries (safety limit)
-    jl .e820_loop
-    
-.e820_done:
-    ; Store entry count
-    mov [E820_COUNT], bp
-    
-    ; Print memory detection status
+
+    ; Get VBE Controller Info
+    mov ax, 0x4F00
+    mov di, VESA_INFO
+    push ds
+    pop es
+    int 0x10
+
+    cmp ax, 0x004F
+    jne .vesa_fail
+
+    ; Check VBE signature "VESA"
+    cmp dword [VESA_INFO], 'VESA'
+    jne .vesa_fail
+
+    ; Print 'V' for VESA detected
     mov ah, 0x0E
-    mov al, 'M'
+    mov al, 'V'
     int 0x10
-    mov al, '0'
-    add al, bl                  ; Show count (rough)
+
+    ; Get Mode Info for our target mode
+    mov ax, 0x4F01
+    mov cx, VESA_MODE
+    mov di, VESA_MODE_INFO
     int 0x10
-    mov al, ' '
+
+    cmp ax, 0x004F
+    jne .vesa_fail
+
+    ; Check if mode is supported and has LFB
+    mov ax, [VESA_MODE_INFO]        ; Mode attributes
+    test ax, 0x80                    ; Check LFB available bit
+    jz .vesa_fail
+
+    ; Print 'E' for mode enumerated
+    mov ah, 0x0E
+    mov al, 'E'
     int 0x10
-    
-    pop bp
+
+    ; Store framebuffer info for kernel
+    ; These will be copied to kernel data area
+    mov eax, [VESA_MODE_INFO + 40]  ; PhysBasePtr (LFB address)
+    mov [vesa_fb_addr], eax
+
+    mov ax, [VESA_MODE_INFO + 18]   ; XResolution
+    mov [vesa_width], ax
+
+    mov ax, [VESA_MODE_INFO + 20]   ; YResolution
+    mov [vesa_height], ax
+
+    mov ax, [VESA_MODE_INFO + 16]   ; BytesPerScanLine
+    mov [vesa_pitch], ax
+
+    mov al, [VESA_MODE_INFO + 25]   ; BitsPerPixel
+    mov [vesa_bpp], al
+
+    ; Set VESA Mode with LFB
+    mov ax, 0x4F02
+    mov bx, VESA_MODE
+    or bx, 0x4000                   ; Enable LFB
+    int 0x10
+
+    cmp ax, 0x004F
+    jne .vesa_fail
+
+    ; Print 'S' for mode set
+    ; Note: After mode set, text output won't work!
+    ; We'll draw directly to framebuffer
+
+    ; Success
+    mov byte [vesa_enabled], 1
     pop di
     pop es
     ret
+
+.vesa_fail:
+    ; VESA failed - continue with VGA text mode
+    mov ah, 0x0E
+    mov al, '!'
+    int 0x10
+    mov byte [vesa_enabled], 0
+    pop di
+    pop es
+    ret
+
+; VESA data (will be passed to kernel)
+vesa_enabled    db 0
+vesa_fb_addr    dd 0
+vesa_width      dw 0
+vesa_height     dw 0
+vesa_pitch      dw 0
+vesa_bpp        db 0
 
 enable_a20:
     ; Enable A20 line (fast method)
@@ -239,15 +270,6 @@ enable_a20:
     ; Far jump to 32-bit code
     jmp 0x08:pm_entry
 
-; DAP (Disk Address Packet) for INT 13h AH=42h - placed AFTER the jump
-dap:
-    db 0x10                 ; Size of DAP (16 bytes)
-    db 0                    ; Reserved
-    dw 48                   ; Number of sectors to read
-    dw 0x0000               ; Offset (destination)
-    dw 0x1000               ; Segment (destination) = 0x1000:0 = 0x10000
-    dq 9                    ; Starting LBA (sector 9 = kernel start)
-
 [BITS 32]
 pm_entry:
     ; Set up segment registers
@@ -257,17 +279,63 @@ pm_entry:
     mov ss, ax
     mov esp, 0x90000
 
-    ; Pas de copie kernel64 - sera inclus dans le kernel 32-bit
+    ; Copy VESA info to kernel data area (0x500)
+    ; The kernel will read this to configure graphics
+    mov esi, vesa_enabled
+    mov edi, 0x500
+    mov ecx, 16             ; Copy VESA data block
+    rep movsb
 
+    ; Also copy to a fixed location the kernel expects
+    ; fb_address at 0x510, fb_width at 0x514, etc.
+    movzx eax, byte [0x500]     ; vesa_enabled
+    mov [0x500], eax
+
+    mov eax, [0x501]            ; vesa_fb_addr (misaligned but ok)
+    mov [0x510], eax            ; fb_address
+
+    movzx eax, word [0x505]     ; vesa_width
+    mov [0x514], eax            ; fb_width
+
+    movzx eax, word [0x507]     ; vesa_height
+    mov [0x518], eax            ; fb_height
+
+    movzx eax, word [0x509]     ; vesa_pitch
+    mov [0x51C], eax            ; fb_pitch
+
+    movzx eax, byte [0x50B]     ; vesa_bpp
+    mov [0x520], eax            ; fb_bpp
+
+    ; If VESA enabled, draw a test pixel to confirm it works
+    cmp byte [0x500], 1
+    jne .no_vesa_test
+
+    ; Draw red pixel at (0,0) to confirm framebuffer works
+    mov edi, [0x510]            ; fb_address
+    mov dword [edi], 0x00FF0000 ; Red pixel (ARGB)
+
+    ; Draw a gradient bar to show graphics working
+    mov ecx, 256
+.gradient_loop:
+    mov eax, ecx
+    shl eax, 16                 ; Red component
+    or eax, ecx                 ; Blue component
+    shl ecx, 8
+    or eax, ecx                 ; Green component
+    shr ecx, 8
+    stosd
+    loop .gradient_loop
+
+.no_vesa_test:
     ; Jump to kernel at 0x10000
     jmp 0x08:0x10000
 
 ; GDT Pointer
 gdt_ptr:
     dw gdt_end - gdt - 1    ; GDT limit
-    dd gdt                  ; GDT base (will be 0x7F06)
+    dd gdt                  ; GDT base
 
-; GDT at offset 0x106 (address 0x7F06)
+; GDT
 gdt:
     ; Null descriptor
     dq 0
@@ -289,7 +357,7 @@ gdt:
     db 0x00                 ; Base high
 gdt_end:
 
-loading_msg: db "Loading...", 13, 10, 0
+loading_msg: db "MATHIS 3D Loading...", 13, 10, 0
 
     ; Pad to 4096 bytes
     times 4096 - ($ - $$) db 0
