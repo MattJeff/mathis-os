@@ -202,6 +202,20 @@ long_mode_entry:
     mov r8, 15
     call draw_line
 
+    ; Front face X (red)
+    mov rdi, [v0x]
+    mov rsi, [v0y]
+    mov rdx, [v2x]
+    mov rcx, [v2y]
+    mov r8, 4
+    call draw_line
+    mov rdi, [v1x]
+    mov rsi, [v1y]
+    mov rdx, [v3x]
+    mov rcx, [v3y]
+    mov r8, 4
+    call draw_line
+
     ; Back face (4 edges) - green
     mov rdi, [v4x]
     mov rsi, [v4y]
@@ -231,6 +245,20 @@ long_mode_entry:
     mov r8, 10
     call draw_line
 
+    ; Back face X (yellow)
+    mov rdi, [v4x]
+    mov rsi, [v4y]
+    mov rdx, [v6x]
+    mov rcx, [v6y]
+    mov r8, 14
+    call draw_line
+    mov rdi, [v5x]
+    mov rsi, [v5y]
+    mov rdx, [v7x]
+    mov rcx, [v7y]
+    mov r8, 14
+    call draw_line
+
     ; Connecting edges (4 edges) - cyan
     mov rdi, [v0x]
     mov rsi, [v0y]
@@ -258,6 +286,34 @@ long_mode_entry:
     mov rdx, [v7x]
     mov rcx, [v7y]
     mov r8, 11
+    call draw_line
+
+    ; Top face X (blue) - v0,v1,v5,v4
+    mov rdi, [v0x]
+    mov rsi, [v0y]
+    mov rdx, [v5x]
+    mov rcx, [v5y]
+    mov r8, 1
+    call draw_line
+    mov rdi, [v1x]
+    mov rsi, [v1y]
+    mov rdx, [v4x]
+    mov rcx, [v4y]
+    mov r8, 1
+    call draw_line
+
+    ; Bottom face X (magenta) - v3,v2,v6,v7
+    mov rdi, [v3x]
+    mov rsi, [v3y]
+    mov rdx, [v6x]
+    mov rcx, [v6y]
+    mov r8, 5
+    call draw_line
+    mov rdi, [v2x]
+    mov rsi, [v2y]
+    mov rdx, [v7x]
+    mov rcx, [v7y]
+    mov r8, 5
     call draw_line
 
     ; Increment angles (Y faster, X slower for tumbling effect)
