@@ -17,7 +17,10 @@
       "Bash(echo:*)",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "WebFetch(domain:api.github.com)"
+      "WebFetch(domain:api.github.com)",
+      "Bash(git push:*)",
+      "Bash(timeout 3 qemu-system-x86_64:*)",
+      "Bash(git checkout:*)"
     ],
     "deny": [],
     "ask": []
