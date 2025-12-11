@@ -1,6 +1,6 @@
 ; ═══════════════════════════════════════════════════════════════════════════
-; MATHIS OS STAGE2 - Hard Disk LBA Edition
-; Loads 256KB kernel, enters protected mode
+; MATHIS OS STAGE2 - VESA 640x480 Edition
+; Loads 256KB kernel, sets VESA mode, enters protected mode
 ; ═══════════════════════════════════════════════════════════════════════════
 
 [BITS 16]
@@ -55,10 +55,15 @@ start:
     mov si, msg_ok
     call print_string
 
-    ; Set VGA mode 13h
+    ; === Use VGA 320x200 mode (stable) ===
+    mov si, msg_vga
+    call print_string
     mov ax, 0x0013
     int 0x10
-
+    mov dword [framebuffer_addr], 0xA0000
+    mov word [screen_width], 320
+    mov word [screen_height], 200
+    mov byte [vesa_mode], 0
     ; Enable A20
     in al, 0x92
     or al, 2
@@ -95,6 +100,10 @@ print_string:
 boot_drive:     db 0
 current_lba:    dd 0
 current_seg:    dw 0
+framebuffer_addr: dd 0xA0000
+screen_width:   dw 320
+screen_height:  dw 200
+vesa_mode:      db 0
 
 ; DAP for LBA read
 align 4
@@ -106,9 +115,16 @@ dap_segment:    dw 0
 dap_lba_low:    dd 0
 dap_lba_high:   dd 0
 
-msg_loading: db "MATHIS OS [256KB]", 0
+msg_loading: db "MATHIS OS", 0
 msg_ok:      db " OK", 13, 10, 0
 msg_error:   db " ERR!", 0
+msg_vesa:    db "VESA 640x480...", 0
+msg_vga:     db "VGA 320x200", 13, 10, 0
+
+; VESA info buffers
+align 16
+vesa_info: times 512 db 0
+mode_info: times 256 db 0
 
 [BITS 32]
 pm_entry:
@@ -117,6 +133,16 @@ pm_entry:
     mov es, ax
     mov ss, ax
     mov esp, 0x90000
+
+    ; Pass video info to kernel at fixed memory location 0x500
+    mov eax, [framebuffer_addr]
+    mov [0x500], eax              ; Framebuffer address
+    movzx eax, word [screen_width]
+    mov [0x504], eax              ; Screen width
+    movzx eax, word [screen_height]
+    mov [0x508], eax              ; Screen height
+    movzx eax, byte [vesa_mode]
+    mov [0x50C], eax              ; VESA mode flag
 
     jmp 0x08:0x10000
 

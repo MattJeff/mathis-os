@@ -118,5 +118,14 @@ edit_mode:          db 0
 file_content_len:   dd 0
 file_content:       times 512 db 0
 shift_state:        db 0
+ctrl_state:         db 0
+alt_state:          db 0
+
+; Scancode to ASCII (uppercase/shifted)
+scancode_shift:
+    db 0, 0, '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+', 0, 0
+    db 'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', 0, 0
+    db 'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':', '"', '~', 0, '|'
+    db 'Z', 'X', 'C', 'V', 'B', 'N', 'M', '<', '>', '?', 0, 0, 0, ' '
 
 KERNEL_END:
