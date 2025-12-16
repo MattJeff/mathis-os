@@ -176,6 +176,9 @@ long_mode_entry:
     ; Initialize ACPI for power management
     call acpi_init
 
+    ; Initialize heap allocator (malloc/free)
+    call heap_init
+
     ; Create demo processes (entries in table for ps command)
     ; These run in cooperative mode - main loop is the "idle" process
     mov rdi, demo_process_1
@@ -2713,6 +2716,11 @@ user_stack_top:
 ; INCLUDE ACPI POWER MANAGEMENT
 ; ════════════════════════════════════════════════════════════════════════════
 %include "acpi.asm"
+
+; ════════════════════════════════════════════════════════════════════════════
+; INCLUDE HEAP ALLOCATOR (malloc/free)
+; ════════════════════════════════════════════════════════════════════════════
+%include "mm/heap.asm"
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; DATA SECTION
