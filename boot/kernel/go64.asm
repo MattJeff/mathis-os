@@ -146,8 +146,8 @@ long_mode_entry:
     ; Initialize scheduler (cooperative mode - processes tracked but not preempted)
     call scheduler_init
 
-    ; Initialize network (E1000) - disabled, needs more debugging
-    ; call net_init
+    ; Initialize network (E1000) - TEST: minimal init (just ret)
+    call net_init
 
     ; Create demo processes (entries in table for ps command)
     ; These run in cooperative mode - main loop is the "idle" process

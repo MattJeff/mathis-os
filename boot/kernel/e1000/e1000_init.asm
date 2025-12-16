@@ -36,8 +36,10 @@ pci_device:         dd 0            ; PCI device number
 ; ════════════════════════════════════════════════════════════════════════════
 ; E1000_INIT - Initialize E1000 network card
 ; Output: CF set on error
+; DEBUG VERSION - Testing step by step
 ; ════════════════════════════════════════════════════════════════════════════
 e1000_init:
+    ; Full init with MMIO address range check
     push rax
     push rbx
     push rcx
@@ -45,34 +47,25 @@ e1000_init:
     push rdi
     push rsi
 
-    ; Step 1: Scan PCI for E1000
     call e1000_pci_scan
     jc .not_found
 
-    ; Validate MMIO base
+    ; E1000 found - validate MMIO
     mov rax, [e1000_mmio_base]
     test rax, rax
-    jz .not_found                   ; No valid MMIO base
+    jz .not_found
 
-    ; Step 2: Enable PCI bus mastering
+    ; CHECK: MMIO must be within our mapped memory (< 4MB)
+    ; If MMIO is above 4MB, we can't access it without mapping it
+    cmp rax, 0x400000           ; 4MB limit
+    jae .not_found              ; Skip if MMIO is above our mapped region
+
     call e1000_pci_enable
-
-    ; Step 3: Reset device
     call e1000_reset
-
-    ; Step 4: Read MAC address
     call e1000_read_mac
-
-    ; Step 5: Initialize RX
     call e1000_rx_init
-
-    ; Step 6: Initialize TX
     call e1000_tx_init
-
-    ; Step 7: Enable interrupts
     call e1000_enable_irq
-
-    ; Step 8: Start receiving
     call e1000_start
 
     mov byte [e1000_found], 1
@@ -80,6 +73,93 @@ e1000_init:
     jmp .done
 
 .not_found:
+    mov byte [e1000_found], 0
+    stc
+
+.done:
+    pop rsi
+    pop rdi
+    pop rdx
+    pop rcx
+    pop rbx
+    pop rax
+    ret
+
+; Original init code (disabled for debugging)
+e1000_init_full:
+    push rax
+    push rbx
+    push rcx
+    push rdx
+    push rdi
+    push rsi
+
+    ; DEBUG: Red pixel = starting init
+    mov byte [0xA0000], 4
+
+    ; Step 1: Scan PCI for E1000
+    call e1000_pci_scan
+    jc .not_found
+
+    ; DEBUG: Yellow pixel = PCI scan success
+    mov byte [0xA0001], 14
+
+    ; Validate MMIO base
+    mov rax, [e1000_mmio_base]
+    test rax, rax
+    jz .not_found                   ; No valid MMIO base
+
+    ; DEBUG: Light blue = MMIO valid
+    mov byte [0xA0002], 11
+
+    ; Step 2: Enable PCI bus mastering
+    call e1000_pci_enable
+
+    ; DEBUG: Purple = PCI enabled
+    mov byte [0xA0003], 5
+
+    ; Step 3: Reset device
+    call e1000_reset
+
+    ; DEBUG: Cyan = Reset done
+    mov byte [0xA0004], 3
+
+    ; Step 4: Read MAC address
+    call e1000_read_mac
+
+    ; DEBUG: Magenta = MAC read
+    mov byte [0xA0005], 13
+
+    ; Step 5: Initialize RX
+    call e1000_rx_init
+
+    ; DEBUG: Orange = RX init done
+    mov byte [0xA0006], 6
+
+    ; Step 6: Initialize TX
+    call e1000_tx_init
+
+    ; DEBUG: Light green = TX init done
+    mov byte [0xA0007], 10
+
+    ; Step 7: Enable interrupts
+    call e1000_enable_irq
+
+    ; Step 8: Start receiving
+    call e1000_start
+
+    ; DEBUG: Bright green = ALL SUCCESS!
+    mov byte [0xA0008], 10
+    mov byte [0xA0009], 10
+    mov byte [0xA000A], 10
+
+    mov byte [e1000_found], 1
+    clc
+    jmp .done
+
+.not_found:
+    ; DEBUG: Gray = not found (this is OK if no E1000 in QEMU)
+    mov byte [0xA0000], 8
     mov byte [e1000_found], 0
     stc
 
