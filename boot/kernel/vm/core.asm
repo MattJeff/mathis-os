@@ -55,7 +55,7 @@ vm_loop:
     cmp al, 0x18
     je vm_op_const_int
     
-    ; Math (0x30-0x35)
+    ; Math (0x30-0x39)
     cmp al, 0x30
     je vm_op_add
     cmp al, 0x31
@@ -64,19 +64,111 @@ vm_loop:
     je vm_op_mul
     cmp al, 0x33
     je vm_op_div
-    
-    ; Stack (0x50-0x54)
+    cmp al, 0x34
+    je vm_op_mod
+    cmp al, 0x35
+    je vm_op_neg
+    cmp al, 0x36
+    je vm_op_and
+    cmp al, 0x37
+    je vm_op_or
+    cmp al, 0x38
+    je vm_op_xor
+    cmp al, 0x39
+    je vm_op_not
+
+    ; Comparison (0x40-0x45)
+    cmp al, 0x40
+    je vm_op_eq
+    cmp al, 0x41
+    je vm_op_ne
+    cmp al, 0x42
+    je vm_op_lt
+    cmp al, 0x43
+    je vm_op_gt
+    cmp al, 0x44
+    je vm_op_le
+    cmp al, 0x45
+    je vm_op_ge
+
+    ; Stack (0x50-0x57)
     cmp al, 0x50
     je vm_op_dup
     cmp al, 0x51
     je vm_op_pop
     cmp al, 0x52
     je vm_op_swap
-    
-    ; I/O (0xC3-0xC6)
+    cmp al, 0x53
+    je vm_op_over
+    cmp al, 0x54
+    je vm_op_rot
+    cmp al, 0x55
+    je vm_op_pick
+    cmp al, 0x56
+    je vm_op_roll
+    cmp al, 0x57
+    je vm_op_depth
+
+    ; Control flow (0x60-0x6F)
+    cmp al, 0x60
+    je vm_op_jmp
+    cmp al, 0x61
+    je vm_op_jz
+    cmp al, 0x62
+    je vm_op_jnz
+    cmp al, 0x63
+    je vm_op_call
+    cmp al, 0x64
+    je vm_op_ret
+    cmp al, 0x65
+    je vm_op_loop
+
+    ; Memory (0x20-0x27)
+    cmp al, 0x20
+    je vm_op_load
+    cmp al, 0x21
+    je vm_op_store
+    cmp al, 0x22
+    je vm_op_load_local
+    cmp al, 0x23
+    je vm_op_store_local
+    cmp al, 0x24
+    je vm_op_load_global
+    cmp al, 0x25
+    je vm_op_store_global
+    cmp al, 0x26
+    je vm_op_alloc
+    cmp al, 0x27
+    je vm_op_free
+
+    ; Bitwise (0x70-0x74)
+    cmp al, 0x70
+    je vm_op_shl
+    cmp al, 0x71
+    je vm_op_shr
+    cmp al, 0x72
+    je vm_op_band
+    cmp al, 0x73
+    je vm_op_bor
+    cmp al, 0x74
+    je vm_op_bxor
+    cmp al, 0x75
+    je vm_op_bnot
+
+    ; I/O (0xC0-0xCF)
+    cmp al, 0xC0
+    je vm_op_print_char
+    cmp al, 0xC1
+    je vm_op_print_string
+    cmp al, 0xC2
+    je vm_op_print_nl
     cmp al, 0xC3
     je vm_op_print_int
-    
+    cmp al, 0xC4
+    je vm_op_read_char
+    cmp al, 0xC5
+    je vm_op_read_int
+
     ; Unknown - skip
     jmp vm_loop
 
@@ -86,6 +178,9 @@ vm_loop:
 %include "vm/math.asm"
 %include "vm/stack.asm"
 %include "vm/io.asm"
+%include "vm/control.asm"
+%include "vm/memory.asm"
+%include "vm/bitwise.asm"
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; VM END HANDLERS

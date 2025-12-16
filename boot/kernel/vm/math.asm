@@ -67,3 +67,120 @@ vm_mod_zero:
 vm_op_neg:
     neg dword [ebp]
     jmp vm_loop
+
+; ════════════════════════════════════════════════════════════════════════════
+; LOGICAL OPERATIONS
+; ════════════════════════════════════════════════════════════════════════════
+
+vm_op_and:
+    ; Logical AND: (a b -- a&&b)
+    mov eax, [ebp]
+    add ebp, 4
+    test eax, eax
+    jz .and_false
+    test dword [ebp], 0xFFFFFFFF
+    jz .and_false
+    mov dword [ebp], 1
+    jmp vm_loop
+.and_false:
+    mov dword [ebp], 0
+    jmp vm_loop
+
+vm_op_or:
+    ; Logical OR: (a b -- a||b)
+    mov eax, [ebp]
+    add ebp, 4
+    test eax, eax
+    jnz .or_true
+    test dword [ebp], 0xFFFFFFFF
+    jnz .or_true
+    mov dword [ebp], 0
+    jmp vm_loop
+.or_true:
+    mov dword [ebp], 1
+    jmp vm_loop
+
+vm_op_xor:
+    ; Logical XOR: (a b -- a^b)
+    mov eax, [ebp]
+    add ebp, 4
+    test eax, eax
+    setnz al
+    test dword [ebp], 0xFFFFFFFF
+    setnz cl
+    xor al, cl
+    movzx eax, al
+    mov [ebp], eax
+    jmp vm_loop
+
+vm_op_not:
+    ; Logical NOT: (a -- !a)
+    test dword [ebp], 0xFFFFFFFF
+    setz al
+    movzx eax, al
+    mov [ebp], eax
+    jmp vm_loop
+
+; ════════════════════════════════════════════════════════════════════════════
+; COMPARISON OPERATIONS
+; ════════════════════════════════════════════════════════════════════════════
+
+vm_op_eq:
+    ; Equal: (a b -- a==b)
+    mov eax, [ebp]
+    add ebp, 4
+    cmp [ebp], eax
+    sete al
+    movzx eax, al
+    mov [ebp], eax
+    jmp vm_loop
+
+vm_op_ne:
+    ; Not equal: (a b -- a!=b)
+    mov eax, [ebp]
+    add ebp, 4
+    cmp [ebp], eax
+    setne al
+    movzx eax, al
+    mov [ebp], eax
+    jmp vm_loop
+
+vm_op_lt:
+    ; Less than: (a b -- a<b)
+    mov eax, [ebp]
+    add ebp, 4
+    cmp [ebp], eax
+    setl al
+    movzx eax, al
+    mov [ebp], eax
+    jmp vm_loop
+
+vm_op_gt:
+    ; Greater than: (a b -- a>b)
+    mov eax, [ebp]
+    add ebp, 4
+    cmp [ebp], eax
+    setg al
+    movzx eax, al
+    mov [ebp], eax
+    jmp vm_loop
+
+vm_op_le:
+    ; Less or equal: (a b -- a<=b)
+    mov eax, [ebp]
+    add ebp, 4
+    cmp [ebp], eax
+    setle al
+    movzx eax, al
+    mov [ebp], eax
+    jmp vm_loop
+
+vm_op_ge:
+    ; Greater or equal: (a b -- a>=b)
+    mov eax, [ebp]
+    add ebp, 4
+    cmp [ebp], eax
+    setge al
+    movzx eax, al
+    mov [ebp], eax
+    jmp vm_loop
