@@ -102,14 +102,14 @@ null_idt:
     dd 0
 
 ; ════════════════════════════════════════════════════════════════════════════
-; SECTION 5: VARIABLES À ADRESSES FIXES (0x1F000)
+; SECTION 5: VARIABLES À ADRESSES FIXES (0x7F000)
 ; Ces variables ne bougent JAMAIS
 ; ════════════════════════════════════════════════════════════════════════════
 
-; Pad jusqu'à 0xF000 (offset dans le kernel)
-times 0xF000 - ($ - $$) db 0
+; Pad jusqu'à 0x7F000 (offset dans le kernel) - leaves 508KB for code/data
+times 0x7F000 - ($ - $$) db 0
 
-; Variables à adresse fixe 0x1F000
+; Variables à adresse fixe 0x8F000
 cursor_offset:      dd 4
 cmd_length:         dd 0
 cmd_buffer:         times 64 db 0

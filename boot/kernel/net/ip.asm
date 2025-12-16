@@ -390,12 +390,10 @@ icmp_handle_packet:
     jmp icmp_handle_packet_impl     ; Implemented in icmp.asm
 
 udp_handle_packet:
-    ; Will be implemented in udp.asm
-    ret
+    jmp udp_handle_packet_impl      ; Implemented in udp.asm
 
 tcp_handle_packet:
-    ; Will be implemented in tcp.asm
-    ret
+    jmp tcp_handle_packet_impl      ; Implemented in tcp.asm
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; IP DATA

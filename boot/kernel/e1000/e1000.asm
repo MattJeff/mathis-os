@@ -17,6 +17,8 @@
 %include "net/arp.asm"
 %include "net/ip.asm"
 %include "net/icmp.asm"
+%include "net/udp.asm"
+%include "net/tcp.asm"
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; HIGH-LEVEL API
