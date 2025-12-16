@@ -7,10 +7,13 @@ FS_BASE     equ 0x30000
 FS_DIR      equ 0x30200
 FS_DATA     equ 0x30A00
 
+; Include ATA driver for disk persistence
+%include "ata.asm"
+
 fs_command:
     push eax
     push esi
-    
+
     ; Check subcommand at cmd_buffer+3
     cmp dword [cmd_buffer+3], 'init'
     je .fs_init
@@ -20,6 +23,10 @@ fs_command:
     je .fs_write
     cmp dword [cmd_buffer+3], 'read'
     je .fs_read
+    cmp dword [cmd_buffer+3], 'save'
+    je .fs_save
+    cmp dword [cmd_buffer+3], 'load'
+    je .fs_load
     jmp .fs_help
 
 .fs_init:
@@ -66,6 +73,44 @@ fs_command:
     call vga_print_line
     jmp .done
 
+.fs_save:
+    call vga_newline
+    mov esi, msg_fs_saving
+    mov ah, 0x0E
+    call vga_print_line
+    call fs_save_to_disk
+    jc .fs_save_error
+    call vga_newline
+    mov esi, msg_fs_saved
+    mov ah, 0x0A
+    call vga_print_line
+    jmp .done
+.fs_save_error:
+    call vga_newline
+    mov esi, msg_fs_error
+    mov ah, 0x0C
+    call vga_print_line
+    jmp .done
+
+.fs_load:
+    call vga_newline
+    mov esi, msg_fs_loading
+    mov ah, 0x0E
+    call vga_print_line
+    call fs_load_from_disk
+    jc .fs_load_new
+    call vga_newline
+    mov esi, msg_fs_loaded
+    mov ah, 0x0A
+    call vga_print_line
+    jmp .done
+.fs_load_new:
+    call vga_newline
+    mov esi, msg_fs_new
+    mov ah, 0x0E
+    call vga_print_line
+    jmp .done
+
 .fs_help:
     call vga_newline
     mov esi, msg_fs_help
@@ -77,6 +122,16 @@ fs_command:
     pop esi
     pop eax
     ret
+
+; ════════════════════════════════════════════════════════════════════════════
+; FS Messages for persistence
+; ════════════════════════════════════════════════════════════════════════════
+msg_fs_saving:  db "Saving to disk...", 0
+msg_fs_saved:   db "Filesystem saved to disk!", 0
+msg_fs_loading: db "Loading from disk...", 0
+msg_fs_loaded:  db "Filesystem loaded from disk!", 0
+msg_fs_new:     db "No filesystem on disk, created new.", 0
+msg_fs_error:   db "Disk error!", 0
 
 fs_initialize:
     push eax

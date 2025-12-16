@@ -21,7 +21,7 @@ msg_jarvis:     db "JARVIS> Ready. How can I help?", 0
 msg_go64:       db "Entering 64-bit Long Mode...", 0
 msg_reboot:     db "Rebooting...", 0
 
-msg_fs_help:    db "fs: init, list, write, read", 0
+msg_fs_help:    db "fs: init, list, write, read, save, load", 0
 msg_fs_init:    db "Filesystem initialized (64KB RAM disk)", 0
 msg_fs_list:    db "Files: (use 'fs write' to create)", 0
 msg_fs_write:   db "Edit mode - Type code, ESC to save:", 0
