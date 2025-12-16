@@ -1,12 +1,12 @@
 ; ═══════════════════════════════════════════════════════════════════════════
 ; MATHIS OS STAGE2 - VESA 640x480 Edition
-; Loads 256KB kernel, sets VESA mode, enters protected mode
+; Loads 512KB kernel, sets VESA mode, enters protected mode
 ; ═══════════════════════════════════════════════════════════════════════════
 
 [BITS 16]
 [ORG 0x7E00]
 
-KERNEL_SECTORS  equ 512         ; 256KB = 512 sectors
+KERNEL_SECTORS  equ 1024        ; 512KB = 1024 sectors
 KERNEL_LBA      equ 9           ; Kernel starts at LBA 9
 
 start:
@@ -16,10 +16,10 @@ start:
     ; Save boot drive
     mov [boot_drive], dl
 
-    ; Load kernel in 8 chunks of 64 sectors (32KB each)
+    ; Load kernel in 16 chunks of 64 sectors (32KB each)
     mov dword [current_lba], KERNEL_LBA
     mov word [current_seg], 0x1000   ; Load at 0x10000
-    mov cx, 8                         ; 8 chunks
+    mov cx, 16                        ; 16 chunks = 512KB
 
 .load_loop:
     push cx

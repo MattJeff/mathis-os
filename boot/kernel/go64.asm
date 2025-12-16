@@ -146,6 +146,9 @@ long_mode_entry:
     ; Initialize scheduler (cooperative mode - processes tracked but not preempted)
     call scheduler_init
 
+    ; Initialize network (E1000) - TODO: debug PCI scan
+    ; call net_init
+
     ; Create demo processes (entries in table for ps command)
     ; These run in cooperative mode - main loop is the "idle" process
     mov rdi, demo_process_1
@@ -2749,6 +2752,11 @@ user_stack_top:
 ; INCLUDE SCHEDULER MODULE
 ; ════════════════════════════════════════════════════════════════════════════
 %include "scheduler.asm"
+
+; ════════════════════════════════════════════════════════════════════════════
+; INCLUDE E1000 NETWORK DRIVER
+; ════════════════════════════════════════════════════════════════════════════
+%include "e1000/e1000.asm"
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; DATA SECTION

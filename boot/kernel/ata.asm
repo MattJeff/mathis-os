@@ -31,8 +31,8 @@ ATA_SR_DRDY     equ 0x40
 ATA_SR_DRQ      equ 0x08
 ATA_SR_ERR      equ 0x01
 
-; Filesystem starts at LBA 521
-FS_START_LBA    equ 521
+; Filesystem starts at LBA 1033 (after 512KB kernel)
+FS_START_LBA    equ 1033
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; ATA_WAIT_BSY - Wait for drive to not be busy (with timeout)

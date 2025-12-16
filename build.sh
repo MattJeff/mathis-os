@@ -18,15 +18,15 @@ echo "[2/5] Building stage2..."
 nasm -f bin stage2.asm -o stage2.bin
 
 # Build kernel (modular)
-echo "[3/5] Building 256KB kernel..."
+echo "[3/5] Building 512KB kernel..."
 cd kernel
 nasm -f bin core.asm -o ../kernel.bin
 cd ..
 
-# Check kernel size (256KB)
+# Check kernel size (512KB)
 kernel_size=$(wc -c < kernel.bin)
-if [ $kernel_size -ne 262144 ]; then
-    echo "Error: kernel.bin must be exactly 262144 bytes (256KB), but is $kernel_size bytes"
+if [ $kernel_size -ne 524288 ]; then
+    echo "Error: kernel.bin must be exactly 524288 bytes (512KB), but is $kernel_size bytes"
     exit 1
 fi
 
@@ -45,7 +45,7 @@ dd if=boot.bin of=mathis.img bs=512 seek=0 conv=notrunc 2>/dev/null
 # Write stage2 at LBA 1-8
 dd if=stage2.bin of=mathis.img bs=512 seek=1 conv=notrunc 2>/dev/null
 
-# Write kernel at LBA 9+ (512 sectors = 256KB)
+# Write kernel at LBA 9+ (1024 sectors = 512KB)
 dd if=kernel.bin of=mathis.img bs=512 seek=9 conv=notrunc 2>/dev/null
 
 # Show sizes
@@ -56,9 +56,9 @@ echo "════════════════════════�
 ls -la boot.bin stage2.bin kernel.bin mathis.img
 echo ""
 echo "Disk layout:"
-echo "  LBA 0:     Boot sector (512B)"
-echo "  LBA 1-8:   Stage2 (4KB)"
-echo "  LBA 9-520: Kernel (256KB)"
-echo "  LBA 521+:  Filesystem (available)"
+echo "  LBA 0:      Boot sector (512B)"
+echo "  LBA 1-8:    Stage2 (4KB)"
+echo "  LBA 9-1032: Kernel (512KB)"
+echo "  LBA 1033+:  Filesystem (available)"
 echo ""
 echo "Run: qemu-system-x86_64 -hda boot/mathis.img -m 128M"
