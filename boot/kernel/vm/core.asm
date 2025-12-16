@@ -155,6 +155,100 @@ vm_loop:
     cmp al, 0x75
     je vm_op_bnot
 
+    ; Float arithmetic (0x80-0x8F)
+    cmp al, 0x80
+    je vm_op_fadd
+    cmp al, 0x81
+    je vm_op_fsub
+    cmp al, 0x82
+    je vm_op_fmul
+    cmp al, 0x83
+    je vm_op_fdiv
+    cmp al, 0x84
+    je vm_op_fmod
+    cmp al, 0x85
+    je vm_op_fneg
+    cmp al, 0x86
+    je vm_op_fabs
+    cmp al, 0x87
+    je vm_op_fsqrt
+
+    ; Float trig (0x88-0x8F)
+    cmp al, 0x88
+    je vm_op_fsin
+    cmp al, 0x89
+    je vm_op_fcos
+    cmp al, 0x8A
+    je vm_op_ftan
+    cmp al, 0x8B
+    je vm_op_fatan
+    cmp al, 0x8C
+    je vm_op_fatan2
+    cmp al, 0x8D
+    je vm_op_fsincos
+
+    ; Float advanced (0x90-0x97)
+    cmp al, 0x90
+    je vm_op_fpow
+    cmp al, 0x91
+    je vm_op_flog
+    cmp al, 0x92
+    je vm_op_flog10
+    cmp al, 0x93
+    je vm_op_fln
+    cmp al, 0x94
+    je vm_op_fexp
+
+    ; Float conversion (0x98-0x9B)
+    cmp al, 0x98
+    je vm_op_itof
+    cmp al, 0x99
+    je vm_op_ftoi
+    cmp al, 0x9A
+    je vm_op_ftoi_round
+
+    ; Float comparison (0x9C-0x9F)
+    cmp al, 0x9C
+    je vm_op_fcmp
+    cmp al, 0x9D
+    je vm_op_flt
+    cmp al, 0x9E
+    je vm_op_fgt
+    cmp al, 0x9F
+    je vm_op_feq
+
+    ; Float constants (0xA0-0xA7)
+    cmp al, 0xA0
+    je vm_op_fconst
+    cmp al, 0xA1
+    je vm_op_fconst_pi
+    cmp al, 0xA2
+    je vm_op_fconst_e
+    cmp al, 0xA3
+    je vm_op_fconst_0
+    cmp al, 0xA4
+    je vm_op_fconst_1
+
+    ; Float stack (0xA8-0xAB)
+    cmp al, 0xA8
+    je vm_op_fdup
+    cmp al, 0xA9
+    je vm_op_fdrop
+    cmp al, 0xAA
+    je vm_op_fswap
+    cmp al, 0xAB
+    je vm_op_fover
+
+    ; Float special (0xAC-0xAF)
+    cmp al, 0xAC
+    je vm_op_fmin
+    cmp al, 0xAD
+    je vm_op_fmax
+    cmp al, 0xAE
+    je vm_op_fclamp
+    cmp al, 0xAF
+    je vm_op_flerp
+
     ; I/O (0xC0-0xCF)
     cmp al, 0xC0
     je vm_op_print_char
@@ -181,6 +275,7 @@ vm_loop:
 %include "vm/control.asm"
 %include "vm/memory.asm"
 %include "vm/bitwise.asm"
+%include "vm/float.asm"
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; VM END HANDLERS
