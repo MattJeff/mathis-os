@@ -1862,95 +1862,11 @@ timer_isr64:
     iretq
 
 ; ════════════════════════════════════════════════════════════════════════════
-; SYSCALL ISR (INT 0x80) - System call interface for user-space
-; ════════════════════════════════════════════════════════════════════════════
-; Calling convention:
-;   RAX = syscall number
-;   RDI = arg1, RSI = arg2, RDX = arg3, R10 = arg4, R8 = arg5, R9 = arg6
-;   Return value in RAX
-;
-; Syscalls:
-;   0 = sys_exit (exit process)
-;   1 = sys_write (write to screen) - RDI=x, RSI=y, RDX=char, R10=color
-;   2 = sys_getpid (get process ID)
-;   3 = sys_yield (yield CPU to scheduler)
+; SYSCALL ISR (INT 0x80) - Redirects to full syscall handler
+; See syscalls.asm for complete syscall table (48 syscalls)
 ; ════════════════════════════════════════════════════════════════════════════
 syscall_isr64:
-    push rbx
-    push rcx
-    push rdx
-    push rsi
-    push rdi
-    push r8
-    push r9
-    push r10
-    push r11
-
-    ; Dispatch based on syscall number in RAX
-    cmp rax, 0
-    je .sys_exit
-    cmp rax, 1
-    je .sys_write
-    cmp rax, 2
-    je .sys_getpid
-    cmp rax, 3
-    je .sys_yield
-
-    ; Unknown syscall - return -1
-    mov rax, -1
-    jmp .syscall_done
-
-.sys_exit:
-    ; Exit current process
-    ; For now, just halt (proper implementation would kill process)
-    mov rax, 0
-    jmp .syscall_done
-
-.sys_write:
-    ; Write pixel to screen
-    ; RDI = x, RSI = y, RDX = (unused), R10 = color
-    push rdi
-    push rsi
-    mov eax, esi                    ; y
-    imul eax, 320                   ; y * 320
-    add eax, edi                    ; + x
-    mov rdi, GFX_FB                 ; VGA framebuffer at 0xA0000
-    add rdi, rax
-    mov al, r10b                    ; color
-    mov [rdi], al
-    pop rsi
-    pop rdi
-    mov rax, 0                      ; Success
-    jmp .syscall_done
-
-.sys_getpid:
-    ; Return current process ID
-    mov rax, [current_process]
-    test rax, rax
-    jz .no_process
-    mov eax, [rax + PCB_PID]
-    jmp .syscall_done
-.no_process:
-    mov rax, 0
-    jmp .syscall_done
-
-.sys_yield:
-    ; Yield CPU (trigger scheduler)
-    ; Just return for now, timer will handle scheduling
-    mov rax, 0
-    jmp .syscall_done
-
-.syscall_done:
-    pop r11
-    pop r10
-    pop r9
-    pop r8
-    pop rdi
-    pop rsi
-    pop rdx
-    pop rcx
-    pop rbx
-    iretq
+    jmp syscall_handler         ; Jump to full syscall dispatcher
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; KEYBOARD ISR - Full keyboard support with shift, arrows
@@ -2721,11 +2637,12 @@ switch_to_ring3:
 ; ════════════════════════════════════════════════════════════════════════════
 ; USER-MODE DEMO PROCESS
 ; This code runs in Ring 3! It can only use syscalls to interact with kernel.
+; New syscall numbers: see syscalls.asm
 ; ════════════════════════════════════════════════════════════════════════════
 user_process_demo:
     ; Running in Ring 3 now!
     ; Get our PID via syscall
-    mov rax, 2                      ; sys_getpid
+    mov rax, SYS_GETPID             ; syscall 11
     int 0x80                        ; Returns PID in RAX
 
     ; Draw a pixel pattern using syscalls to prove we're in user mode
@@ -2734,12 +2651,11 @@ user_process_demo:
     mov r14, 0                      ; color counter
 
 .user_loop:
-    ; sys_write: draw pixel at (x, y) with color
-    mov rax, 1                      ; sys_write
+    ; sys_putpixel: draw pixel at (x, y) with color
+    mov rax, SYS_PUTPIXEL           ; syscall 40
     mov rdi, r12                    ; x
     mov rsi, r13                    ; y
-    mov rdx, r14                    ; char (unused for pixel)
-    mov r10, r14                    ; color
+    mov rdx, r14                    ; color
     int 0x80
 
     ; Move to next position
@@ -2751,15 +2667,13 @@ user_process_demo:
 .no_wrap:
 
     ; Yield to let other processes run
-    mov rax, 3                      ; sys_yield
+    mov rax, SYS_YIELD              ; syscall 18
     int 0x80
 
-    ; Small delay
-    mov rcx, 10000
-.delay:
-    nop
-    dec rcx
-    jnz .delay
+    ; Small delay using sleep syscall (10ms)
+    mov rax, SYS_SLEEP              ; syscall 17
+    mov rdi, 10                     ; 10 milliseconds
+    int 0x80
 
     jmp .user_loop
 
@@ -2778,6 +2692,11 @@ user_stack_top:
 ; INCLUDE E1000 NETWORK DRIVER
 ; ════════════════════════════════════════════════════════════════════════════
 %include "e1000/e1000.asm"
+
+; ════════════════════════════════════════════════════════════════════════════
+; INCLUDE SYSCALLS MODULE (48 system calls)
+; ════════════════════════════════════════════════════════════════════════════
+%include "syscalls.asm"
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; DATA SECTION
