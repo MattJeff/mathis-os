@@ -167,8 +167,11 @@ long_mode_entry:
     ; Initialize scheduler (cooperative mode - processes tracked but not preempted)
     call scheduler_init
 
-    ; Initialize network (E1000) - TEST: minimal init (just ret)
+    ; Initialize network (E1000)
     call net_init
+
+    ; Initialize USB (UHCI controller)
+    call usb_init
 
     ; Create demo processes (entries in table for ps command)
     ; These run in cooperative mode - main loop is the "idle" process
@@ -2697,6 +2700,11 @@ user_stack_top:
 ; INCLUDE SYSCALLS MODULE (48 system calls)
 ; ════════════════════════════════════════════════════════════════════════════
 %include "syscalls.asm"
+
+; ════════════════════════════════════════════════════════════════════════════
+; INCLUDE USB UHCI DRIVER
+; ════════════════════════════════════════════════════════════════════════════
+%include "usb/uhci.asm"
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; DATA SECTION
