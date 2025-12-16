@@ -9,6 +9,12 @@
 KERNEL_SECTORS  equ 1024        ; 512KB = 1024 sectors
 KERNEL_LBA      equ 9           ; Kernel starts at LBA 9
 
+; VESA modes (8-bit 256 colors)
+; 0x101 = 640x480x256
+; 0x103 = 800x600x256
+; 0x105 = 1024x768x256
+VESA_MODE       equ 0x105           ; 1024x768 - max resolution!
+
 start:
     mov si, msg_loading
     call print_string
@@ -55,7 +61,51 @@ start:
     mov si, msg_ok
     call print_string
 
-    ; === Use VGA 320x200 mode (stable) ===
+    ; === Try VESA 640x480x256 ===
+    mov si, msg_vesa
+    call print_string
+
+    ; Get VESA mode info
+    mov ax, 0x4F01              ; Get mode info
+    mov cx, VESA_MODE           ; Mode 0x101 = 640x480x256
+    mov di, mode_info           ; Buffer for mode info
+    int 0x10
+    cmp ax, 0x004F              ; Check success
+    jne .vesa_fail
+
+    ; Check if mode supports LFB (bit 7 of mode attributes)
+    mov ax, [mode_info]         ; Mode attributes at offset 0
+    test ax, 0x80               ; LFB available?
+    jz .vesa_fail
+
+    ; Set VESA mode with LFB
+    mov ax, 0x4F02              ; Set VESA mode
+    mov bx, VESA_MODE | 0x4000  ; Mode + LFB bit
+    int 0x10
+    cmp ax, 0x004F
+    jne .vesa_fail
+
+    ; Success! Get LFB address and dimensions
+    mov eax, [mode_info + 40]   ; PhysBasePtr at offset 40
+    mov [framebuffer_addr], eax
+
+    mov ax, [mode_info + 18]    ; XResolution at offset 18
+    mov [screen_width], ax
+
+    mov ax, [mode_info + 20]    ; YResolution at offset 20
+    mov [screen_height], ax
+
+    mov ax, [mode_info + 16]    ; BytesPerScanLine at offset 16
+    mov [screen_pitch], ax
+
+    mov byte [vesa_mode], 1
+
+    mov si, msg_vesa_ok
+    call print_string
+    jmp .video_done
+
+.vesa_fail:
+    ; Fallback to VGA 320x200
     mov si, msg_vga
     call print_string
     mov ax, 0x0013
@@ -63,7 +113,10 @@ start:
     mov dword [framebuffer_addr], 0xA0000
     mov word [screen_width], 320
     mov word [screen_height], 200
+    mov word [screen_pitch], 320
     mov byte [vesa_mode], 0
+
+.video_done:
     ; Enable A20
     in al, 0x92
     or al, 2
@@ -103,6 +156,7 @@ current_seg:    dw 0
 framebuffer_addr: dd 0xA0000
 screen_width:   dw 320
 screen_height:  dw 200
+screen_pitch:   dw 320
 vesa_mode:      db 0
 
 ; DAP for LBA read
@@ -118,12 +172,12 @@ dap_lba_high:   dd 0
 msg_loading: db "MATHIS OS", 0
 msg_ok:      db " OK", 13, 10, 0
 msg_error:   db " ERR!", 0
-msg_vesa:    db "VESA 640x480...", 0
+msg_vesa:    db "VESA...", 0
+msg_vesa_ok: db "OK!", 13, 10, 0
 msg_vga:     db "VGA 320x200", 13, 10, 0
 
-; VESA info buffers
+; VESA info buffer (256 bytes for mode info)
 align 16
-vesa_info: times 512 db 0
 mode_info: times 256 db 0
 
 [BITS 32]
@@ -143,6 +197,8 @@ pm_entry:
     mov [0x508], eax              ; Screen height
     movzx eax, byte [vesa_mode]
     mov [0x50C], eax              ; VESA mode flag
+    movzx eax, word [screen_pitch]
+    mov [0x510], eax              ; Screen pitch (bytes per line)
 
     jmp 0x08:0x10000
 

@@ -11,12 +11,25 @@
 ; - PREEMPTIVE MULTITASKING with round-robin scheduler
 ; ════════════════════════════════════════════════════════════════════════════
 
-; Screen constants
+; Screen constants (compile-time defaults for backward compatibility)
+; Runtime code should use screen_width, screen_height, screen_fb variables
 GFX_FB      equ 0xA0000
-GFX_W       equ 320
-GFX_H       equ 200
-CENTER_X    equ 160
-CENTER_Y    equ 100
+GFX_W       equ 640             ; Max supported width (VESA 640x480)
+GFX_H       equ 480             ; Max supported height
+CENTER_X    equ 320             ; Will be recalculated at runtime
+CENTER_Y    equ 240
+
+; Old compatibility aliases
+GFX_FB_DEFAULT  equ 0xA0000
+GFX_W_DEFAULT   equ 640
+GFX_H_DEFAULT   equ 480
+
+; Memory locations where stage2 stores video info
+VIDEO_INFO_FB     equ 0x500    ; Framebuffer address (4 bytes)
+VIDEO_INFO_W      equ 0x504    ; Screen width (4 bytes)
+VIDEO_INFO_H      equ 0x508    ; Screen height (4 bytes)
+VIDEO_INFO_VESA   equ 0x50C    ; VESA mode flag (4 bytes)
+VIDEO_INFO_PITCH  equ 0x510    ; Screen pitch/bytes per line (4 bytes)
 
 ; GUI Constants
 TASKBAR_H   equ 14
@@ -84,12 +97,12 @@ do_go64:
     mov dword [0x3070], 0x01C00087  ; 28-30MB
     mov dword [0x3078], 0x01E00087  ; 30-32MB
 
-    ; PD3: Map PCI MMIO region 0xFE000000-0xFFFFFFFF (top 32MB)
-    ; PD index for 0xFE000000 = (0xFE000000 >> 21) & 0x1FF = 496
-    ; We need entries 496-511 (16 entries * 2MB = 32MB)
-    mov edi, 0x4000 + (496 * 8)     ; Start at PD entry 496
-    mov eax, 0xFE000087             ; Base address 0xFE000000 + P+W+U+PS
-    mov ecx, 16                     ; 16 entries
+    ; PD3: Map VESA LFB + PCI MMIO region 0xFD000000-0xFFFFFFFF (48MB)
+    ; PD index for 0xFD000000 = (0xFD000000 >> 21) & 0x1FF = 488
+    ; We need entries 488-511 (24 entries * 2MB = 48MB)
+    mov edi, 0x4000 + (488 * 8)     ; Start at PD entry 488
+    mov eax, 0xFD000087             ; Base address 0xFD000000 + P+W+U+PS
+    mov ecx, 24                     ; 24 entries for 48MB
 .map_mmio:
     mov [edi], eax
     mov dword [edi+4], 0            ; High 32 bits = 0
@@ -135,11 +148,31 @@ long_mode_entry:
     mov ss, ax
     mov rsp, 0x90000
 
+    ; Initialize screen from stage2 video info at 0x500
+    mov eax, [VIDEO_INFO_FB]
+    mov [screen_fb], eax
+    mov eax, [VIDEO_INFO_W]
+    mov [screen_width], eax
+    mov eax, [VIDEO_INFO_PITCH]
+    mov [screen_pitch], eax         ; Use actual pitch from VESA
+    mov eax, [VIDEO_INFO_H]
+    mov [screen_height], eax
+    ; Calculate center
+    mov eax, [screen_width]
+    shr eax, 1
+    mov [screen_centerx], eax
+    mov eax, [screen_height]
+    shr eax, 1
+    mov [screen_centery], eax
+    ; Center mouse at screen center
+    mov eax, [screen_centerx]
+    mov [mouse_x], ax
+    mov eax, [screen_centery]
+    mov [mouse_y], ax
+
     ; Initialize variables
     mov qword [tick_count], 0
-    mov byte [mode_flag], 2          ; Start in GUI mode
-    mov word [mouse_x], 160          ; Center mouse
-    mov word [mouse_y], 100
+    mov byte [mode_flag], 3          ; Start in 3D GUI mode
     mov byte [mouse_buttons], 0
     mov byte [mouse_cycle], 0
     mov byte [active_window], 0xFF   ; No window active
@@ -216,6 +249,8 @@ long_mode_entry:
 ; MAIN LOOP
 ; ════════════════════════════════════════════════════════════════════════════
 main_loop:
+    cmp byte [mode_flag], 3
+    je gui3d_mode
     cmp byte [mode_flag], 2
     je gui_mode
     cmp byte [mode_flag], 1
@@ -223,12 +258,27 @@ main_loop:
     jmp graphics_mode
 
 ; ════════════════════════════════════════════════════════════════════════════
+; 3D GUI MODE - Revolutionary 3D Navigation Interface
+; ════════════════════════════════════════════════════════════════════════════
+gui3d_mode:
+    ; Initialize 3D engine on first run
+    call ui3d_init
+    ; Enter 3D main loop
+    call ui3d_main
+    ; When ui3d_main returns, switch to normal GUI
+    mov byte [mode_flag], 2
+    jmp main_loop
+
+; ════════════════════════════════════════════════════════════════════════════
 ; GUI MODE - Desktop Environment
 ; ════════════════════════════════════════════════════════════════════════════
 gui_mode:
     ; === Draw Desktop Background ===
-    mov rdi, GFX_FB
-    mov rcx, GFX_W * (GFX_H - TASKBAR_H)
+    mov rdi, [screen_fb]
+    mov eax, [screen_height]
+    sub eax, TASKBAR_H
+    imul eax, [screen_pitch]
+    mov ecx, eax
     mov al, COL_DESKTOP
     rep stosb
 
@@ -238,7 +288,12 @@ gui_mode:
     mov esi, 30
     mov edx, COL_CYAN
     call draw_icon_terminal
-    mov rdi, GFX_FB + GFX_W * 50 + 38
+    ; Text at (38, 50)
+    mov rdi, [screen_fb]
+    mov eax, [screen_pitch]
+    imul eax, 50
+    add rdi, rax
+    add rdi, 38
     mov rsi, str_terminal
     mov r8d, COL_TEXT_WHITE
     call draw_text
@@ -248,7 +303,12 @@ gui_mode:
     mov esi, 80
     mov edx, COL_YELLOW
     call draw_icon_folder
-    mov rdi, GFX_FB + GFX_W * 100 + 45
+    ; Text at (45, 100)
+    mov rdi, [screen_fb]
+    mov eax, [screen_pitch]
+    imul eax, 100
+    add rdi, rax
+    add rdi, 45
     mov rsi, str_files
     mov r8d, COL_TEXT_WHITE
     call draw_text
@@ -258,7 +318,12 @@ gui_mode:
     mov esi, 130
     mov edx, COL_GREEN
     call draw_icon_cube
-    mov rdi, GFX_FB + GFX_W * 150 + 38
+    ; Text at (38, 150)
+    mov rdi, [screen_fb]
+    mov eax, [screen_pitch]
+    imul eax, 150
+    add rdi, rax
+    add rdi, 38
     mov rsi, str_3ddemo
     mov r8d, COL_TEXT_WHITE
     call draw_text
@@ -267,35 +332,69 @@ gui_mode:
     call draw_windows
 
     ; === Draw Taskbar ===
-    mov rdi, GFX_FB + GFX_W * (GFX_H - TASKBAR_H)
-    mov rcx, GFX_W * TASKBAR_H
+    ; Taskbar at y = screen_height - TASKBAR_H
+    mov rdi, [screen_fb]
+    mov eax, [screen_height]
+    sub eax, TASKBAR_H
+    imul eax, [screen_pitch]
+    add rdi, rax
+    mov eax, [screen_pitch]
+    imul eax, TASKBAR_H
+    mov ecx, eax
     mov al, COL_TASKBAR
     rep stosb
 
     ; Taskbar top highlight
-    mov rdi, GFX_FB + GFX_W * (GFX_H - TASKBAR_H)
-    mov rcx, GFX_W
+    mov rdi, [screen_fb]
+    mov eax, [screen_height]
+    sub eax, TASKBAR_H
+    imul eax, [screen_pitch]
+    add rdi, rax
+    mov ecx, [screen_pitch]
     mov al, COL_TASKBAR_LT
     rep stosb
 
     ; Start button
     mov edi, 4
-    mov esi, GFX_H - TASKBAR_H + 2
+    mov esi, [screen_height]
+    sub esi, TASKBAR_H
+    add esi, 2
     mov edx, 40
     mov ecx, 10
     mov r8d, COL_TASKBAR_LT
     call fill_rect
-    mov rdi, GFX_FB + GFX_W * (GFX_H - TASKBAR_H + 4) + 8
+    ; "Start" text at (8, taskbar_y + 4)
+    mov rdi, [screen_fb]
+    mov eax, [screen_height]
+    sub eax, TASKBAR_H
+    add eax, 4
+    imul eax, [screen_pitch]
+    add rdi, rax
+    add rdi, 8
     mov rsi, str_start
     mov r8d, COL_TEXT
     call draw_text
 
-    ; Process indicator (show process count)
-    mov rdi, GFX_FB + GFX_W * (GFX_H - TASKBAR_H + 4) + 55
+    ; Process indicator at (55, taskbar_y + 4)
+    mov rdi, [screen_fb]
+    mov eax, [screen_height]
+    sub eax, TASKBAR_H
+    add eax, 4
+    imul eax, [screen_pitch]
+    add rdi, rax
+    add rdi, 55
     call draw_proc_indicator
 
-    ; Clock (right side)
-    mov rdi, GFX_FB + GFX_W * (GFX_H - TASKBAR_H + 4) + 275
+    ; Clock (right side) at (screen_width - 45, taskbar_y + 4)
+    mov rdi, [screen_fb]
+    mov eax, [screen_height]
+    sub eax, TASKBAR_H
+    add eax, 4
+    imul eax, [screen_pitch]
+    add rdi, rax
+    mov ebx, [screen_width]
+    sub ebx, 45
+    add rdi, rbx
     call draw_clock
 
     ; === Draw Start Menu if open ===
@@ -392,15 +491,14 @@ draw_windows:
 .draw_title:
     call fill_rect
 
-    ; Draw window title
-    mov rax, r13
-    add rax, 4
-    mov rcx, r14
-    add rcx, 3
-    imul rcx, GFX_W
-    add rax, rcx
-    add rax, GFX_FB
-    mov rdi, rax
+    ; Draw window title: (x+4, y+3)
+    mov rdi, [screen_fb]
+    mov eax, r14d
+    add eax, 3
+    imul eax, [screen_pitch]
+    add rdi, rax
+    add rdi, r13
+    add rdi, 4
     mov rsi, [rbx + 16]             ; title pointer
     mov r8d, COL_TEXT_WHITE
     call draw_text
@@ -416,16 +514,15 @@ draw_windows:
     mov ecx, 10
     mov r8d, COL_CLOSE_BTN
     call fill_rect
-    ; Draw X
-    mov rax, r13
-    add rax, r15
-    sub rax, 9
-    mov rcx, r14
-    add rcx, 4
-    imul rcx, GFX_W
-    add rax, rcx
-    add rax, GFX_FB
-    mov rdi, rax
+    ; Draw X at (x + width - 9, y + 4)
+    mov rdi, [screen_fb]
+    mov eax, r14d
+    add eax, 4
+    imul eax, [screen_pitch]
+    add rdi, rax
+    add rdi, r13
+    add rdi, r15
+    sub rdi, 9
     mov rsi, str_x
     mov r8d, COL_TEXT_WHITE
     call draw_text
@@ -476,50 +573,50 @@ draw_terminal_window:
     movzx r13, word [rbx + 2]       ; x
     movzx r14, word [rbx + 4]       ; y
 
-    ; Draw terminal header
-    mov rax, r14
-    add rax, TITLEBAR_H + 4
-    imul rax, GFX_W
-    add rax, r13
-    add rax, 6
-    add rax, GFX_FB
-    mov rdi, rax
+    ; Draw terminal header at (x+6, y+TITLEBAR_H+4)
+    mov rdi, [screen_fb]
+    mov eax, r14d
+    add eax, TITLEBAR_H + 4
+    imul eax, [screen_pitch]
+    add rdi, rax
+    add rdi, r13
+    add rdi, 6
     mov rsi, str_term_header
     mov r8d, COL_GREEN
     call draw_text
 
-    ; Draw help text
-    mov rax, r14
-    add rax, TITLEBAR_H + 14
-    imul rax, GFX_W
-    add rax, r13
-    add rax, 6
-    add rax, GFX_FB
-    mov rdi, rax
+    ; Draw help text at (x+6, y+TITLEBAR_H+14)
+    mov rdi, [screen_fb]
+    mov eax, r14d
+    add eax, TITLEBAR_H + 14
+    imul eax, [screen_pitch]
+    add rdi, rax
+    add rdi, r13
+    add rdi, 6
     mov rsi, str_term_help
     mov r8d, COL_TEXT
     call draw_text
 
-    ; Draw prompt
-    mov rax, r14
-    add rax, TITLEBAR_H + 34
-    imul rax, GFX_W
-    add rax, r13
-    add rax, 6
-    add rax, GFX_FB
-    mov rdi, rax
+    ; Draw prompt at (x+6, y+TITLEBAR_H+34)
+    mov rdi, [screen_fb]
+    mov eax, r14d
+    add eax, TITLEBAR_H + 34
+    imul eax, [screen_pitch]
+    add rdi, rax
+    add rdi, r13
+    add rdi, 6
     mov rsi, str_prompt
     mov r8d, COL_YELLOW
     call draw_text
 
-    ; Draw command buffer
-    mov rax, r14
-    add rax, TITLEBAR_H + 34
-    imul rax, GFX_W
-    add rax, r13
-    add rax, 70
-    add rax, GFX_FB
-    mov rdi, rax
+    ; Draw command buffer at (x+70, y+TITLEBAR_H+34)
+    mov rdi, [screen_fb]
+    mov eax, r14d
+    add eax, TITLEBAR_H + 34
+    imul eax, [screen_pitch]
+    add rdi, rax
+    add rdi, r13
+    add rdi, 70
     mov rsi, cmd_buf
     mov r8d, COL_TEXT
     call draw_text
@@ -528,29 +625,30 @@ draw_terminal_window:
     mov rax, [tick_count]
     test al, 0x10
     jz .no_cursor
-    movzx rcx, byte [cmd_pos]
-    shl rcx, 3                      ; * 8 pixels
-    mov rax, r14
-    add rax, TITLEBAR_H + 34
-    imul rax, GFX_W
-    add rax, r13
-    add rax, 70
-    add rax, rcx
-    add rax, GFX_FB
-    mov byte [rax], COL_TEXT
-    mov byte [rax + 1], COL_TEXT
+    movzx ecx, byte [cmd_pos]
+    shl ecx, 3                      ; * 8 pixels
+    mov rdi, [screen_fb]
+    mov eax, r14d
+    add eax, TITLEBAR_H + 34
+    imul eax, [screen_pitch]
+    add rdi, rax
+    add rdi, r13
+    add rdi, 70
+    add rdi, rcx
+    mov byte [rdi], COL_TEXT
+    mov byte [rdi + 1], COL_TEXT
 .no_cursor:
 
     ; Draw result if any
     cmp byte [show_result], 0
     je .no_result
-    mov rax, r14
-    add rax, TITLEBAR_H + 50
-    imul rax, GFX_W
-    add rax, r13
-    add rax, 6
-    add rax, GFX_FB
-    mov rdi, rax
+    mov rdi, [screen_fb]
+    mov eax, r14d
+    add eax, TITLEBAR_H + 50
+    imul eax, [screen_pitch]
+    add rdi, rax
+    add rdi, r13
+    add rdi, 6
     mov rsi, result_buf
     mov r8d, COL_CYAN
     call draw_text
@@ -572,36 +670,38 @@ draw_files_window:
     movzx r13, word [rbx + 2]       ; x
     movzx r14, word [rbx + 4]       ; y
 
-    ; Draw files list
-    mov rax, r14
-    add rax, TITLEBAR_H + 6
-    imul rax, GFX_W
-    add rax, r13
-    add rax, 10
-    add rax, GFX_FB
-    mov rdi, rax
+    ; Draw files list at (x+10, y+TITLEBAR_H+6)
+    mov rdi, [screen_fb]
+    mov eax, r14d
+    add eax, TITLEBAR_H + 6
+    imul eax, [screen_pitch]
+    add rdi, rax
+    add rdi, r13
+    add rdi, 10
     mov rsi, str_file1
     mov r8d, COL_YELLOW
     call draw_text
 
-    mov rax, r14
-    add rax, TITLEBAR_H + 18
-    imul rax, GFX_W
-    add rax, r13
-    add rax, 10
-    add rax, GFX_FB
-    mov rdi, rax
+    ; Second file at (x+10, y+TITLEBAR_H+18)
+    mov rdi, [screen_fb]
+    mov eax, r14d
+    add eax, TITLEBAR_H + 18
+    imul eax, [screen_pitch]
+    add rdi, rax
+    add rdi, r13
+    add rdi, 10
     mov rsi, str_file2
     mov r8d, COL_YELLOW
     call draw_text
 
-    mov rax, r14
-    add rax, TITLEBAR_H + 30
-    imul rax, GFX_W
-    add rax, r13
-    add rax, 10
-    add rax, GFX_FB
-    mov rdi, rax
+    ; Third file at (x+10, y+TITLEBAR_H+30)
+    mov rdi, [screen_fb]
+    mov eax, r14d
+    add eax, TITLEBAR_H + 30
+    imul eax, [screen_pitch]
+    add rdi, rax
+    add rdi, r13
+    add rdi, 10
     mov rsi, str_file3
     mov r8d, COL_CYAN
     call draw_text
@@ -735,9 +835,13 @@ draw_3d_window:
 ; DRAW START MENU
 ; ════════════════════════════════════════════════════════════════════════════
 draw_start_menu:
-    ; Menu background
+    push rbx
+
+    ; Menu background at y = screen_height - TASKBAR_H - 70
     mov edi, 4
-    mov esi, GFX_H - TASKBAR_H - 70
+    mov esi, [screen_height]
+    sub esi, TASKBAR_H
+    sub esi, 70
     mov edx, 80
     mov ecx, 68
     mov r8d, COL_TASKBAR_LT
@@ -745,38 +849,75 @@ draw_start_menu:
 
     ; Border
     mov edi, 4
-    mov esi, GFX_H - TASKBAR_H - 70
+    mov esi, [screen_height]
+    sub esi, TASKBAR_H
+    sub esi, 70
     mov edx, 80
     mov ecx, 68
     mov r8d, COL_BORDER
     call draw_rect
 
-    ; Menu items
-    mov rdi, GFX_FB + GFX_W * (GFX_H - TASKBAR_H - 64) + 12
+    ; Menu items - Terminal at (12, taskbar_y - 64)
+    mov rdi, [screen_fb]
+    mov eax, [screen_height]
+    sub eax, TASKBAR_H
+    sub eax, 64
+    imul eax, [screen_pitch]
+    add rdi, rax
+    add rdi, 12
     mov rsi, str_menu_term
     mov r8d, COL_TEXT
     call draw_text
 
-    mov rdi, GFX_FB + GFX_W * (GFX_H - TASKBAR_H - 50) + 12
+    ; Files at (12, taskbar_y - 50)
+    mov rdi, [screen_fb]
+    mov eax, [screen_height]
+    sub eax, TASKBAR_H
+    sub eax, 50
+    imul eax, [screen_pitch]
+    add rdi, rax
+    add rdi, 12
     mov rsi, str_menu_files
     mov r8d, COL_TEXT
     call draw_text
 
-    mov rdi, GFX_FB + GFX_W * (GFX_H - TASKBAR_H - 36) + 12
+    ; 3D at (12, taskbar_y - 36)
+    mov rdi, [screen_fb]
+    mov eax, [screen_height]
+    sub eax, TASKBAR_H
+    sub eax, 36
+    imul eax, [screen_pitch]
+    add rdi, rax
+    add rdi, 12
     mov rsi, str_menu_3d
     mov r8d, COL_TEXT
     call draw_text
 
-    mov rdi, GFX_FB + GFX_W * (GFX_H - TASKBAR_H - 22) + 12
+    ; About at (12, taskbar_y - 22)
+    mov rdi, [screen_fb]
+    mov eax, [screen_height]
+    sub eax, TASKBAR_H
+    sub eax, 22
+    imul eax, [screen_pitch]
+    add rdi, rax
+    add rdi, 12
     mov rsi, str_menu_about
     mov r8d, COL_TEXT
     call draw_text
 
-    mov rdi, GFX_FB + GFX_W * (GFX_H - TASKBAR_H - 8) + 12
+    ; Reboot at (12, taskbar_y - 8)
+    mov rdi, [screen_fb]
+    mov eax, [screen_height]
+    sub eax, TASKBAR_H
+    sub eax, 8
+    imul eax, [screen_pitch]
+    add rdi, rax
+    add rdi, 12
     mov rsi, str_menu_reboot
     mov r8d, COL_CLOSE_BTN
     call draw_text
 
+    pop rbx
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
@@ -899,45 +1040,50 @@ draw_mouse_cursor:
     push rbx
     push rcx
     push rdi
+    push r9
 
-    movzx rax, word [mouse_y]
-    imul rax, GFX_W
-    movzx rbx, word [mouse_x]
-    add rax, rbx
-    add rax, GFX_FB
-    mov rdi, rax
+    mov r9d, [screen_pitch]              ; Save pitch in r9
+
+    movzx eax, word [mouse_y]
+    imul eax, r9d
+    movzx ebx, word [mouse_x]
+    add eax, ebx
+    mov rdi, [screen_fb]
+    add rdi, rax
 
     ; Simple arrow cursor (8 pixels tall)
     mov byte [rdi], COL_CURSOR
-    add rdi, GFX_W
+    add rdi, r9
     mov byte [rdi], COL_CURSOR
     mov byte [rdi + 1], COL_CURSOR
-    add rdi, GFX_W
+    add rdi, r9
     mov byte [rdi], COL_CURSOR
     mov byte [rdi + 1], COL_BORDER
     mov byte [rdi + 2], COL_CURSOR
-    add rdi, GFX_W
+    add rdi, r9
     mov byte [rdi], COL_CURSOR
     mov byte [rdi + 1], COL_BORDER
     mov byte [rdi + 2], COL_BORDER
     mov byte [rdi + 3], COL_CURSOR
-    add rdi, GFX_W
+    add rdi, r9
     mov byte [rdi], COL_CURSOR
     mov byte [rdi + 1], COL_CURSOR
     mov byte [rdi + 2], COL_CURSOR
     mov byte [rdi + 3], COL_CURSOR
     mov byte [rdi + 4], COL_CURSOR
-    add rdi, GFX_W
+    add rdi, r9
     mov byte [rdi], COL_CURSOR
     mov byte [rdi + 1], COL_CURSOR
     mov byte [rdi + 2], COL_BORDER
     mov byte [rdi + 3], COL_CURSOR
-    add rdi, GFX_W
+    add rdi, r9
     mov byte [rdi], COL_CURSOR
-    add rdi, GFX_W + 2
+    add rdi, r9
+    add rdi, 2
     mov byte [rdi], COL_CURSOR
     mov byte [rdi + 1], COL_CURSOR
 
+    pop r9
     pop rdi
     pop rcx
     pop rbx
@@ -950,6 +1096,7 @@ draw_mouse_cursor:
 draw_icon_terminal:
     ; Terminal icon: rectangle with lines
     push rax
+    push rbx
     push rdi
 
     ; Background
@@ -969,21 +1116,25 @@ draw_icon_terminal:
     ; Lines inside (text simulation)
     mov rax, rsi
     add rax, 3
-    imul rax, GFX_W
-    add rax, rdi
-    add rax, 3
-    add rax, GFX_FB
+    imul eax, [screen_pitch]
+    add eax, edi
+    add eax, 3
+    mov rbx, [screen_fb]
+    add rax, rbx
     mov byte [rax], COL_TEXT_WHITE
     mov byte [rax + 1], COL_TEXT_WHITE
     mov byte [rax + 2], COL_TEXT_WHITE
     mov byte [rax + 3], COL_TEXT_WHITE
     mov byte [rax + 4], COL_TEXT_WHITE
-    add rax, GFX_W * 3
+    mov ebx, [screen_pitch]
+    imul ebx, 3
+    add rax, rbx
     mov byte [rax], COL_TEXT_WHITE
     mov byte [rax + 1], COL_TEXT_WHITE
     mov byte [rax + 2], COL_TEXT_WHITE
 
     pop rdi
+    pop rbx
     pop rax
     ret
 
@@ -1063,11 +1214,13 @@ draw_icon_cube:
 draw_line_h:
     ; Simple horizontal line edi=x, esi=y, edx=x2, r8d=color
     push rax
+    push rbx
     push rdi
     mov eax, esi
-    imul eax, GFX_W
+    imul eax, [screen_pitch]
     add eax, edi
-    add eax, GFX_FB
+    mov rbx, [screen_fb]
+    add rax, rbx
     mov rdi, rax
 .loop_h:
     mov byte [rdi], r8b
@@ -1076,6 +1229,7 @@ draw_line_h:
     cmp edi, edx
     jle .loop_h
     pop rdi
+    pop rbx
     pop rax
     ret
 
@@ -1088,25 +1242,29 @@ fill_rect:
     push rcx
     push rdi
     push rsi
+    push r9
 
+    ; Calculate starting offset: y * pitch + x + framebuffer
     mov eax, esi
-    imul eax, GFX_W
+    imul eax, [screen_pitch]
     add eax, edi
-    add eax, GFX_FB
-    mov rdi, rax
+    mov rdi, [screen_fb]
+    add rdi, rax
     mov ebx, edx                    ; width
+    mov r9d, [screen_pitch]         ; save pitch for row advance
 
 .fill_row:
     push rcx
     mov rcx, rbx
     mov al, r8b
     rep stosb
-    add rdi, GFX_W
-    sub rdi, rbx
+    add rdi, r9                     ; advance by pitch
+    sub rdi, rbx                    ; back to start of next row
     pop rcx
     dec ecx
     jnz .fill_row
 
+    pop r9
     pop rsi
     pop rdi
     pop rcx
@@ -1124,13 +1282,16 @@ draw_rect:
     push rdx
     push rdi
     push rsi
+    push r9
+
+    mov r9d, [screen_pitch]         ; Save pitch
 
     ; Top line
     mov eax, esi
-    imul eax, GFX_W
+    imul eax, r9d
     add eax, edi
-    add eax, GFX_FB
-    mov rbx, rax
+    mov rbx, [screen_fb]
+    add rbx, rax
     mov rdi, rbx
     push rcx
     mov rcx, rdx
@@ -1142,7 +1303,7 @@ draw_rect:
     push rcx
     dec ecx
     mov eax, ecx
-    imul eax, GFX_W
+    imul eax, r9d
     add rbx, rax
     mov rdi, rbx
     mov rcx, rdx
@@ -1159,11 +1320,12 @@ draw_rect:
     add rax, rdx
     dec rax
     mov byte [rax], r8b
-    add rbx, GFX_W
+    add rbx, r9                     ; Use pitch
     dec ecx
     jnz .vert_loop
     pop rcx
 
+    pop r9
     pop rsi
     pop rdi
     pop rdx
@@ -1177,19 +1339,31 @@ draw_rect:
 ; ════════════════════════════════════════════════════════════════════════════
 graphics_mode:
     ; Clear screen
-    mov rdi, GFX_FB
-    mov rcx, GFX_W * GFX_H / 8
+    mov rdi, [screen_fb]
+    mov eax, [screen_width]
+    imul eax, [screen_height]
+    shr eax, 3                      ; divide by 8 for qword
+    mov ecx, eax
     xor rax, rax
     rep stosq
 
-    ; [Previous 3D cube code here - abbreviated for space]
-    mov rdi, GFX_FB + 320 * 100 + 120
+    ; Draw 3D mode text at center of screen
+    mov rdi, [screen_fb]
+    mov eax, [screen_pitch]
+    imul eax, 100
+    add rdi, rax
+    add rdi, 120
     mov rsi, str_3d_mode
     mov r8d, COL_GREEN
     call draw_text
 
-    ; Draw help text
-    mov rdi, GFX_FB + 320 * 190 + 10
+    ; Draw help text near bottom
+    mov rdi, [screen_fb]
+    mov eax, [screen_height]
+    sub eax, 50
+    imul eax, [screen_pitch]
+    add rdi, rax
+    add rdi, 10
     mov rsi, str_help_gfx
     mov r8d, 7
     call draw_text
@@ -1206,18 +1380,30 @@ graphics_mode:
 ; ════════════════════════════════════════════════════════════════════════════
 shell_mode:
     ; Clear screen (dark blue)
-    mov rdi, GFX_FB
-    mov rcx, GFX_W * GFX_H
+    mov rdi, [screen_fb]
+    mov eax, [screen_width]
+    imul eax, [screen_height]
+    mov ecx, eax
     mov al, COL_DESKTOP
     rep stosb
 
-    ; Draw banner
-    mov rdi, GFX_FB + 320 * 10 + 10
+    ; Draw banner at (10, 10)
+    mov rdi, [screen_fb]
+    mov eax, [screen_pitch]
+    imul eax, 10
+    add rdi, rax
+    add rdi, 10
     mov rsi, str_banner
     mov r8d, COL_TEXT_WHITE
     call draw_text
 
-    mov rdi, GFX_FB + 320 * 180 + 10
+    ; Draw help at bottom
+    mov rdi, [screen_fb]
+    mov eax, [screen_height]
+    sub eax, 40
+    imul eax, [screen_pitch]
+    add rdi, rax
+    add rdi, 10
     mov rsi, str_help_shell
     mov r8d, 7
     call draw_text
@@ -1243,8 +1429,10 @@ draw_text:
     push r9
     push r10
     push r11
+    push r12
 
     mov r9, rdi                     ; r9 = current X position base
+    mov r12d, [screen_pitch]        ; r12 = pitch for row advance
 
 .text_loop:
     lodsb
@@ -1280,7 +1468,7 @@ draw_text:
     loop .draw_pixel
 
     inc r10                         ; Next font row
-    add r11, GFX_W                  ; Next screen row
+    add r11, r12                    ; Next screen row (use pitch)
     pop rcx
     loop .draw_row
 
@@ -1292,6 +1480,7 @@ draw_text:
     jmp .text_loop
 
 .text_done:
+    pop r12
     pop r11
     pop r10
     pop r9
@@ -1366,19 +1555,19 @@ draw_line:
     ; Bounds check
     cmp edi, 0
     jl .skip_pixel
-    cmp edi, GFX_W
+    cmp edi, [screen_width]
     jge .skip_pixel
     cmp esi, 0
     jl .skip_pixel
-    cmp esi, GFX_H
+    cmp esi, [screen_height]
     jge .skip_pixel
 
-    ; Plot pixel
+    ; Plot pixel: y * pitch + x + framebuffer
     mov eax, esi
-    imul eax, GFX_W
+    imul eax, [screen_pitch]
     add eax, edi
-    add eax, GFX_FB
-    mov byte [eax], r14b
+    mov rcx, [screen_fb]
+    mov byte [rcx + rax], r14b
 
 .skip_pixel:
     ; Check if done
@@ -1930,6 +2119,12 @@ keyboard_isr64:
     jmp .kb_done
 
 .key_press:
+    ; If in 3D mode (mode 3), store scancode for 3D engine
+    cmp byte [mode_flag], 3
+    jne .not_3d_mode
+    mov [key3d_scancode], bl        ; Store scancode for 3D input
+.not_3d_mode:
+
     ; Check for shift press
     cmp bl, 0x2A                    ; Left shift
     je .shift_press
@@ -1946,7 +2141,7 @@ keyboard_isr64:
     cmp bl, 0x0F
     jne .check_f9
     inc byte [mode_flag]
-    cmp byte [mode_flag], 3
+    cmp byte [mode_flag], 4         ; Now includes mode 3 (3D GUI)
     jl .kb_done
     mov byte [mode_flag], 0
     jmp .kb_done
@@ -2051,7 +2246,9 @@ keyboard_isr64:
     jmp .kb_done
 
 .arrow_down:
-    cmp word [mouse_y], GFX_H - 15
+    mov ax, word [screen_height]
+    sub ax, 15
+    cmp word [mouse_y], ax
     jg .kb_done
     add word [mouse_y], 5
     jmp .kb_done
@@ -2063,7 +2260,9 @@ keyboard_isr64:
     jmp .kb_done
 
 .arrow_right:
-    cmp word [mouse_x], GFX_W - 13
+    mov ax, word [screen_width]
+    sub ax, 13
+    cmp word [mouse_x], ax
     jg .kb_done
     add word [mouse_x], 5
     jmp .kb_done
@@ -2151,9 +2350,11 @@ mouse_isr64:
     jge .x_min_ok
     mov word [mouse_x], 0
 .x_min_ok:
-    cmp word [mouse_x], GFX_W - 8
+    mov ax, word [screen_width]
+    sub ax, 8
+    cmp word [mouse_x], ax
     jle .x_max_ok
-    mov word [mouse_x], GFX_W - 8
+    mov word [mouse_x], ax
 .x_max_ok:
 
     ; Update Y (inverted)
@@ -2166,9 +2367,11 @@ mouse_isr64:
     jge .y_min_ok
     mov word [mouse_y], 0
 .y_min_ok:
-    cmp word [mouse_y], GFX_H - 10
+    mov ax, word [screen_height]
+    sub ax, 10
+    cmp word [mouse_y], ax
     jle .y_max_ok
-    mov word [mouse_y], GFX_H - 10
+    mov word [mouse_y], ax
 .y_max_ok:
 
     ; Check for click (with debounce + cooldown)
@@ -2210,14 +2413,20 @@ handle_mouse_click:
     push rbx
     push rcx
     push rdx
+    push r8
+    push r9
 
     movzx eax, word [mouse_x]
     movzx ebx, word [mouse_y]
 
+    ; Calculate taskbar_y = screen_height - TASKBAR_H
+    mov r8d, [screen_height]
+    sub r8d, TASKBAR_H
+
     ; Check if clicking on Start button
     cmp eax, 44
     jg .not_start_btn
-    cmp ebx, GFX_H - TASKBAR_H
+    cmp ebx, r8d
     jl .not_start_btn
     xor byte [start_menu_open], 1
     jmp .click_done
@@ -2227,19 +2436,21 @@ handle_mouse_click:
     cmp byte [start_menu_open], 0
     je .not_menu
 
-    ; Menu bounds: x=4-84, y=(GFX_H-TASKBAR_H-70) to (GFX_H-TASKBAR_H)
+    ; Menu bounds: x=4-84, y=(taskbar_y-70) to (taskbar_y)
+    mov r9d, r8d
+    sub r9d, 70                      ; r9 = menu_top
     cmp eax, 4
     jl .close_menu
     cmp eax, 84
     jg .close_menu
-    cmp ebx, GFX_H - TASKBAR_H - 70
+    cmp ebx, r9d
     jl .close_menu
-    cmp ebx, GFX_H - TASKBAR_H
+    cmp ebx, r8d
     jg .close_menu
 
     ; Which menu item?
     mov ecx, ebx
-    sub ecx, GFX_H - TASKBAR_H - 70
+    sub ecx, r9d
 
     cmp ecx, 14
     jl .menu_terminal
@@ -2342,6 +2553,8 @@ handle_mouse_click:
     call check_window_clicks
 
 .click_done:
+    pop r9
+    pop r8
     pop rdx
     pop rcx
     pop rbx
@@ -2754,9 +2967,18 @@ user_stack_top:
 ; ════════════════════════════════════════════════════════════════════════════
 align 8
 
+; Screen variables (initialized from stage2 video info)
+screen_fb:      dq GFX_FB_DEFAULT   ; Framebuffer address
+screen_width:   dd GFX_W_DEFAULT    ; Screen width
+screen_height:  dd GFX_H_DEFAULT    ; Screen height
+screen_pitch:   dd GFX_W_DEFAULT    ; Bytes per line (= width for 8bpp)
+screen_centerx: dd 320              ; Center X
+screen_centery: dd 240              ; Center Y
+
 ; System variables
 tick_count:     dq 0
-mode_flag:      db 2                ; 0=3D, 1=shell, 2=GUI
+mode_flag:      db 2                ; 0=3D, 1=shell, 2=GUI, 3=3D GUI
+key3d_scancode: db 0                ; Last scancode for 3D mode
 active_window:  db 0xFF
 start_menu_open: db 0
 dragging:       db 0
@@ -3125,3 +3347,12 @@ tss64:
     dw 0                            ; Reserved
     dw 104                          ; IOPB offset (no IOPB)
 tss64_end:
+
+; ════════════════════════════════════════════════════════════════════════════
+; 3D ENGINE INCLUDES
+; ════════════════════════════════════════════════════════════════════════════
+%include "gfx3d/math3d.asm"
+%include "gfx3d/camera3d.asm"
+%include "gfx3d/render3d.asm"
+%include "gfx3d/world3d.asm"
+%include "gfx3d/ui3d.asm"
