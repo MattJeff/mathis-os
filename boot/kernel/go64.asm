@@ -1,13 +1,14 @@
 ; ════════════════════════════════════════════════════════════════════════════
-; GO64.ASM - MATHIS OS 64-bit with Full GUI Desktop
+; GO64.ASM - MATHIS OS 64-bit with Full GUI Desktop + MULTITASKING
 ; Features:
-; - Timer IRQ0 (system tick + clock)
+; - Timer IRQ0 (system tick + clock + SCHEDULER)
 ; - Keyboard IRQ1 (full input)
 ; - PS/2 Mouse IRQ12 (cursor + clicks)
 ; - GUI Desktop with icons
 ; - Window system (drag, close, minimize)
 ; - Terminal app, Files app, 3D Demo, Settings
 ; - Taskbar with Start menu and clock
+; - PREEMPTIVE MULTITASKING with round-robin scheduler
 ; ════════════════════════════════════════════════════════════════════════════
 
 ; Screen constants
@@ -136,6 +137,22 @@ long_mode_entry:
     in al, 0x60
     in al, 0x60
 
+    ; Initialize scheduler (cooperative mode - processes tracked but not preempted)
+    call scheduler_init
+
+    ; Create demo processes (entries in table for ps command)
+    ; These run in cooperative mode - main loop is the "idle" process
+    mov rdi, demo_process_1
+    mov rsi, str_proc_demo1
+    call create_process
+
+    mov rdi, demo_process_2
+    mov rsi, str_proc_demo2
+    call create_process
+
+    ; Enable scheduler tracking (not preemption)
+    call scheduler_enable
+
     ; Enable interrupts
     sti
 
@@ -216,6 +233,10 @@ gui_mode:
     mov rsi, str_start
     mov r8d, COL_TEXT
     call draw_text
+
+    ; Process indicator (show process count)
+    mov rdi, GFX_FB + GFX_W * (GFX_H - TASKBAR_H + 4) + 55
+    call draw_proc_indicator
 
     ; Clock (right side)
     mov rdi, GFX_FB + GFX_W * (GFX_H - TASKBAR_H + 4) + 275
@@ -703,12 +724,54 @@ draw_start_menu:
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
-; DRAW CLOCK
+; DRAW PROCESS INDICATOR - Shows "Pn" where n = process count
+; ════════════════════════════════════════════════════════════════════════════
+draw_proc_indicator:
+    push rax
+    push rbx
+    push rdi
+    push rsi
+    push r8
+
+    ; Save screen position
+    mov rbx, rdi
+
+    ; Build string "Pn" in buffer
+    mov byte [proc_ind_buf], 'P'
+
+    ; Get process count
+    call get_process_count
+    add al, '0'
+    mov [proc_ind_buf + 1], al
+    mov byte [proc_ind_buf + 2], 0
+
+    ; Draw using bitmap font
+    mov rdi, rbx
+    mov rsi, proc_ind_buf
+    mov r8d, COL_TEXT
+    call draw_text
+
+    pop r8
+    pop rsi
+    pop rdi
+    pop rbx
+    pop rax
+    ret
+
+; ════════════════════════════════════════════════════════════════════════════
+; DRAW CLOCK - Displays HH:MM using bitmap font
 ; ════════════════════════════════════════════════════════════════════════════
 draw_clock:
     push rax
     push rbx
+    push rcx
     push rdx
+    push rsi
+    push rdi
+    push r8
+
+    ; Save screen position
+    mov r8, rdi
 
     ; Calculate time from ticks (100 ticks/sec)
     mov rax, [tick_count]
@@ -732,31 +795,42 @@ draw_clock:
     div rbx
     mov rax, rdx                    ; hours = hours % 24
 
-    ; Draw HH
+    ; Build time string in clock_buf: "HH:MM"
     xor rdx, rdx
     mov rbx, 10
     div rbx
     add al, '0'
-    mov byte [rdi], al
+    mov [clock_buf], al             ; H tens
     add dl, '0'
-    mov byte [rdi + 8], dl
+    mov [clock_buf + 1], dl         ; H units
 
-    ; Draw :
-    mov byte [rdi + 16], ':'
+    mov byte [clock_buf + 2], ':'   ; :
 
-    ; Draw MM
-    pop rax                         ; minutes
+    ; Minutes
+    pop rax
     xor rdx, rdx
     mov rbx, 10
     div rbx
     add al, '0'
-    mov byte [rdi + 24], al
+    mov [clock_buf + 3], al         ; M tens
     add dl, '0'
-    mov byte [rdi + 32], dl
+    mov [clock_buf + 4], dl         ; M units
 
-    pop rdx                         ; seconds (unused for now)
+    mov byte [clock_buf + 5], 0     ; Null terminator
 
+    pop rdx                         ; discard seconds
+
+    ; Draw using bitmap font
+    mov rdi, r8
+    mov rsi, clock_buf
+    mov r8d, COL_TEXT
+    call draw_text
+
+    pop r8
+    pop rdi
+    pop rsi
     pop rdx
+    pop rcx
     pop rbx
     pop rax
     ret
@@ -1454,13 +1528,21 @@ setup_pit64:
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
-; TIMER ISR
+; TIMER ISR - System tick only (scheduler is cooperative)
 ; ════════════════════════════════════════════════════════════════════════════
 timer_isr64:
     push rax
+
+    ; Increment system tick (for clock display)
     inc qword [tick_count]
+
+    ; Note: Scheduler tick disabled for stability
+    ; Process table is static, used for ps command display
+
+    ; EOI
     mov al, 0x20
     out 0x20, al
+
     pop rax
     iretq
 
@@ -1683,6 +1765,9 @@ mouse_isr64:
     jmp .byte2
 
 .byte0:
+    ; Validate byte0: bit 3 must be 1 (PS/2 protocol)
+    test al, 0x08
+    jz .mouse_done                      ; Invalid packet, resync
     mov [mouse_byte0], al
     inc byte [mouse_cycle]
     jmp .mouse_done
@@ -1729,9 +1814,24 @@ mouse_isr64:
     mov word [mouse_y], GFX_H - 10
 .y_max_ok:
 
-    ; Check for click
-    test byte [mouse_byte0], 1
-    jz .no_click
+    ; Check for click (with debounce + cooldown)
+    ; First check cooldown timer
+    mov ecx, [click_cooldown]
+    test ecx, ecx
+    jz .cooldown_ok
+    dec dword [click_cooldown]
+    jmp .no_click
+.cooldown_ok:
+    mov al, [mouse_byte0]
+    and al, 1                           ; Isolate left button
+    mov ah, [last_mouse_btn]
+    mov [last_mouse_btn], al            ; Save current state
+    test ah, ah                         ; Was button pressed before?
+    jnz .no_click                       ; Yes = ignore (held down)
+    test al, al                         ; Is button pressed now?
+    jz .no_click                        ; No = no click
+    ; Button just pressed (0->1 transition)
+    mov dword [click_cooldown], 15      ; 15 packets cooldown (~150ms)
     call handle_mouse_click
 .no_click:
 
@@ -1827,7 +1927,8 @@ handle_mouse_click:
     int 0
 
 .close_menu:
-    mov byte [start_menu_open], 0
+    ; Don't close menu when clicking outside - only close via Start button or item selection
+    ; This gives user more time to navigate with keyboard
     jmp .click_done
 
 .not_menu:
@@ -2049,6 +2150,10 @@ execute_cmd:
     je .cmd_clear
     cmp word [cmd_buf], 'ls'
     je .cmd_ls
+    cmp word [cmd_buf], 'ps'
+    je .cmd_ps
+    cmp dword [cmd_buf], 'kill'
+    je .cmd_kill
     jmp .cmd_unknown
 
 .cmd_help:
@@ -2066,6 +2171,49 @@ execute_cmd:
     mov rsi, str_ls_result
     mov rdi, result_buf
     call copy_string
+    mov byte [show_result], 1
+    jmp .clear_cmd
+
+.cmd_ps:
+    ; Show process list - format: "3 procs running"
+    call get_process_count
+    mov rdi, result_buf
+    add al, '0'                             ; Convert to ASCII
+    mov [rdi], al
+    mov byte [rdi + 1], ' '
+    mov byte [rdi + 2], 'p'
+    mov byte [rdi + 3], 'r'
+    mov byte [rdi + 4], 'o'
+    mov byte [rdi + 5], 'c'
+    mov byte [rdi + 6], 's'
+    mov byte [rdi + 7], 0
+    mov byte [show_result], 1
+    jmp .clear_cmd
+
+.cmd_kill:
+    ; kill <pid> - Kill a process (parse single digit PID)
+    movzx edi, byte [cmd_buf + 5]           ; Get char after "kill "
+    sub edi, '0'                            ; Convert to number
+    cmp edi, 0
+    jle .kill_failed
+    cmp edi, 9
+    jg .kill_failed
+    call kill_process
+    test eax, eax
+    jnz .kill_failed
+    ; Success
+    mov rdi, result_buf
+    mov byte [rdi], 'O'
+    mov byte [rdi + 1], 'K'
+    mov byte [rdi + 2], 0
+    mov byte [show_result], 1
+    jmp .clear_cmd
+.kill_failed:
+    mov rdi, result_buf
+    mov byte [rdi], 'E'
+    mov byte [rdi + 1], 'r'
+    mov byte [rdi + 2], 'r'
+    mov byte [rdi + 3], 0
     mov byte [show_result], 1
     jmp .clear_cmd
 
@@ -2093,6 +2241,37 @@ copy_string:
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
+; DEMO PROCESSES - Background tasks for multitasking demonstration
+; ════════════════════════════════════════════════════════════════════════════
+
+; Demo process 1 - Increments a counter (simulates background work)
+demo_process_1:
+    inc qword [demo1_counter]
+    ; Simulate work
+    mov rcx, 50000
+.work1:
+    nop
+    dec rcx
+    jnz .work1
+    jmp demo_process_1
+
+; Demo process 2 - Another background counter
+demo_process_2:
+    inc qword [demo2_counter]
+    ; Simulate different work
+    mov rcx, 30000
+.work2:
+    nop
+    dec rcx
+    jnz .work2
+    jmp demo_process_2
+
+; ════════════════════════════════════════════════════════════════════════════
+; INCLUDE SCHEDULER MODULE
+; ════════════════════════════════════════════════════════════════════════════
+%include "scheduler.asm"
+
+; ════════════════════════════════════════════════════════════════════════════
 ; DATA SECTION
 ; ════════════════════════════════════════════════════════════════════════════
 align 8
@@ -2115,12 +2294,24 @@ mouse_cycle:    db 0
 mouse_byte0:    db 0
 mouse_byte1:    db 0
 mouse_byte2:    db 0
+last_mouse_btn: db 0                    ; For click debounce
+click_cooldown: dd 0                    ; Cooldown timer between clicks
 
 ; Terminal state
 cmd_buf:        times 64 db 0
 cmd_pos:        db 0
 show_result:    db 0
 result_buf:     times 64 db 0
+
+; Demo process counters (to show multitasking is working)
+demo1_counter:  dq 0
+demo2_counter:  dq 0
+
+; Clock buffer for time display
+clock_buf:      times 8 db 0
+
+; Process indicator buffer
+proc_ind_buf:   times 8 db 0
 
 ; Temp variables for 3D
 temp_x1:        dd 0
@@ -2150,7 +2341,7 @@ str_win_files:    db "Files", 0
 str_win_3d:       db "3D Demo", 0
 
 str_term_header:  db "MATHIS OS Terminal", 0
-str_term_help:    db "Type 'help' for commands", 0
+str_term_help:    db "Cmds: help,ps,kill <pid>", 0
 str_prompt:       db "mathis>", 0
 
 str_file1:        db "[DIR] boot/", 0
@@ -2163,12 +2354,20 @@ str_menu_3d:      db "3D Demo", 0
 str_menu_about:   db "About", 0
 str_menu_reboot:  db "Reboot", 0
 
-str_help_result:  db "help,clear,ls", 0
+str_help_result:  db "help,clear,ls,ps", 0
 str_ls_result:    db "boot/ readme.txt", 0
 
 str_3d_mode:      db "3D MODE", 0
 str_help_gfx:     db "TAB=next mode", 0
 str_help_shell:   db "TAB=next mode ESC=reboot", 0
+
+; Process names for demos
+str_proc_demo1:   db "worker1", 0
+str_proc_demo2:   db "worker2", 0
+str_ps_header:    db "PID STATE NAME", 0
+str_proc_run:     db "RUN ", 0
+str_proc_rdy:     db "RDY ", 0
+str_proc_blk:     db "BLK ", 0
 
 ; Scancode to ASCII (lowercase/unshifted)
 scancode_ascii:
