@@ -1535,8 +1535,8 @@ setup_tss64:
     shr rax, 32
     mov dword [rbx + 8], eax        ; Base 63:32
 
-    ; Reload GDT (since we modified it)
-    lgdt [gdt64_ptr]
+    ; Note: Don't reload GDT here - gdt64_ptr is 32-bit format
+    ; The GDT is already loaded and we just patched it in memory
 
     ; Load TSS
     mov ax, TSS_SEL
