@@ -193,6 +193,9 @@ long_mode_entry:
     ; Initialize heap allocator
     call heap_init
 
+    ; Initialize FAT32 filesystem
+    call fat32_init
+
     ; Create demo processes (entries in table for ps command)
     ; These run in cooperative mode - main loop is the "idle" process
     mov rdi, demo_process_1
@@ -2735,6 +2738,11 @@ user_stack_top:
 ; INCLUDE HEAP ALLOCATOR
 ; ════════════════════════════════════════════════════════════════════════════
 %include "mm/heap.asm"
+
+; ════════════════════════════════════════════════════════════════════════════
+; INCLUDE FAT32 FILESYSTEM
+; ════════════════════════════════════════════════════════════════════════════
+%include "fs/fat32.asm"
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; DATA SECTION
