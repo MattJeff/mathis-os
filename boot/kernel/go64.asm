@@ -264,26 +264,50 @@ main_loop:
 ; 3D GUI MODE - Revolutionary 3D Navigation Interface
 ; ════════════════════════════════════════════════════════════════════════════
 gui3d_mode:
-    ; Initialize 3D engine on first run
+    ; Reset screen center (might be corrupted by other modes)
+    push rax
+    mov eax, [screen_width]
+    shr eax, 1
+    mov [screen_centerx], eax
+    mov eax, [screen_height]
+    shr eax, 1
+    mov [screen_centery], eax
+    ; Also reset camera position directly (extra safety)
+    mov dword [camera_x], 0
+    mov dword [camera_y], 0
+    mov dword [camera_z], 0x00050000  ; z = 5.0
+    pop rax
+    ; Always initialize 3D engine (camera position, projection, etc.)
     call ui3d_init
     ; Enter 3D main loop
     call ui3d_main
-    ; When ui3d_main returns, switch to normal GUI
-    mov byte [mode_flag], 2
+    ; When ui3d_main returns, mode_flag was already changed by Tab
+    ; Don't override it - just go back to main_loop
     jmp main_loop
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; GUI MODE - Desktop Environment
 ; ════════════════════════════════════════════════════════════════════════════
 gui_mode:
-    ; === Draw Desktop Background ===
+    ; === Draw Desktop Background (24-bit: teal/cyan color) ===
+    push rbx
     mov rdi, [screen_fb]
-    mov eax, [screen_height]
-    sub eax, TASKBAR_H
-    imul eax, [screen_pitch]
-    mov ecx, eax
-    mov al, COL_DESKTOP
-    rep stosb
+    mov eax, [screen_width]
+    mov ebx, [screen_height]
+    sub ebx, TASKBAR_H
+    imul eax, ebx               ; EAX = total pixels (minus taskbar)
+    mov ecx, eax                ; ECX = number of pixels
+.gui_clear_loop:
+    mov byte [rdi], 0x80        ; Blue component
+    mov byte [rdi+1], 0x50      ; Green component
+    mov byte [rdi+2], 0x20      ; Red component (teal desktop)
+    add rdi, 3
+    dec ecx
+    jnz .gui_clear_loop
+    pop rbx
+
+    ; DEBUG: After clear, just loop back (skip all other drawing)
+    jmp main_loop
 
     ; === Draw Desktop Icons ===
     ; Terminal icon (x=50, y=30)
@@ -331,8 +355,8 @@ gui_mode:
     mov r8d, COL_TEXT_WHITE
     call draw_text
 
-    ; === Draw Open Windows ===
-    call draw_windows
+    ; === Draw Open Windows === DISABLED FOR DEBUG
+    ; call draw_windows
 
     ; === Draw Taskbar ===
     ; Taskbar at y = screen_height - TASKBAR_H
@@ -409,13 +433,11 @@ gui_mode:
     ; === Draw Mouse Cursor ===
     call draw_mouse_cursor
 
-    ; Small delay for stability
-    mov rcx, 100000
-.gui_delay:
-    dec rcx
-    jnz .gui_delay
-
-    jmp main_loop
+    ; DEBUG: Disable interrupts and halt forever
+    cli                             ; Disable ALL interrupts
+.gui_halt_forever:
+    hlt
+    jmp .gui_halt_forever
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; DRAW WINDOWS
@@ -1341,14 +1363,21 @@ draw_rect:
 ; GRAPHICS MODE - 3D Cube (fullscreen)
 ; ════════════════════════════════════════════════════════════════════════════
 graphics_mode:
-    ; Clear screen
+    ; Clear screen to dark gray (24-bit mode: write 3 bytes per pixel)
+    push rbx
     mov rdi, [screen_fb]
     mov eax, [screen_width]
-    imul eax, [screen_height]
-    shr eax, 3                      ; divide by 8 for qword
-    mov ecx, eax
-    xor rax, rax
-    rep stosq
+    mov ebx, [screen_height]
+    imul eax, ebx               ; EAX = total pixels
+    mov ecx, eax                ; ECX = number of pixels
+.gfx_clear_loop:
+    mov byte [rdi], 0x30        ; Blue component (brighter gray)
+    mov byte [rdi+1], 0x30      ; Green component
+    mov byte [rdi+2], 0x30      ; Red component
+    add rdi, 3
+    dec ecx
+    jnz .gfx_clear_loop
+    pop rbx
 
     ; Draw 3D mode text at center of screen
     mov rdi, [screen_fb]
@@ -1382,13 +1411,21 @@ graphics_mode:
 ; SHELL MODE
 ; ════════════════════════════════════════════════════════════════════════════
 shell_mode:
-    ; Clear screen (dark blue)
+    ; Clear screen to dark blue (24-bit mode: write 3 bytes per pixel)
+    push rbx
     mov rdi, [screen_fb]
     mov eax, [screen_width]
-    imul eax, [screen_height]
-    mov ecx, eax
-    mov al, COL_DESKTOP
-    rep stosb
+    mov ebx, [screen_height]
+    imul eax, ebx               ; EAX = total pixels
+    mov ecx, eax                ; ECX = number of pixels
+.shell_clear_loop:
+    mov byte [rdi], 0x60        ; Blue component
+    mov byte [rdi+1], 0x00      ; Green component
+    mov byte [rdi+2], 0x00      ; Red component
+    add rdi, 3
+    dec ecx
+    jnz .shell_clear_loop
+    pop rbx
 
     ; Draw banner at (10, 10)
     mov rdi, [screen_fb]
@@ -1936,6 +1973,13 @@ timer_isr64:
     ; ══════════════════════════════════════════════════════════════════
     inc qword [tick_count]
 
+    ; Decrement tab debounce counter
+    mov eax, [tab_debounce]
+    test eax, eax
+    jz .no_tab_dec
+    dec dword [tab_debounce]
+.no_tab_dec:
+
     ; ══════════════════════════════════════════════════════════════════
     ; Check if scheduler is enabled
     ; ══════════════════════════════════════════════════════════════════
@@ -2168,11 +2212,11 @@ keyboard_isr64:
     cmp byte [mode_flag], 3
     jne .not_3d_mode
     mov [key3d_scancode], bl        ; Store scancode for 3D input
-    ; Still allow Tab to switch modes and ESC to reboot
+    ; Allow Tab to switch modes, but ESC does nothing in 3D mode
     cmp bl, 0x0F                    ; Tab
     je .not_3d_mode
-    cmp bl, 0x01                    ; ESC
-    je .not_3d_mode
+    cmp bl, 0x01                    ; ESC - ignore in 3D mode (no reboot)
+    je .kb_done
     jmp .kb_done                    ; Skip other handlers for 3D mode
 .not_3d_mode:
 
@@ -2192,7 +2236,7 @@ keyboard_isr64:
     cmp bl, 0x0F
     jne .check_f9
     inc byte [mode_flag]
-    cmp byte [mode_flag], 4         ; Now includes mode 3 (3D GUI)
+    cmp byte [mode_flag], 4
     jl .kb_done
     mov byte [mode_flag], 0
     jmp .kb_done
@@ -3029,8 +3073,12 @@ screen_centery: dd 240              ; Center Y
 
 ; System variables
 tick_count:     dq 0
-mode_flag:      db 2                ; 0=3D, 1=shell, 2=GUI, 3=3D GUI
+mode_flag:      db 2                ; 0=graphics, 1=shell, 2=GUI, 3=3D GUI
 key3d_scancode: db 0                ; Last scancode for 3D mode
+align 4
+tab_debounce:   dd 0                ; Tab key debounce counter (unused)
+last_tab_tick:  dd 0                ; Tick count of last Tab press (32-bit)
+ui3d_initialized: db 0              ; 1 if 3D engine was initialized
 active_window:  db 0xFF
 start_menu_open: db 0
 dragging:       db 0
