@@ -794,6 +794,582 @@ fat32_is_mounted:
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
+; FAT32 WRITE OPERATIONS
+; ════════════════════════════════════════════════════════════════════════════
+
+; ════════════════════════════════════════════════════════════════════════════
+; FAT32_WRITE_CLUSTER - Write a cluster to disk
+; Input: EAX = cluster number, RSI = data buffer
+; Output: CF set on error
+; ════════════════════════════════════════════════════════════════════════════
+fat32_write_cluster:
+    push rax
+    push rbx
+    push rcx
+    push rdx
+    push rsi
+
+    ; Calculate LBA from cluster
+    sub eax, 2
+    mov ebx, [fat32_sectors_per_cluster]
+    imul eax, ebx
+    add eax, [fat32_data_lba]
+
+    ; Write all sectors in cluster
+    mov ecx, [fat32_sectors_per_cluster]
+    call ata_write_sectors
+
+    pop rsi
+    pop rdx
+    pop rcx
+    pop rbx
+    pop rax
+    ret
+
+; ════════════════════════════════════════════════════════════════════════════
+; FAT32_ALLOC_CLUSTER - Allocate a free cluster
+; Output: EAX = cluster number (or 0 on error)
+; ════════════════════════════════════════════════════════════════════════════
+fat32_alloc_cluster:
+    push rbx
+    push rcx
+    push rdx
+    push rdi
+
+    ; Scan FAT for free cluster
+    mov ecx, 2                          ; Start at cluster 2
+
+.scan_loop:
+    ; Read FAT entry
+    mov eax, ecx
+    push rcx
+    call fat32_get_next_cluster
+    pop rcx
+
+    ; Check if free (0)
+    test eax, eax
+    jz .found_free
+
+    inc ecx
+
+    ; Check if past end (simplified - check against max clusters)
+    cmp ecx, 0x100000                   ; Arbitrary limit
+    jb .scan_loop
+
+    ; No free clusters
+    xor eax, eax
+    jmp .alloc_done
+
+.found_free:
+    ; Mark cluster as end-of-chain
+    mov eax, ecx
+    mov edx, FAT32_END_CLUSTER
+    call fat32_set_cluster
+
+    mov eax, ecx                        ; Return cluster number
+
+.alloc_done:
+    pop rdi
+    pop rdx
+    pop rcx
+    pop rbx
+    ret
+
+; ════════════════════════════════════════════════════════════════════════════
+; FAT32_SET_CLUSTER - Set FAT entry value
+; Input: EAX = cluster number, EDX = value
+; ════════════════════════════════════════════════════════════════════════════
+fat32_set_cluster:
+    push rax
+    push rbx
+    push rcx
+    push rdx
+    push rdi
+    push rsi
+
+    mov ebx, edx                        ; Save value
+
+    ; Calculate FAT sector and offset
+    mov ecx, eax
+    shl ecx, 2                          ; cluster * 4
+    mov edx, ecx
+    shr ecx, 9                          ; / 512 = sector offset
+    and edx, 511                        ; % 512 = byte offset
+
+    ; Read FAT sector
+    mov eax, ecx
+    add eax, [fat32_fat_lba]
+    mov rdi, fat32_fat_buffer
+    push rdx
+    push rbx
+    call ata_read_sector
+    pop rbx
+    pop rdx
+
+    ; Modify entry
+    mov [fat32_fat_buffer + rdx], ebx
+
+    ; Write FAT sector back
+    mov rsi, fat32_fat_buffer
+    call ata_write_sector
+
+    ; Also update backup FAT if present
+    cmp dword [fat32_num_fats], 1
+    jle .set_done
+
+    add eax, [fat32_sectors_per_fat]
+    call ata_write_sector
+
+.set_done:
+    pop rsi
+    pop rdi
+    pop rdx
+    pop rcx
+    pop rbx
+    pop rax
+    ret
+
+; ════════════════════════════════════════════════════════════════════════════
+; FAT32_FREE_CHAIN - Free a cluster chain
+; Input: EAX = first cluster
+; ════════════════════════════════════════════════════════════════════════════
+fat32_free_chain:
+    push rax
+    push rbx
+    push rdx
+
+.free_loop:
+    cmp eax, FAT32_END_CLUSTER
+    jae .free_done
+
+    mov ebx, eax                        ; Save current cluster
+
+    ; Get next cluster
+    call fat32_get_next_cluster
+    push rax                            ; Save next
+
+    ; Free current cluster
+    mov eax, ebx
+    xor edx, edx                        ; Value = 0 (free)
+    call fat32_set_cluster
+
+    pop rax                             ; Get next
+    jmp .free_loop
+
+.free_done:
+    pop rdx
+    pop rbx
+    pop rax
+    ret
+
+; ════════════════════════════════════════════════════════════════════════════
+; FAT32_CREATE_FILE - Create a new file
+; Input: RSI = filename (8.3), EAX = dir cluster
+; Output: RAX = first cluster (or 0 on error)
+; ════════════════════════════════════════════════════════════════════════════
+fat32_create_file:
+    push rbx
+    push rcx
+    push rdx
+    push rdi
+    push rsi
+    push r8
+    push r9
+    push r10
+
+    mov r8, rsi                         ; Save filename
+    mov r9d, eax                        ; Save dir cluster
+
+    ; Check if file already exists
+    call fat32_find_file
+    test rax, rax
+    jnz .create_exists                  ; File exists!
+
+    ; Allocate cluster for file data
+    call fat32_alloc_cluster
+    test eax, eax
+    jz .create_error
+    mov r10d, eax                       ; R10 = file cluster
+
+    ; Find free directory entry
+    mov eax, r9d
+    mov rdi, fat32_dir_buffer
+    call fat32_read_cluster
+
+    mov rbx, fat32_dir_buffer
+    mov ecx, [fat32_bytes_per_cluster]
+    shr ecx, 5                          ; Number of entries
+
+.find_free_entry:
+    cmp byte [rbx], 0                   ; Empty entry
+    je .found_entry
+    cmp byte [rbx], 0xE5                ; Deleted entry
+    je .found_entry
+
+    add rbx, FAT32_DIR_ENTRY_SIZE
+    dec ecx
+    jnz .find_free_entry
+    jmp .create_error                   ; No free entry
+
+.found_entry:
+    ; Fill directory entry
+    ; Copy filename (11 bytes)
+    mov rdi, rbx
+    mov rsi, r8
+    mov ecx, 11
+    rep movsb
+
+    ; Set attributes (Archive)
+    mov byte [rbx + FAT32_DIR_ATTR], FAT32_ATTR_ARCHIVE
+
+    ; Clear reserved bytes
+    mov byte [rbx + 12], 0
+    mov byte [rbx + 13], 0
+
+    ; Set timestamps (simplified - zeros)
+    mov word [rbx + 14], 0              ; Create time
+    mov word [rbx + 16], 0              ; Create date
+    mov word [rbx + 18], 0              ; Access date
+    mov word [rbx + 22], 0              ; Modify time
+    mov word [rbx + 24], 0              ; Modify date
+
+    ; Set cluster
+    mov eax, r10d
+    mov [rbx + FAT32_DIR_CLUSTER_LO], ax
+    shr eax, 16
+    mov [rbx + FAT32_DIR_CLUSTER_HI], ax
+
+    ; Set size (0 for new file)
+    mov dword [rbx + FAT32_DIR_SIZE], 0
+
+    ; Write directory cluster back
+    mov eax, r9d
+    mov rsi, fat32_dir_buffer
+    call fat32_write_cluster
+
+    mov eax, r10d                       ; Return file cluster
+    jmp .create_done
+
+.create_exists:
+    ; File exists - return its cluster
+    mov eax, ecx
+    jmp .create_done
+
+.create_error:
+    xor eax, eax
+
+.create_done:
+    pop r10
+    pop r9
+    pop r8
+    pop rsi
+    pop rdi
+    pop rdx
+    pop rcx
+    pop rbx
+    ret
+
+; ════════════════════════════════════════════════════════════════════════════
+; FAT32_WRITE_FILE - Write data to file
+; Input: RSI = filename (8.3), RDI = data, EDX = size
+; Output: EAX = bytes written (or 0 on error)
+; ════════════════════════════════════════════════════════════════════════════
+fat32_write_file:
+    push rbx
+    push rcx
+    push rdx
+    push rdi
+    push rsi
+    push r8
+    push r9
+    push r10
+    push r11
+    push r12
+
+    mov r8, rsi                         ; Filename
+    mov r9, rdi                         ; Data
+    mov r10d, edx                       ; Size
+
+    ; Find or create file in root directory
+    mov eax, [fat32_root_cluster]
+    mov rsi, r8
+    call fat32_find_file
+
+    test rax, rax
+    jz .write_create
+
+    ; File exists - get cluster and entry
+    mov r11, rax                        ; Directory entry
+    mov r12d, ecx                       ; First cluster
+
+    ; Free old cluster chain
+    mov eax, r12d
+    call fat32_free_chain
+    jmp .write_alloc
+
+.write_create:
+    ; Create new file
+    mov rsi, r8
+    mov eax, [fat32_root_cluster]
+    call fat32_create_file
+    test eax, eax
+    jz .write_error
+    mov r12d, eax                       ; First cluster
+
+    ; Find directory entry again
+    mov rsi, r8
+    mov eax, [fat32_root_cluster]
+    call fat32_find_file
+    mov r11, rax                        ; Directory entry
+
+.write_alloc:
+    ; Calculate clusters needed
+    mov eax, r10d
+    add eax, [fat32_bytes_per_cluster]
+    dec eax
+    xor edx, edx
+    div dword [fat32_bytes_per_cluster]
+    mov ecx, eax                        ; Clusters needed
+
+    ; Allocate first cluster
+    call fat32_alloc_cluster
+    test eax, eax
+    jz .write_error
+    mov r12d, eax                       ; First cluster
+
+    ; Write data cluster by cluster
+    mov rsi, r9                         ; Data pointer
+    xor ebx, ebx                        ; Bytes written
+
+.write_loop:
+    cmp ebx, r10d
+    jge .write_finish
+
+    ; Write current cluster
+    mov eax, r12d
+    push rsi
+    call fat32_write_cluster
+    pop rsi
+
+    ; Advance
+    add rsi, [fat32_bytes_per_cluster]
+    add ebx, [fat32_bytes_per_cluster]
+
+    ; Need more clusters?
+    cmp ebx, r10d
+    jge .write_finish
+
+    ; Allocate next cluster
+    push rbx
+    call fat32_alloc_cluster
+    test eax, eax
+    pop rbx
+    jz .write_finish                    ; Out of space
+
+    ; Link clusters
+    push rax
+    mov edx, eax
+    mov eax, r12d
+    call fat32_set_cluster
+    pop rax
+    mov r12d, eax
+
+    jmp .write_loop
+
+.write_finish:
+    ; Update directory entry with new size and cluster
+    ; Re-read directory
+    mov eax, [fat32_root_cluster]
+    mov rdi, fat32_dir_buffer
+    call fat32_read_cluster
+
+    ; Find entry again
+    mov rsi, r8
+    mov eax, [fat32_root_cluster]
+    call fat32_find_file
+    test rax, rax
+    jz .write_error
+
+    ; Update size
+    mov [rax + FAT32_DIR_SIZE], r10d
+
+    ; Update cluster
+    mov eax, r12d
+    mov [rax + FAT32_DIR_CLUSTER_LO], ax
+    shr eax, 16
+    mov [rax + FAT32_DIR_CLUSTER_HI], ax
+
+    ; Write directory back
+    mov eax, [fat32_root_cluster]
+    mov rsi, fat32_dir_buffer
+    call fat32_write_cluster
+
+    mov eax, r10d                       ; Return bytes written
+    jmp .write_done
+
+.write_error:
+    xor eax, eax
+
+.write_done:
+    pop r12
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rsi
+    pop rdi
+    pop rdx
+    pop rcx
+    pop rbx
+    ret
+
+; ════════════════════════════════════════════════════════════════════════════
+; FAT32_DELETE_FILE - Delete a file
+; Input: RSI = filename (8.3)
+; Output: EAX = 1 on success, 0 on error
+; ════════════════════════════════════════════════════════════════════════════
+fat32_delete_file:
+    push rbx
+    push rcx
+    push rdx
+    push rdi
+    push rsi
+    push r8
+
+    mov r8, rsi                         ; Save filename
+
+    ; Find file
+    mov eax, [fat32_root_cluster]
+    call fat32_find_file
+    test rax, rax
+    jz .delete_error
+
+    ; Get cluster and entry
+    mov rbx, rax                        ; Directory entry
+    mov edx, ecx                        ; First cluster
+
+    ; Free cluster chain
+    mov eax, edx
+    call fat32_free_chain
+
+    ; Mark directory entry as deleted
+    mov byte [rbx], 0xE5
+
+    ; Write directory back
+    mov eax, [fat32_root_cluster]
+    mov rsi, fat32_dir_buffer
+    call fat32_write_cluster
+
+    mov eax, 1                          ; Success
+    jmp .delete_done
+
+.delete_error:
+    xor eax, eax
+
+.delete_done:
+    pop r8
+    pop rsi
+    pop rdi
+    pop rdx
+    pop rcx
+    pop rbx
+    ret
+
+; ════════════════════════════════════════════════════════════════════════════
+; FAT32_CREATE_DIR - Create a directory
+; Input: RSI = dirname (8.3), EAX = parent dir cluster
+; Output: EAX = new dir cluster (or 0 on error)
+; ════════════════════════════════════════════════════════════════════════════
+fat32_create_dir:
+    push rbx
+    push rcx
+    push rdx
+    push rdi
+    push rsi
+    push r8
+    push r9
+    push r10
+
+    mov r8, rsi                         ; Directory name
+    mov r9d, eax                        ; Parent cluster
+
+    ; Create like a file first
+    call fat32_create_file
+    test eax, eax
+    jz .mkdir_error
+    mov r10d, eax                       ; New dir cluster
+
+    ; Find the entry we just created
+    mov rsi, r8
+    mov eax, r9d
+    call fat32_find_file
+    test rax, rax
+    jz .mkdir_error
+
+    ; Change attribute to directory
+    mov byte [rax + FAT32_DIR_ATTR], FAT32_ATTR_DIRECTORY
+
+    ; Write directory back
+    mov eax, r9d
+    mov rsi, fat32_dir_buffer
+    call fat32_write_cluster
+
+    ; Initialize new directory with . and ..
+    mov rdi, fat32_cluster_buffer
+    xor eax, eax
+    mov ecx, [fat32_bytes_per_cluster]
+    rep stosb
+
+    ; Create . entry
+    mov rdi, fat32_cluster_buffer
+    mov byte [rdi], '.'
+    mov al, ' '
+    mov ecx, 10
+    lea rdi, [fat32_cluster_buffer + 1]
+    rep stosb
+    mov byte [fat32_cluster_buffer + FAT32_DIR_ATTR], FAT32_ATTR_DIRECTORY
+    mov eax, r10d
+    mov [fat32_cluster_buffer + FAT32_DIR_CLUSTER_LO], ax
+    shr eax, 16
+    mov [fat32_cluster_buffer + FAT32_DIR_CLUSTER_HI], ax
+
+    ; Create .. entry
+    lea rdi, [fat32_cluster_buffer + 32]
+    mov byte [rdi], '.'
+    mov byte [rdi + 1], '.'
+    mov al, ' '
+    mov ecx, 9
+    lea rdi, [fat32_cluster_buffer + 34]
+    rep stosb
+    mov byte [fat32_cluster_buffer + 32 + FAT32_DIR_ATTR], FAT32_ATTR_DIRECTORY
+    mov eax, r9d
+    mov [fat32_cluster_buffer + 32 + FAT32_DIR_CLUSTER_LO], ax
+    shr eax, 16
+    mov [fat32_cluster_buffer + 32 + FAT32_DIR_CLUSTER_HI], ax
+
+    ; Write new directory cluster
+    mov eax, r10d
+    mov rsi, fat32_cluster_buffer
+    call fat32_write_cluster
+
+    mov eax, r10d                       ; Return new dir cluster
+    jmp .mkdir_done
+
+.mkdir_error:
+    xor eax, eax
+
+.mkdir_done:
+    pop r10
+    pop r9
+    pop r8
+    pop rsi
+    pop rdi
+    pop rdx
+    pop rcx
+    pop rbx
+    ret
+
+; ════════════════════════════════════════════════════════════════════════════
 ; FAT32 DATA SECTION
 ; ════════════════════════════════════════════════════════════════════════════
 align 8
