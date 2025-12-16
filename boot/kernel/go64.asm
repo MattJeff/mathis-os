@@ -146,7 +146,7 @@ long_mode_entry:
     ; Initialize scheduler (cooperative mode - processes tracked but not preempted)
     call scheduler_init
 
-    ; Initialize network (E1000) - TODO: debug PCI scan
+    ; Initialize network (E1000) - disabled, needs more debugging
     ; call net_init
 
     ; Create demo processes (entries in table for ps command)

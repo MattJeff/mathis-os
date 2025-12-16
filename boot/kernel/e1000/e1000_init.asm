@@ -1,5 +1,5 @@
 ; ════════════════════════════════════════════════════════════════════════════
-; E1000 NETWORK DRIVER - INITIALIZATION
+; E1000 NETWORK DRIVER - INITIALIZATION (FIXED)
 ; PCI enumeration, MMIO setup, device reset, MAC address
 ; ════════════════════════════════════════════════════════════════════════════
 
@@ -31,6 +31,7 @@ e1000_mac:          times 6 db 0    ; MAC address
 e1000_found:        db 0            ; 1 if E1000 found
 e1000_rx_cur:       dd 0            ; Current RX descriptor index
 e1000_tx_cur:       dd 0            ; Current TX descriptor index
+pci_device:         dd 0            ; PCI device number
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; E1000_INIT - Initialize E1000 network card
@@ -47,6 +48,11 @@ e1000_init:
     ; Step 1: Scan PCI for E1000
     call e1000_pci_scan
     jc .not_found
+
+    ; Validate MMIO base
+    mov rax, [e1000_mmio_base]
+    test rax, rax
+    jz .not_found                   ; No valid MMIO base
 
     ; Step 2: Enable PCI bus mastering
     call e1000_pci_enable
@@ -97,24 +103,28 @@ e1000_pci_scan:
     push rdx
 
     ; Scan all PCI devices (bus 0, devices 0-31, function 0)
-    xor ebx, ebx                    ; bus = 0
+    xor ebx, ebx                    ; device = 0
 
 .scan_device:
     cmp ebx, 32
-    jge .not_found
+    jae .not_found                  ; Use unsigned comparison!
 
     ; Build PCI address: 0x80000000 | (bus << 16) | (dev << 11) | (func << 8) | reg
     mov eax, 0x80000000
     mov ecx, ebx
     shl ecx, 11                     ; device << 11
     or eax, ecx
-    ; func = 0, reg = 0 (vendor/device)
+    ; bus = 0, func = 0, reg = 0 (vendor/device)
 
     ; Read vendor/device ID
     mov dx, PCI_CONFIG_ADDR
     out dx, eax
     mov dx, PCI_CONFIG_DATA
     in eax, dx
+
+    ; Check for no device (vendor = 0xFFFF)
+    cmp ax, 0xFFFF
+    je .next_device
 
     ; Check for E1000 (vendor=0x8086, device=0x100E)
     cmp ax, E1000_VENDOR_ID
@@ -142,6 +152,12 @@ e1000_pci_scan:
     out dx, eax
     mov dx, PCI_CONFIG_DATA
     in eax, dx
+
+    ; Check if BAR0 is valid (not 0 or 0xFFFFFFFF)
+    cmp eax, 0
+    je .not_found
+    cmp eax, 0xFFFFFFFF
+    je .not_found
 
     ; Mask low bits (BAR type indicator)
     and eax, 0xFFFFFFF0
@@ -173,8 +189,6 @@ e1000_pci_scan:
     pop rax
     ret
 
-pci_device: dd 0
-
 ; ════════════════════════════════════════════════════════════════════════════
 ; E1000_PCI_ENABLE - Enable bus mastering and memory space
 ; ════════════════════════════════════════════════════════════════════════════
@@ -198,8 +212,8 @@ e1000_pci_enable:
     ; Enable memory space + bus master
     or eax, PCI_CMD_MEMORY | PCI_CMD_MASTER
 
-    ; Write back
-    push rax
+    ; Write back - need to write address first, then data
+    push rax                        ; Save the command value
     mov eax, 0x80000000
     mov ecx, [pci_device]
     shl ecx, 11
@@ -207,7 +221,7 @@ e1000_pci_enable:
     or eax, PCI_COMMAND
     mov dx, PCI_CONFIG_ADDR
     out dx, eax
-    pop rax
+    pop rax                         ; Restore command value
     mov dx, PCI_CONFIG_DATA
     out dx, eax
 
@@ -217,36 +231,51 @@ e1000_pci_enable:
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
-; E1000_WRITE_REG - Write to E1000 register
+; E1000_WRITE_REG - Write to E1000 register (with safety check)
 ; Input: ECX = register offset, EAX = value
 ; ════════════════════════════════════════════════════════════════════════════
 e1000_write_reg:
     push rdx
     mov rdx, [e1000_mmio_base]
+    test rdx, rdx
+    jz .skip                        ; Skip if no valid MMIO base
     add rdx, rcx
     mov [rdx], eax
+.skip:
     pop rdx
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
-; E1000_READ_REG - Read from E1000 register
+; E1000_READ_REG - Read from E1000 register (with safety check)
 ; Input: ECX = register offset
-; Output: EAX = value
+; Output: EAX = value (0xFFFFFFFF if no device)
 ; ════════════════════════════════════════════════════════════════════════════
 e1000_read_reg:
     push rdx
     mov rdx, [e1000_mmio_base]
+    test rdx, rdx
+    jz .no_device
     add rdx, rcx
     mov eax, [rdx]
+    jmp .done
+.no_device:
+    mov eax, 0xFFFFFFFF
+.done:
     pop rdx
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
-; E1000_RESET - Reset the E1000 device
+; E1000_RESET - Reset the E1000 device (with timeout)
 ; ════════════════════════════════════════════════════════════════════════════
 e1000_reset:
     push rax
     push rcx
+    push rdx
+
+    ; Check MMIO base is valid
+    mov rax, [e1000_mmio_base]
+    test rax, rax
+    jz .done
 
     ; Set RST bit in CTRL register
     mov ecx, E1000_CTRL
@@ -255,22 +284,21 @@ e1000_reset:
     call e1000_write_reg
 
     ; Wait for reset to complete (poll until RST bit clears)
-    mov ecx, 100000
+    mov edx, 100000                 ; Timeout counter
 .wait_reset:
-    push rcx
+    dec edx
+    jz .reset_done                  ; Timeout - continue anyway
+
     mov ecx, E1000_CTRL
     call e1000_read_reg
-    pop rcx
     test eax, E1000_CTRL_RST
-    jz .reset_done
-    dec ecx
     jnz .wait_reset
 
 .reset_done:
     ; Small delay after reset
     mov ecx, 10000
 .delay:
-    nop
+    pause                           ; CPU hint for spin-wait
     dec ecx
     jnz .delay
 
@@ -279,18 +307,25 @@ e1000_reset:
     mov eax, 0xFFFFFFFF
     call e1000_write_reg
 
+.done:
+    pop rdx
     pop rcx
     pop rax
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
-; E1000_READ_MAC - Read MAC address from EEPROM or registers
+; E1000_READ_MAC - Read MAC address from registers
 ; ════════════════════════════════════════════════════════════════════════════
 e1000_read_mac:
     push rax
     push rbx
     push rcx
     push rdi
+
+    ; Check MMIO base is valid
+    mov rax, [e1000_mmio_base]
+    test rax, rax
+    jz .mac_done
 
     ; Try reading from RAL0/RAH0 (works on QEMU)
     mov ecx, E1000_RAL0
@@ -309,18 +344,18 @@ e1000_read_mac:
     shr eax, 8
     mov [e1000_mac + 5], al
 
-    ; If MAC is all zeros, try EEPROM
+    ; If MAC is all zeros or all FFs, try EEPROM
     mov rdi, e1000_mac
     xor eax, eax
     mov ecx, 6
     repe scasb
-    jnz .mac_valid
+    jnz .mac_done                   ; Non-zero MAC found
 
     ; Read from EEPROM (words 0, 1, 2)
-    mov ebx, 0
+    xor ebx, ebx                    ; word index
 .read_eeprom:
     cmp ebx, 3
-    jge .mac_valid
+    jae .mac_done
 
     ; EERD: start read, address in bits 8-15
     mov eax, ebx
@@ -329,29 +364,28 @@ e1000_read_mac:
     mov ecx, E1000_EERD
     call e1000_write_reg
 
-    ; Wait for done
-    mov ecx, 10000
+    ; Wait for done with timeout
+    mov edx, 10000
 .wait_eeprom:
-    push rcx
+    dec edx
+    jz .eeprom_timeout
+
     mov ecx, E1000_EERD
     call e1000_read_reg
-    pop rcx
     test eax, 0x10                  ; Done bit
-    jnz .eeprom_done
-    dec ecx
-    jnz .wait_eeprom
+    jz .wait_eeprom
 
-.eeprom_done:
     ; Data in bits 16-31
     shr eax, 16
     mov [e1000_mac + rbx*2], al
     shr eax, 8
     mov [e1000_mac + rbx*2 + 1], al
 
+.eeprom_timeout:
     inc ebx
     jmp .read_eeprom
 
-.mac_valid:
+.mac_done:
     pop rdi
     pop rcx
     pop rbx
