@@ -55,10 +55,12 @@ do_go64:
     xor eax, eax
     rep stosd
 
-    mov dword [0x1000], 0x2003      ; PML4[0] -> PDPT
-    mov dword [0x2000], 0x3003      ; PDPT[0] -> PD
-    mov dword [0x3000], 0x00000083  ; PD[0] -> 2MB page (0x000000-0x1FFFFF)
-    mov dword [0x3008], 0x00200083  ; PD[1] -> 2MB page (0x200000-0x3FFFFF) for process stacks
+    ; Page table flags: P=Present, W=Write, U=User accessible
+    ; Adding U bit (0x04) allows Ring 3 code to access these pages
+    mov dword [0x1000], 0x2007      ; PML4[0] -> PDPT (P+W+U)
+    mov dword [0x2000], 0x3007      ; PDPT[0] -> PD (P+W+U)
+    mov dword [0x3000], 0x00000087  ; PD[0] -> 2MB page 0-2MB (P+W+U+PS)
+    mov dword [0x3008], 0x00200087  ; PD[1] -> 2MB page 2-4MB for stacks (P+W+U+PS)
 
     ; Enable PAE
     mov eax, cr4
@@ -124,6 +126,9 @@ long_mode_entry:
 
     ; Setup IDT with mouse support
     call setup_idt64
+
+    ; Setup TSS for Ring 3 support
+    call setup_tss64
 
     ; Setup PIC
     call setup_pic64
@@ -1462,6 +1467,11 @@ setup_idt64:
     mov rax, mouse_isr64
     call set_idt_entry
 
+    ; INT 0x80 (syscall) - Ring 3 callable
+    mov rdi, idt64 + 0x80 * 16
+    mov rax, syscall_isr64
+    call set_idt_entry_user        ; DPL=3 so user can call it
+
     lidt [idt64_ptr]
 
     pop rcx
@@ -1470,15 +1480,71 @@ setup_idt64:
     ret
 
 set_idt_entry:
+    ; Standard IDT entry (DPL=0, only kernel can call)
     mov word [rdi], ax
-    mov word [rdi + 2], 0x08
+    mov word [rdi + 2], 0x08        ; Kernel code selector
     mov byte [rdi + 4], 0
-    mov byte [rdi + 5], 0x8E
+    mov byte [rdi + 5], 0x8E        ; Present, DPL=0, Interrupt Gate
     shr rax, 16
     mov word [rdi + 6], ax
     shr rax, 16
     mov dword [rdi + 8], eax
     mov dword [rdi + 12], 0
+    ret
+
+set_idt_entry_user:
+    ; IDT entry callable from Ring 3 (DPL=3)
+    mov word [rdi], ax
+    mov word [rdi + 2], 0x08        ; Kernel code selector
+    mov byte [rdi + 4], 0
+    mov byte [rdi + 5], 0xEE        ; Present, DPL=3, Interrupt Gate
+    shr rax, 16
+    mov word [rdi + 6], ax
+    shr rax, 16
+    mov dword [rdi + 8], eax
+    mov dword [rdi + 12], 0
+    ret
+
+; ════════════════════════════════════════════════════════════════════════════
+; SETUP TSS - Task State Segment for Ring 3 → Ring 0 transitions
+; ════════════════════════════════════════════════════════════════════════════
+setup_tss64:
+    push rax
+    push rbx
+    push rcx
+
+    ; Patch TSS base address into GDT descriptor (at offset 0x28)
+    ; TSS descriptor is 16 bytes at gdt64 + 0x28
+    mov rax, tss64                  ; Get TSS address
+
+    ; Patch Base 15:0 (offset +2 in TSS descriptor)
+    mov rbx, gdt64
+    add rbx, 0x28                   ; Point to TSS descriptor
+    mov word [rbx + 2], ax          ; Base 15:0
+
+    ; Patch Base 23:16 (offset +4)
+    shr rax, 16
+    mov byte [rbx + 4], al          ; Base 23:16
+
+    ; Patch Base 31:24 (offset +7)
+    shr rax, 8
+    mov byte [rbx + 7], al          ; Base 31:24
+
+    ; Patch Base 63:32 (offset +8)
+    mov rax, tss64
+    shr rax, 32
+    mov dword [rbx + 8], eax        ; Base 63:32
+
+    ; Reload GDT (since we modified it)
+    lgdt [gdt64_ptr]
+
+    ; Load TSS
+    mov ax, TSS_SEL
+    ltr ax
+
+    pop rcx
+    pop rbx
+    pop rax
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
@@ -1772,6 +1838,97 @@ timer_isr64:
     iretq
 
 ; ════════════════════════════════════════════════════════════════════════════
+; SYSCALL ISR (INT 0x80) - System call interface for user-space
+; ════════════════════════════════════════════════════════════════════════════
+; Calling convention:
+;   RAX = syscall number
+;   RDI = arg1, RSI = arg2, RDX = arg3, R10 = arg4, R8 = arg5, R9 = arg6
+;   Return value in RAX
+;
+; Syscalls:
+;   0 = sys_exit (exit process)
+;   1 = sys_write (write to screen) - RDI=x, RSI=y, RDX=char, R10=color
+;   2 = sys_getpid (get process ID)
+;   3 = sys_yield (yield CPU to scheduler)
+; ════════════════════════════════════════════════════════════════════════════
+syscall_isr64:
+    push rbx
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    push r8
+    push r9
+    push r10
+    push r11
+
+    ; Dispatch based on syscall number in RAX
+    cmp rax, 0
+    je .sys_exit
+    cmp rax, 1
+    je .sys_write
+    cmp rax, 2
+    je .sys_getpid
+    cmp rax, 3
+    je .sys_yield
+
+    ; Unknown syscall - return -1
+    mov rax, -1
+    jmp .syscall_done
+
+.sys_exit:
+    ; Exit current process
+    ; For now, just halt (proper implementation would kill process)
+    mov rax, 0
+    jmp .syscall_done
+
+.sys_write:
+    ; Write pixel to screen
+    ; RDI = x, RSI = y, RDX = (unused), R10 = color
+    push rdi
+    push rsi
+    mov eax, esi                    ; y
+    imul eax, 320                   ; y * 320
+    add eax, edi                    ; + x
+    mov rdi, GFX_FB                 ; VGA framebuffer at 0xA0000
+    add rdi, rax
+    mov al, r10b                    ; color
+    mov [rdi], al
+    pop rsi
+    pop rdi
+    mov rax, 0                      ; Success
+    jmp .syscall_done
+
+.sys_getpid:
+    ; Return current process ID
+    mov rax, [current_process]
+    test rax, rax
+    jz .no_process
+    mov eax, [rax + PCB_PID]
+    jmp .syscall_done
+.no_process:
+    mov rax, 0
+    jmp .syscall_done
+
+.sys_yield:
+    ; Yield CPU (trigger scheduler)
+    ; Just return for now, timer will handle scheduling
+    mov rax, 0
+    jmp .syscall_done
+
+.syscall_done:
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    pop rbx
+    iretq
+
+; ════════════════════════════════════════════════════════════════════════════
 ; KEYBOARD ISR - Full keyboard support with shift, arrows
 ; ════════════════════════════════════════════════════════════════════════════
 keyboard_isr64:
@@ -1821,12 +1978,21 @@ keyboard_isr64:
 
     ; Tab = cycle modes
     cmp bl, 0x0F
-    jne .not_tab
+    jne .check_f9
     inc byte [mode_flag]
     cmp byte [mode_flag], 3
     jl .kb_done
     mov byte [mode_flag], 0
     jmp .kb_done
+
+.check_f9:
+    ; F9 = Launch Ring 3 user process demo
+    cmp bl, 0x43                    ; F9 scancode
+    jne .check_arrows
+    ; Launch user process in Ring 3
+    mov rdi, user_process_demo      ; Entry point
+    mov rsi, user_stack_top         ; User stack
+    call switch_to_ring3            ; Never returns!
 
 .shift_press:
     mov byte [shift_state], 1
@@ -1836,7 +2002,7 @@ keyboard_isr64:
     mov byte [ctrl_state], 1
     jmp .kb_done
 
-.not_tab:
+.check_arrows:
     ; Arrow keys (use for navigation in GUI)
     cmp bl, 0x48                    ; Up arrow
     je .arrow_up
@@ -2492,6 +2658,94 @@ demo_process_2:
     jmp demo_process_2
 
 ; ════════════════════════════════════════════════════════════════════════════
+; RING 3 USER-MODE SUPPORT
+; ════════════════════════════════════════════════════════════════════════════
+
+; Switch to Ring 3 (user mode)
+; RDI = user entry point
+; RSI = user stack pointer
+switch_to_ring3:
+    cli                             ; Disable interrupts during switch
+
+    ; Build iretq stack frame to "return" to Ring 3
+    push USER_DATA_SEL              ; SS (user data selector with RPL=3)
+    push rsi                        ; RSP (user stack)
+    pushfq                          ; RFLAGS
+    or qword [rsp], 0x200           ; Set IF (interrupts enabled)
+    push USER_CODE_SEL              ; CS (user code selector with RPL=3)
+    push rdi                        ; RIP (user entry point)
+
+    ; Clear registers for clean user state
+    xor rax, rax
+    xor rbx, rbx
+    xor rcx, rcx
+    xor rdx, rdx
+    xor rsi, rsi
+    xor rdi, rdi
+    xor rbp, rbp
+    xor r8, r8
+    xor r9, r9
+    xor r10, r10
+    xor r11, r11
+    xor r12, r12
+    xor r13, r13
+    xor r14, r14
+    xor r15, r15
+
+    iretq                           ; "Return" to user mode
+
+; ════════════════════════════════════════════════════════════════════════════
+; USER-MODE DEMO PROCESS
+; This code runs in Ring 3! It can only use syscalls to interact with kernel.
+; ════════════════════════════════════════════════════════════════════════════
+user_process_demo:
+    ; Running in Ring 3 now!
+    ; Get our PID via syscall
+    mov rax, 2                      ; sys_getpid
+    int 0x80                        ; Returns PID in RAX
+
+    ; Draw a pixel pattern using syscalls to prove we're in user mode
+    mov r12, 10                     ; x position
+    mov r13, 180                    ; y position (near bottom)
+    mov r14, 0                      ; color counter
+
+.user_loop:
+    ; sys_write: draw pixel at (x, y) with color
+    mov rax, 1                      ; sys_write
+    mov rdi, r12                    ; x
+    mov rsi, r13                    ; y
+    mov rdx, r14                    ; char (unused for pixel)
+    mov r10, r14                    ; color
+    int 0x80
+
+    ; Move to next position
+    inc r12
+    cmp r12, 300
+    jl .no_wrap
+    mov r12, 10
+    inc r14                         ; Next color
+.no_wrap:
+
+    ; Yield to let other processes run
+    mov rax, 3                      ; sys_yield
+    int 0x80
+
+    ; Small delay
+    mov rcx, 10000
+.delay:
+    nop
+    dec rcx
+    jnz .delay
+
+    jmp .user_loop
+
+; User stack area (must be in mapped memory)
+align 16
+user_stack_bottom:
+    times 4096 db 0                 ; 4KB user stack
+user_stack_top:
+
+; ════════════════════════════════════════════════════════════════════════════
 ; INCLUDE SCHEDULER MODULE
 ; ════════════════════════════════════════════════════════════════════════════
 %include "scheduler.asm"
@@ -2820,15 +3074,55 @@ idt64_null:
     dw 0
     dq 0
 
-; GDT
+; GDT with Ring 3 support
 [BITS 32]
 align 16
 gdt64:
-    dq 0
-    dq 0x00209A0000000000           ; Code segment
-    dq 0x0000920000000000           ; Data segment
+    dq 0                            ; 0x00: Null descriptor
+    dq 0x00209A0000000000           ; 0x08: Kernel Code (Ring 0, DPL=0)
+    dq 0x0000920000000000           ; 0x10: Kernel Data (Ring 0, DPL=0)
+    dq 0x0020FA0000000000           ; 0x18: User Code (Ring 3, DPL=3)
+    dq 0x0000F20000000000           ; 0x20: User Data (Ring 3, DPL=3)
+    ; 0x28: TSS descriptor (16 bytes in 64-bit mode)
+    dw 104                          ; Limit (size of TSS - 1)
+    dw 0                            ; Base 15:0 (patched at runtime)
+    db 0                            ; Base 23:16
+    db 0x89                         ; Type: 64-bit TSS Available, DPL=0
+    db 0x00                         ; Limit 19:16, flags
+    db 0                            ; Base 31:24
+    dd 0                            ; Base 63:32
+    dd 0                            ; Reserved
 gdt64_end:
 
 gdt64_ptr:
     dw gdt64_end - gdt64 - 1
     dd gdt64
+
+; Selectors for easy reference
+KERNEL_CODE_SEL equ 0x08
+KERNEL_DATA_SEL equ 0x10
+USER_CODE_SEL   equ 0x18 | 3       ; 0x1B (Ring 3)
+USER_DATA_SEL   equ 0x20 | 3       ; 0x23 (Ring 3)
+TSS_SEL         equ 0x28
+
+; ════════════════════════════════════════════════════════════════════════════
+; TSS (Task State Segment) - Required for Ring 3 → Ring 0 transitions
+; ════════════════════════════════════════════════════════════════════════════
+align 16
+tss64:
+    dd 0                            ; Reserved
+    dq 0x90000                      ; RSP0 - Kernel stack for interrupts
+    dq 0                            ; RSP1
+    dq 0                            ; RSP2
+    dq 0                            ; Reserved
+    dq 0                            ; IST1
+    dq 0                            ; IST2
+    dq 0                            ; IST3
+    dq 0                            ; IST4
+    dq 0                            ; IST5
+    dq 0                            ; IST6
+    dq 0                            ; IST7
+    dq 0                            ; Reserved
+    dw 0                            ; Reserved
+    dw 104                          ; IOPB offset (no IOPB)
+tss64_end:
