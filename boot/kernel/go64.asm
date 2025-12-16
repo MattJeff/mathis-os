@@ -66,9 +66,23 @@ do_go64:
     ; PDPT[3] -> PD at 0x4000 (for 3-4GB, covers PCI MMIO)
     mov dword [0x2018], 0x4007      ; P+W+U (offset 0x18 = entry 3)
 
-    ; PD0: Map first 4MB (low memory)
-    mov dword [0x3000], 0x00000087  ; PD[0] -> 2MB page 0-2MB (P+W+U+PS)
-    mov dword [0x3008], 0x00200087  ; PD[1] -> 2MB page 2-4MB (P+W+U+PS)
+    ; PD0: Map first 32MB (heap needs 4-20MB)
+    mov dword [0x3000], 0x00000087  ; 0-2MB
+    mov dword [0x3008], 0x00200087  ; 2-4MB
+    mov dword [0x3010], 0x00400087  ; 4-6MB
+    mov dword [0x3018], 0x00600087  ; 6-8MB
+    mov dword [0x3020], 0x00800087  ; 8-10MB
+    mov dword [0x3028], 0x00A00087  ; 10-12MB
+    mov dword [0x3030], 0x00C00087  ; 12-14MB
+    mov dword [0x3038], 0x00E00087  ; 14-16MB
+    mov dword [0x3040], 0x01000087  ; 16-18MB
+    mov dword [0x3048], 0x01200087  ; 18-20MB
+    mov dword [0x3050], 0x01400087  ; 20-22MB
+    mov dword [0x3058], 0x01600087  ; 22-24MB
+    mov dword [0x3060], 0x01800087  ; 24-26MB
+    mov dword [0x3068], 0x01A00087  ; 26-28MB
+    mov dword [0x3070], 0x01C00087  ; 28-30MB
+    mov dword [0x3078], 0x01E00087  ; 30-32MB
 
     ; PD3: Map PCI MMIO region 0xFE000000-0xFFFFFFFF (top 32MB)
     ; PD index for 0xFE000000 = (0xFE000000 >> 21) & 0x1FF = 496
@@ -176,11 +190,8 @@ long_mode_entry:
     ; Initialize ACPI for power management
     call acpi_init
 
-    ; Initialize heap allocator (malloc/free)
+    ; Initialize heap allocator
     call heap_init
-
-    ; Initialize FAT32 filesystem (reads from disk)
-    call fat32_init
 
     ; Create demo processes (entries in table for ps command)
     ; These run in cooperative mode - main loop is the "idle" process
@@ -2721,19 +2732,9 @@ user_stack_top:
 %include "acpi.asm"
 
 ; ════════════════════════════════════════════════════════════════════════════
-; INCLUDE HEAP ALLOCATOR (malloc/free)
+; INCLUDE HEAP ALLOCATOR
 ; ════════════════════════════════════════════════════════════════════════════
 %include "mm/heap.asm"
-
-; ════════════════════════════════════════════════════════════════════════════
-; INCLUDE FAT32 FILESYSTEM (uses ata.asm already included via fs.asm)
-; ════════════════════════════════════════════════════════════════════════════
-%include "fs/fat32.asm"
-
-; ════════════════════════════════════════════════════════════════════════════
-; INCLUDE ELF LOADER (execute external programs)
-; ════════════════════════════════════════════════════════════════════════════
-%include "exec/elf.asm"
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; DATA SECTION
