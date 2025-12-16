@@ -49,18 +49,39 @@ MOUSE_STATUS equ 0x64
 do_go64:
     cli
 
-    ; Setup page tables at 0x1000 (identity map first 2MB)
+    ; Setup page tables at 0x1000
+    ; Clear 5 pages: PML4(0x1000), PDPT(0x2000), PD0(0x3000), PD3(0x4000), spare(0x5000)
     mov edi, 0x1000
-    mov ecx, 4096
+    mov ecx, 5120               ; 5 pages * 1024 dwords
     xor eax, eax
     rep stosd
 
-    ; Page table flags: P=Present, W=Write, U=User accessible
-    ; Adding U bit (0x04) allows Ring 3 code to access these pages
-    mov dword [0x1000], 0x2007      ; PML4[0] -> PDPT (P+W+U)
-    mov dword [0x2000], 0x3007      ; PDPT[0] -> PD (P+W+U)
+    ; Page table flags: P=Present, W=Write, U=User accessible, PS=Page Size (2MB)
+    ; PML4[0] -> PDPT at 0x2000
+    mov dword [0x1000], 0x2007      ; P+W+U
+
+    ; PDPT[0] -> PD at 0x3000 (for 0-1GB)
+    mov dword [0x2000], 0x3007      ; P+W+U
+
+    ; PDPT[3] -> PD at 0x4000 (for 3-4GB, covers PCI MMIO)
+    mov dword [0x2018], 0x4007      ; P+W+U (offset 0x18 = entry 3)
+
+    ; PD0: Map first 4MB (low memory)
     mov dword [0x3000], 0x00000087  ; PD[0] -> 2MB page 0-2MB (P+W+U+PS)
-    mov dword [0x3008], 0x00200087  ; PD[1] -> 2MB page 2-4MB for stacks (P+W+U+PS)
+    mov dword [0x3008], 0x00200087  ; PD[1] -> 2MB page 2-4MB (P+W+U+PS)
+
+    ; PD3: Map PCI MMIO region 0xFE000000-0xFFFFFFFF (top 32MB)
+    ; PD index for 0xFE000000 = (0xFE000000 >> 21) & 0x1FF = 496
+    ; We need entries 496-511 (16 entries * 2MB = 32MB)
+    mov edi, 0x4000 + (496 * 8)     ; Start at PD entry 496
+    mov eax, 0xFE000087             ; Base address 0xFE000000 + P+W+U+PS
+    mov ecx, 16                     ; 16 entries
+.map_mmio:
+    mov [edi], eax
+    mov dword [edi+4], 0            ; High 32 bits = 0
+    add edi, 8
+    add eax, 0x200000               ; Next 2MB page
+    loop .map_mmio
 
     ; Enable PAE
     mov eax, cr4

@@ -39,7 +39,7 @@ pci_device:         dd 0            ; PCI device number
 ; DEBUG VERSION - Testing step by step
 ; ════════════════════════════════════════════════════════════════════════════
 e1000_init:
-    ; Full init with MMIO address range check
+    ; Full E1000 initialization - MMIO region is now mapped in page tables
     push rax
     push rbx
     push rcx
@@ -50,15 +50,16 @@ e1000_init:
     call e1000_pci_scan
     jc .not_found
 
-    ; E1000 found - validate MMIO
+    ; E1000 found - validate MMIO base is non-zero
     mov rax, [e1000_mmio_base]
     test rax, rax
     jz .not_found
 
-    ; CHECK: MMIO must be within our mapped memory (< 4MB)
-    ; If MMIO is above 4MB, we can't access it without mapping it
-    cmp rax, 0x400000           ; 4MB limit
-    jae .not_found              ; Skip if MMIO is above our mapped region
+    ; Verify MMIO is in mapped region (0xFE000000-0xFFFFFFFF)
+    cmp rax, 0xFE000000
+    jb .not_found
+    cmp rax, 0xFFFFFFFF
+    ja .not_found
 
     call e1000_pci_enable
     call e1000_reset
