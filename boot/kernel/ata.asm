@@ -35,34 +35,54 @@ ATA_SR_ERR      equ 0x01
 FS_START_LBA    equ 521
 
 ; ════════════════════════════════════════════════════════════════════════════
-; ATA_WAIT_BSY - Wait for drive to not be busy
+; ATA_WAIT_BSY - Wait for drive to not be busy (with timeout)
 ; ════════════════════════════════════════════════════════════════════════════
 ata_wait_bsy:
     push eax
+    push ecx
     push edx
     mov dx, ATA_STATUS
+    mov ecx, 100000             ; Timeout counter
 .wait:
+    dec ecx
+    jz .timeout
     in al, dx
     test al, ATA_SR_BSY
     jnz .wait
+    clc                         ; Success
+    jmp .done
+.timeout:
+    stc                         ; Error - timeout
+.done:
     pop edx
+    pop ecx
     pop eax
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
-; ATA_WAIT_DRQ - Wait for data request ready
+; ATA_WAIT_DRQ - Wait for data request ready (with timeout)
 ; ════════════════════════════════════════════════════════════════════════════
 ata_wait_drq:
     push eax
+    push ecx
     push edx
     mov dx, ATA_STATUS
+    mov ecx, 100000             ; Timeout counter
 .wait:
+    dec ecx
+    jz .timeout
     in al, dx
     test al, ATA_SR_BSY
     jnz .wait
     test al, ATA_SR_DRQ
     jz .wait
+    clc                         ; Success
+    jmp .done
+.timeout:
+    stc                         ; Error - timeout
+.done:
     pop edx
+    pop ecx
     pop eax
     ret
 

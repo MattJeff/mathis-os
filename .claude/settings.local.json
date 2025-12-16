@@ -20,7 +20,9 @@
       "WebFetch(domain:api.github.com)",
       "Bash(git push:*)",
       "Bash(timeout 3 qemu-system-x86_64:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(cat:*)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": []
