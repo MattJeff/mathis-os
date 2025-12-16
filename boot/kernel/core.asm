@@ -10,12 +10,19 @@
 ; ════════════════════════════════════════════════════════════════════════════
 
 ; Framebuffer info (set by stage2 at 0x500)
-FB_ENABLED      equ 0x500
-FB_ADDRESS      equ 0x510
-FB_WIDTH        equ 0x514
-FB_HEIGHT       equ 0x518
-FB_PITCH        equ 0x51C
-FB_BPP          equ 0x520
+; Layout:
+;   0x500: Framebuffer address (4 bytes)
+;   0x504: Screen width (4 bytes)
+;   0x508: Screen height (4 bytes)
+;   0x50C: VESA mode flag (4 bytes)
+;   0x510: Pitch/BytesPerScanLine (4 bytes)
+;   0x514: BitsPerPixel (4 bytes)
+FB_ADDRESS      equ 0x500
+FB_WIDTH        equ 0x504
+FB_HEIGHT       equ 0x508
+FB_ENABLED      equ 0x50C
+FB_PITCH        equ 0x510
+FB_BPP          equ 0x514
 
 [BITS 32]
 [ORG 0x10000]
