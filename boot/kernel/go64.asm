@@ -179,6 +179,9 @@ long_mode_entry:
     ; Initialize heap allocator (malloc/free)
     call heap_init
 
+    ; Initialize FAT32 filesystem (reads from disk)
+    call fat32_init
+
     ; Create demo processes (entries in table for ps command)
     ; These run in cooperative mode - main loop is the "idle" process
     mov rdi, demo_process_1
@@ -2721,6 +2724,11 @@ user_stack_top:
 ; INCLUDE HEAP ALLOCATOR (malloc/free)
 ; ════════════════════════════════════════════════════════════════════════════
 %include "mm/heap.asm"
+
+; ════════════════════════════════════════════════════════════════════════════
+; INCLUDE FAT32 FILESYSTEM (uses ata.asm already included via fs.asm)
+; ════════════════════════════════════════════════════════════════════════════
+%include "fs/fat32.asm"
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; DATA SECTION
