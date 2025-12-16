@@ -19,6 +19,7 @@
 %include "net/icmp.asm"
 %include "net/udp.asm"
 %include "net/tcp.asm"
+%include "net/dhcp.asm"
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; HIGH-LEVEL API
