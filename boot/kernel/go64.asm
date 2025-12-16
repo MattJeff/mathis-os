@@ -173,6 +173,9 @@ long_mode_entry:
     ; Initialize USB (UHCI controller)
     call usb_init
 
+    ; Initialize ACPI for power management
+    call acpi_init
+
     ; Create demo processes (entries in table for ps command)
     ; These run in cooperative mode - main loop is the "idle" process
     mov rdi, demo_process_1
@@ -2705,6 +2708,11 @@ user_stack_top:
 ; INCLUDE USB UHCI DRIVER
 ; ════════════════════════════════════════════════════════════════════════════
 %include "usb/uhci.asm"
+
+; ════════════════════════════════════════════════════════════════════════════
+; INCLUDE ACPI POWER MANAGEMENT
+; ════════════════════════════════════════════════════════════════════════════
+%include "acpi.asm"
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; DATA SECTION
