@@ -20,6 +20,7 @@
 %include "net/udp.asm"
 %include "net/tcp.asm"
 %include "net/dhcp.asm"
+%include "net/dns.asm"
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; HIGH-LEVEL API
@@ -31,10 +32,13 @@
 ; ────────────────────────────────────────────────────────────────────────────
 net_init:
     call e1000_init
-    jc .net_init_done           ; Skip ARP init if no E1000 found
+    jc .net_init_done           ; Skip init if no E1000 found
 
     ; Initialize ARP
     call arp_init
+
+    ; Initialize DNS
+    call dns_init
 
 .net_init_done:
     ret
