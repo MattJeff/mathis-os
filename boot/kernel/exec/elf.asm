@@ -414,9 +414,9 @@ align 8
 ; Entry point storage
 elf_entry_point:    dq 0
 
-; Maximum ELF file size (64KB - larger files use heap)
-ELF_MAX_FILE_SIZE   equ 0x10000             ; 64KB max
+; Maximum ELF file size (4KB - larger files use heap)
+ELF_MAX_FILE_SIZE   equ 0x1000              ; 4KB max
 
 ; File buffer for loading from disk
-align 4096
+align 16
 elf_file_buffer:    times ELF_MAX_FILE_SIZE db 0
