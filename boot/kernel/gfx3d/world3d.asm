@@ -33,7 +33,7 @@ world_nodes:
     dd 0xFFFE0000               ; X = -2.0
     dd 0x00000000               ; Y = 0.0
     dd 0xFFFC0000               ; Z = -4.0
-    db COL3D_TERMINAL           ; Color = green
+    db NODE_TERMINAL            ; Node type index (for color lookup)
     db 6                        ; Size
     dw 0                        ; Flags
     dq str3d_terminal           ; Label
@@ -44,7 +44,7 @@ world_nodes:
     dd 0x00020000               ; X = 2.0
     dd 0x00000000               ; Y = 0.0
     dd 0xFFFC0000               ; Z = -4.0
-    db COL3D_FILES              ; Color = yellow
+    db NODE_FILES               ; Node type index
     db 6                        ; Size
     dw 0                        ; Flags
     dq str3d_files              ; Label
@@ -55,7 +55,7 @@ world_nodes:
     dd 0x00000000               ; X = 0.0
     dd 0x00010000               ; Y = 1.0 (slightly elevated)
     dd 0xFFF80000               ; Z = -8.0 (further back)
-    db COL3D_HYPERCUBE          ; Color = cyan
+    db NODE_HYPERCUBEX          ; Node type index
     db 10                       ; Size (larger - main attraction)
     dw 0                        ; Flags
     dq str3d_hypercubex         ; Label
@@ -66,7 +66,7 @@ world_nodes:
     dd 0x00000000               ; X = 0.0
     dd 0xFFFF0000               ; Y = -1.0 (below)
     dd 0xFFFA0000               ; Z = -6.0
-    db COL3D_SETTINGS           ; Color = gray
+    db NODE_SETTINGS            ; Node type index
     db 4                        ; Size (smaller)
     dw 0                        ; Flags
     dq str3d_settings           ; Label
@@ -81,8 +81,9 @@ str3d_settings:   db "SETTINGS", 0
 
 ; Currently selected node (-1 = none)
 align 4
-selected_node:  dd -1
-hover_node:     dd -1
+selected_node:      dd -1
+hover_node:         dd -1
+best_hover_dist:    dd 2500     ; Best distance squared for hover detection
 
 ; ============================================================================
 ; WORLD_INIT - Initialize the 3D world
@@ -118,28 +119,31 @@ world_render:
     push r14
     push r15
 
+    ; Increment frame counter for animation
+    inc dword [frame_counter]
+
     ; First, draw connections between nodes
     call world_draw_links
 
-    ; Then draw all nodes
+    ; Draw all nodes (classic method - stable)
     mov ecx, NODE_COUNT
     lea r15, [world_nodes]
 
 .render_loop:
     push rcx
 
-    ; Get node position
-    mov edi, [r15]              ; X
-    mov esi, [r15 + 4]          ; Y
+    ; Get node position (load Z first, then Y, then X to avoid clobbering)
     mov edx, [r15 + 8]          ; Z
+    mov esi, [r15 + 4]          ; Y
+    mov edi, [r15]              ; X
 
     ; Get node attributes into ECX (CL=color, high bits=size)
-    movzx eax, byte [r15 + 12]  ; Color
+    movzx eax, byte [r15 + 12]  ; Color/type
     movzx ecx, byte [r15 + 13]  ; Size
     shl ecx, 8
     or ecx, eax                 ; Pack: high byte=size, CL=color
 
-    ; Check if this is selected/hovered node
+    ; Check if this is hovered node
     mov eax, NODE_COUNT
     mov r8d, ecx                ; Save packed attributes
     pop rcx
@@ -148,20 +152,20 @@ world_render:
     cmp eax, [hover_node]
     mov ecx, r8d                ; Restore packed attributes
     jne .not_hovered
-    and ecx, 0xFF00             ; Keep size, clear color
-    or cl, COL3D_NODE_HI        ; Set highlight color
+    or ecx, 0x80                ; Set hover flag in CL
 .not_hovered:
 
     ; Draw the node
     call draw_node_3d
 
     ; Draw label below node
-    mov edi, [r15]              ; X
+    mov edx, [r15 + 8]          ; Z (load first)
     mov esi, [r15 + 4]          ; Y
-    sub esi, 0x00008000         ; Y - 0.5 (label below)
-    mov edx, [r15 + 8]          ; Z
+    sub esi, 0x00010000         ; Y - 1.0 (label below)
+    mov edi, [r15]              ; X
+
     mov r8, [r15 + 16]          ; Label pointer
-    mov r9b, COL3D_TEXT         ; White text
+    mov r9d, COL3D_TEXT         ; White text
     call draw_text_3d
 
     ; Next node
@@ -170,7 +174,7 @@ world_render:
     dec ecx
     jnz .render_loop
 
-    ; Draw particles for ambiance
+    ; Draw ambient particles
     call draw_particles
 
     pop r15
@@ -262,7 +266,7 @@ world_draw_links:
     mov eax, [rbx + 8]          ; z2
     mov [rsp + 40], eax
 
-    mov dl, COL3D_LINK          ; Link color
+    mov edx, COL3D_LINK         ; Link color (32-bit)
 
     ; Manual inline of draw_line_3d_world logic
     ; Project point 1
@@ -283,12 +287,42 @@ world_draw_links:
     test ecx, ecx
     jz .line_skip
 
-    ; Draw 2D line
+    ; Draw thick 2D line (3 lines for thickness)
     mov edi, r8d                ; x1
     mov esi, r9d                ; y1
     mov edx, eax                ; x2
     mov ecx, ebx                ; y2
-    mov r8b, COL3D_LINK         ; color
+
+    ; Draw main line
+    push rdi
+    push rsi
+    push rdx
+    push rcx
+    mov r8d, COL3D_LINK
+    call draw_line_2d
+    pop rcx
+    pop rdx
+    pop rsi
+    pop rdi
+
+    ; Draw line offset by 1 pixel (for thickness)
+    push rdi
+    push rsi
+    push rdx
+    push rcx
+    inc edi
+    inc edx
+    mov r8d, COL3D_LINK
+    call draw_line_2d
+    pop rcx
+    pop rdx
+    pop rsi
+    pop rdi
+
+    ; Draw line offset by -1 pixel
+    dec edi
+    dec edx
+    mov r8d, COL3D_LINK
     call draw_line_2d
 
 .line_skip:
@@ -339,7 +373,7 @@ world_update:
 
     ; Check which node is closest to center of screen (for hover)
     mov dword [hover_node], -1
-    mov r8d, 50                 ; Min distance threshold (pixels)
+    mov dword [best_hover_dist], 2500   ; threshold^2 (50*50)
 
     mov ecx, NODE_COUNT
     lea rdi, [world_nodes]
@@ -347,23 +381,29 @@ world_update:
 
 .hover_check:
     push rcx
+    push rdi                    ; Save node pointer
+    push rsi                    ; Save node index
 
-    ; Project node center
-    push rdi
-    push rsi
-    mov edi, [rdi]              ; X
-    mov esi, [rdi + 4]          ; Y
+    ; Get camera position and rotation FIRST (needed by project_point)
+    call camera_get_pos         ; Sets R8, R9, R10
+    call camera_get_rot         ; Sets R11
+
+    ; Now load node coordinates
+    ; Stack: [rsp] = rsi (index), [rsp+8] = rdi (node ptr), [rsp+16] = rcx
+    mov rdi, [rsp + 8]          ; Get node pointer back
     mov edx, [rdi + 8]          ; Z
+    mov esi, [rdi + 4]          ; Y
+    mov edi, [rdi]              ; X (now we can clobber rdi)
     call project_point
-    pop rsi
-    pop rdi
+
+    ; Restore saved values
+    pop rsi                     ; Restore node index
+    pop rdi                     ; Restore node pointer
 
     test ecx, ecx
     jz .hover_next
 
     ; Calculate distance from screen center
-    ; center_x = screen_width / 2
-    ; center_y = screen_height / 2
     mov ecx, [screen_width]
     shr ecx, 1
     sub eax, ecx                ; dx = screen_x - center_x
@@ -376,14 +416,11 @@ world_update:
 
     add eax, ebx                ; dist^2 = dx^2 + dy^2
 
-    ; Compare with best distance
-    cmp eax, r8d
-    jge .hover_next
-    imul r9d, r8d, r8d          ; threshold^2
-    cmp eax, r9d
+    ; Compare with best distance (stored in memory now)
+    cmp eax, [best_hover_dist]
     jge .hover_next
 
-    mov r8d, eax                ; New best distance
+    mov [best_hover_dist], eax  ; New best distance
     mov [hover_node], esi       ; This node is hovered
 
 .hover_next:

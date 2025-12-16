@@ -30,6 +30,7 @@ VIDEO_INFO_W      equ 0x504    ; Screen width (4 bytes)
 VIDEO_INFO_H      equ 0x508    ; Screen height (4 bytes)
 VIDEO_INFO_VESA   equ 0x50C    ; VESA mode flag (4 bytes)
 VIDEO_INFO_PITCH  equ 0x510    ; Screen pitch/bytes per line (4 bytes)
+VIDEO_INFO_BPP    equ 0x514    ; Bits per pixel (4 bytes) - 8, 24, or 32
 
 ; GUI Constants
 TASKBAR_H   equ 14
@@ -157,6 +158,8 @@ long_mode_entry:
     mov [screen_pitch], eax         ; Use actual pitch from VESA
     mov eax, [VIDEO_INFO_H]
     mov [screen_height], eax
+    mov eax, [VIDEO_INFO_BPP]
+    mov [screen_bpp], eax           ; Store bits per pixel (8, 24, or 32)
     ; Calculate center
     mov eax, [screen_width]
     shr eax, 1
@@ -1416,7 +1419,7 @@ shell_mode:
     jmp main_loop
 
 ; ════════════════════════════════════════════════════════════════════════════
-; DRAW TEXT - rdi=screen pos, rsi=string, r8d=color
+; DRAW TEXT - rdi=screen pos, rsi=string, r8d=color (supports 8/24/32-bit)
 ; Uses 8x8 bitmap font, draws on single horizontal line
 ; ════════════════════════════════════════════════════════════════════════════
 draw_text:
@@ -1430,9 +1433,24 @@ draw_text:
     push r10
     push r11
     push r12
+    push r13
+    push r14
 
     mov r9, rdi                     ; r9 = current X position base
     mov r12d, [screen_pitch]        ; r12 = pitch for row advance
+    mov r14d, [screen_bpp]          ; r14 = bits per pixel
+
+    ; Calculate bytes per pixel
+    mov r13d, 1                     ; Default 1 byte
+    cmp r14d, 24
+    jne .not_24bpp_setup
+    mov r13d, 3                     ; 24-bit = 3 bytes
+    jmp .bpp_setup_done
+.not_24bpp_setup:
+    cmp r14d, 32
+    jne .bpp_setup_done
+    mov r13d, 4                     ; 32-bit = 4 bytes
+.bpp_setup_done:
 
 .text_loop:
     lodsb
@@ -1455,16 +1473,36 @@ draw_text:
     mov rcx, 8                      ; 8 rows
 .draw_row:
     push rcx
-    mov al, [r10]                   ; Get font row byte
+    movzx ebx, byte [r10]           ; Get font row byte into BL (preserved)
     mov rdi, r11                    ; Set position for this row
     mov rcx, 8                      ; 8 pixels per row
 .draw_pixel:
-    test al, 0x80                   ; Check leftmost bit
+    test bl, 0x80                   ; Check leftmost bit
     jz .no_pixel
-    mov byte [rdi], r8b             ; Draw pixel
+
+    ; Draw pixel based on BPP
+    cmp r14d, 8
+    je .draw_8bit
+    cmp r14d, 24
+    je .draw_24bit
+    ; 32-bit
+    mov dword [rdi], r8d            ; Write 4 bytes
+    jmp .no_pixel
+.draw_8bit:
+    mov byte [rdi], r8b             ; Write 1 byte
+    jmp .no_pixel
+.draw_24bit:
+    ; Write BGR (3 bytes) - use eax which won't clobber bl
+    mov byte [rdi], r8b             ; Blue (low byte of r8d)
+    mov eax, r8d
+    shr eax, 8
+    mov byte [rdi + 1], al          ; Green
+    shr eax, 8
+    mov byte [rdi + 2], al          ; Red
+
 .no_pixel:
-    shl al, 1                       ; Next bit
-    inc rdi
+    shl bl, 1                       ; Next bit (using BL now, not AL)
+    add rdi, r13                    ; Advance by bytes per pixel
     loop .draw_pixel
 
     inc r10                         ; Next font row
@@ -1472,14 +1510,21 @@ draw_text:
     pop rcx
     loop .draw_row
 
-    add r9, 8                       ; Move to next char position (8 pixels wide)
+    ; Move to next char position (8 pixels * bytes per pixel)
+    mov eax, r13d
+    shl eax, 3                      ; * 8
+    add r9, rax
     jmp .text_loop
 
 .skip_char:
-    add r9, 8
+    mov eax, r13d
+    shl eax, 3
+    add r9, rax
     jmp .text_loop
 
 .text_done:
+    pop r14
+    pop r13
     pop r12
     pop r11
     pop r10
@@ -2119,10 +2164,16 @@ keyboard_isr64:
     jmp .kb_done
 
 .key_press:
-    ; If in 3D mode (mode 3), store scancode for 3D engine
+    ; If in 3D mode (mode 3), store scancode for 3D engine and skip other handlers
     cmp byte [mode_flag], 3
     jne .not_3d_mode
     mov [key3d_scancode], bl        ; Store scancode for 3D input
+    ; Still allow Tab to switch modes and ESC to reboot
+    cmp bl, 0x0F                    ; Tab
+    je .not_3d_mode
+    cmp bl, 0x01                    ; ESC
+    je .not_3d_mode
+    jmp .kb_done                    ; Skip other handlers for 3D mode
 .not_3d_mode:
 
     ; Check for shift press
@@ -2972,6 +3023,7 @@ screen_fb:      dq GFX_FB_DEFAULT   ; Framebuffer address
 screen_width:   dd GFX_W_DEFAULT    ; Screen width
 screen_height:  dd GFX_H_DEFAULT    ; Screen height
 screen_pitch:   dd GFX_W_DEFAULT    ; Bytes per line (= width for 8bpp)
+screen_bpp:     dd 8                ; Bits per pixel (8, 24, or 32)
 screen_centerx: dd 320              ; Center X
 screen_centery: dd 240              ; Center Y
 
@@ -3356,3 +3408,4 @@ tss64_end:
 %include "gfx3d/render3d.asm"
 %include "gfx3d/world3d.asm"
 %include "gfx3d/ui3d.asm"
+%include "gfx3d/effects3d.asm"

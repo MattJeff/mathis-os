@@ -9,11 +9,10 @@
 KERNEL_SECTORS  equ 1024        ; 512KB = 1024 sectors
 KERNEL_LBA      equ 9           ; Kernel starts at LBA 9
 
-; VESA modes (8-bit 256 colors)
-; 0x101 = 640x480x256
-; 0x103 = 800x600x256
-; 0x105 = 1024x768x256
-VESA_MODE       equ 0x105           ; 1024x768 - max resolution!
+; VESA modes - 32-bit color for high quality graphics
+; 32-bit modes provide 16 million colors with smooth gradients
+; QEMU std VGA 32-bit modes: 0x118 often works as 32-bit
+VESA_MODE       equ 0x118           ; 1024x768x32 - true color!
 
 start:
     mov si, msg_loading
@@ -98,6 +97,9 @@ start:
     mov ax, [mode_info + 16]    ; BytesPerScanLine at offset 16
     mov [screen_pitch], ax
 
+    mov al, [mode_info + 25]    ; BitsPerPixel at offset 25
+    mov [screen_bpp], al
+
     mov byte [vesa_mode], 1
 
     mov si, msg_vesa_ok
@@ -157,6 +159,7 @@ framebuffer_addr: dd 0xA0000
 screen_width:   dw 320
 screen_height:  dw 200
 screen_pitch:   dw 320
+screen_bpp:     db 8            ; Bits per pixel (8, 24, or 32)
 vesa_mode:      db 0
 
 ; DAP for LBA read
@@ -199,6 +202,8 @@ pm_entry:
     mov [0x50C], eax              ; VESA mode flag
     movzx eax, word [screen_pitch]
     mov [0x510], eax              ; Screen pitch (bytes per line)
+    movzx eax, byte [screen_bpp]
+    mov [0x514], eax              ; Bits per pixel (8, 24, or 32)
 
     jmp 0x08:0x10000
 

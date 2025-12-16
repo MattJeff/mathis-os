@@ -24,6 +24,7 @@ ui_running:         dd 1        ; Main loop flag
 crosshair_x:        dd 0
 crosshair_y:        dd 0
 
+
 ; ============================================================================
 ; UI3D_INIT - Initialize the 3D UI system
 ; ============================================================================
@@ -65,6 +66,10 @@ ui3d_main:
     ; Check if still running
     cmp dword [ui_running], 0
     je .exit_loop
+
+    ; Check if mode changed (Tab pressed) - exit to let main kernel handle mode switch
+    cmp byte [mode_flag], 3
+    jne .exit_loop
 
     ; Process input
     call ui3d_input
@@ -241,6 +246,9 @@ ui3d_render_space:
     ; Clear screen with stars
     call render3d_clear
 
+    ; Draw ground grid for spatial reference
+    call draw_ground_grid
+
     ; Render world (nodes, links, particles)
     call world_render
 
@@ -259,48 +267,200 @@ ui3d_render_space:
     ret
 
 ; ============================================================================
-; DRAW_CROSSHAIR - Draw targeting crosshair at screen center
+; DRAW_CROSSHAIR - Draw stylized targeting crosshair at screen center
 ; ============================================================================
 draw_crosshair:
     push rax
     push rbx
     push rcx
+    push rdx
     push rdi
     push rsi
 
     mov edi, [crosshair_x]
     mov esi, [crosshair_y]
 
-    ; Horizontal line
-    mov eax, edi
-    sub eax, 5
-    mov ecx, 11                 ; Width
+    ; Center dot (bright)
+    mov edx, COL3D_TEXT
+    call draw_pixel_3d
 
-.cross_h:
+    ; Draw corner brackets instead of full cross
+    ; Top-left corner
+    mov eax, edi
+    sub eax, 12
+    mov ebx, esi
+    sub ebx, 12
+
+    ; Top-left horizontal
+    mov ecx, 6
+.tl_h:
     push rdi
     mov edi, eax
-    mov dl, COL3D_TEXT
-    call draw_pixel_3d
-    pop rdi
-    inc eax
-    loop .cross_h
-
-    ; Vertical line
-    mov ebx, esi
-    sub ebx, 5
-    mov ecx, 11                 ; Height
-
-.cross_v:
     push rsi
     mov esi, ebx
-    mov dl, COL3D_TEXT
+    mov edx, COL3D_TEXT
     call draw_pixel_3d
     pop rsi
+    pop rdi
+    inc eax
+    loop .tl_h
+
+    ; Top-left vertical
+    mov eax, edi
+    sub eax, 12
+    mov ecx, 6
+.tl_v:
+    push rdi
+    mov edi, eax
+    push rsi
+    mov esi, ebx
+    mov edx, COL3D_TEXT
+    call draw_pixel_3d
+    pop rsi
+    pop rdi
     inc ebx
-    loop .cross_v
+    loop .tl_v
+
+    ; Top-right corner
+    mov eax, edi
+    add eax, 7
+    mov ebx, esi
+    sub ebx, 12
+
+    mov ecx, 6
+.tr_h:
+    push rdi
+    mov edi, eax
+    push rsi
+    mov esi, ebx
+    mov edx, COL3D_TEXT
+    call draw_pixel_3d
+    pop rsi
+    pop rdi
+    inc eax
+    loop .tr_h
+
+    mov eax, edi
+    add eax, 12
+    mov ecx, 6
+.tr_v:
+    push rdi
+    mov edi, eax
+    push rsi
+    mov esi, ebx
+    mov edx, COL3D_TEXT
+    call draw_pixel_3d
+    pop rsi
+    pop rdi
+    inc ebx
+    loop .tr_v
+
+    ; Bottom-left corner
+    mov eax, edi
+    sub eax, 12
+    mov ebx, esi
+    add ebx, 12
+
+    mov ecx, 6
+.bl_h:
+    push rdi
+    mov edi, eax
+    push rsi
+    mov esi, ebx
+    mov edx, COL3D_TEXT
+    call draw_pixel_3d
+    pop rsi
+    pop rdi
+    inc eax
+    loop .bl_h
+
+    mov eax, edi
+    sub eax, 12
+    mov ebx, esi
+    add ebx, 7
+    mov ecx, 6
+.bl_v:
+    push rdi
+    mov edi, eax
+    push rsi
+    mov esi, ebx
+    mov edx, COL3D_TEXT
+    call draw_pixel_3d
+    pop rsi
+    pop rdi
+    inc ebx
+    loop .bl_v
+
+    ; Bottom-right corner
+    mov eax, edi
+    add eax, 7
+    mov ebx, esi
+    add ebx, 12
+
+    mov ecx, 6
+.br_h:
+    push rdi
+    mov edi, eax
+    push rsi
+    mov esi, ebx
+    mov edx, COL3D_TEXT
+    call draw_pixel_3d
+    pop rsi
+    pop rdi
+    inc eax
+    loop .br_h
+
+    mov eax, edi
+    add eax, 12
+    mov ebx, esi
+    add ebx, 7
+    mov ecx, 6
+.br_v:
+    push rdi
+    mov edi, eax
+    push rsi
+    mov esi, ebx
+    mov edx, COL3D_TEXT
+    call draw_pixel_3d
+    pop rsi
+    pop rdi
+    inc ebx
+    loop .br_v
+
+    ; Draw small cross in center
+    mov eax, edi
+    sub eax, 3
+    mov ecx, 7
+.small_h:
+    cmp ecx, 4                  ; Skip center
+    je .skip_h
+    push rdi
+    mov edi, eax
+    mov edx, COL3D_NODE_HI       ; Yellow for targeting
+    call draw_pixel_3d
+    pop rdi
+.skip_h:
+    inc eax
+    loop .small_h
+
+    mov ebx, esi
+    sub ebx, 3
+    mov ecx, 7
+.small_v:
+    cmp ecx, 4
+    je .skip_v
+    push rsi
+    mov esi, ebx
+    mov edx, COL3D_NODE_HI
+    call draw_pixel_3d
+    pop rsi
+.skip_v:
+    inc ebx
+    loop .small_v
 
     pop rsi
     pop rdi
+    pop rdx
     pop rcx
     pop rbx
     pop rax
@@ -313,32 +473,57 @@ draw_hud:
     push rax
     push rbx
     push rcx
+    push rdx
     push rdi
     push rsi
+    push r8
+    push r9
 
-    ; Draw "MATHIS OS 3D" at top-left
+    ; Draw "MATHIS OS 3D" at top-left with cyan color
     mov rdi, [screen_fb]
-    add rdi, 5                  ; X = 5
+    add rdi, 10                 ; X = 10
     mov eax, [screen_pitch]
-    imul eax, 5                 ; Y = 5
+    imul eax, 10                ; Y = 10
     add rdi, rax
     lea rsi, [hud_title]
+    mov r8d, COL3D_HYPERCUBE    ; Cyan title
+    call draw_text
+
+    ; Draw version below
+    mov rdi, [screen_fb]
+    add rdi, 10
+    mov eax, [screen_pitch]
+    imul eax, 22
+    add rdi, rax
+    lea rsi, [hud_version]
+    mov r8d, COL3D_STAR_DIM     ; Dim gray
+    call draw_text
+
+    ; Draw node count indicator at top-right area
+    mov rdi, [screen_fb]
+    mov eax, [screen_width]
+    sub eax, 120                ; Right side
+    add rdi, rax
+    mov eax, [screen_pitch]
+    imul eax, 10
+    add rdi, rax
+    lea rsi, [hud_nodes]
     mov r8d, COL3D_TEXT
     call draw_text
 
     ; Draw controls hint at bottom
     mov rdi, [screen_fb]
-    add rdi, 5
+    add rdi, 10
     mov eax, [screen_pitch]
     mov ebx, [screen_height]
-    sub ebx, 15
+    sub ebx, 20
     imul eax, ebx
     add rdi, rax
     lea rsi, [hud_controls]
-    mov r8d, COL3D_PARTICLE       ; Dim color
+    mov r8d, COL3D_STAR_DIM     ; Dim color
     call draw_text
 
-    ; If hovering over a node, show its name
+    ; If hovering over a node, show its name with selection brackets
     mov eax, [hover_node]
     cmp eax, -1
     je .no_hover_name
@@ -347,24 +532,55 @@ draw_hud:
     imul eax, NODE_SIZE
     lea rbx, [world_nodes]
     add rbx, rax
-    mov rsi, [rbx + 16]         ; Label pointer
+    mov r9, [rbx + 16]          ; Label pointer (save for later)
 
-    ; Draw at screen center below crosshair
+    ; Draw selection indicator "[ ]" around name
+    ; First draw "[ "
     mov rdi, [screen_fb]
     mov eax, [crosshair_x]
-    sub eax, 30                 ; Center text roughly
+    sub eax, 50                 ; Center text roughly
     add rdi, rax
     mov eax, [screen_pitch]
     mov ebx, [crosshair_y]
-    add ebx, 20
+    add ebx, 25
     imul eax, ebx
     add rdi, rax
-    mov r8d, COL3D_NODE_HI        ; Highlight color
+    lea rsi, [hud_bracket_l]
+    mov r8d, COL3D_TEXT
+    call draw_text
+
+    ; Draw node name
+    add rdi, 16                 ; After bracket
+    mov rsi, r9
+    mov r8d, COL3D_NODE_HI      ; Highlight color (yellow)
+    call draw_text
+
+    ; Draw " ]"
+    add rdi, 80                 ; After name
+    lea rsi, [hud_bracket_r]
+    mov r8d, COL3D_TEXT
+    call draw_text
+
+    ; Draw "Press ENTER" hint below
+    mov rdi, [screen_fb]
+    mov eax, [crosshair_x]
+    sub eax, 45
+    add rdi, rax
+    mov eax, [screen_pitch]
+    mov ebx, [crosshair_y]
+    add ebx, 40
+    imul eax, ebx
+    add rdi, rax
+    lea rsi, [hud_enter_hint]
+    mov r8d, COL3D_STAR_DIM
     call draw_text
 
 .no_hover_name:
+    pop r9
+    pop r8
     pop rsi
     pop rdi
+    pop rdx
     pop rcx
     pop rbx
     pop rax
@@ -372,35 +588,29 @@ draw_hud:
 
 ; HUD strings
 hud_title:      db "MATHIS OS 3D", 0
-hud_controls:   db "WASD:Move  Arrows:Look  Enter:Select", 0
+hud_version:    db "v1.0 - 64-bit", 0
+hud_nodes:      db "NODES: 4", 0
+hud_controls:   db "WASD:Move    Arrows:Look    Enter:Select", 0
+hud_bracket_l:  db "[ ", 0
+hud_bracket_r:  db " ]", 0
+hud_enter_hint: db "Press ENTER", 0
 
 ; ============================================================================
 ; UI3D_RENDER_TERMINAL - Render terminal inside view
 ; ============================================================================
 ui3d_render_terminal:
     push rax
+    push rbx
     push rdi
     push rsi
 
-    ; Clear to dark background
+    ; Clear to black
     mov rdi, [screen_fb]
-    mov eax, [screen_width]
+    mov eax, [screen_pitch]
     imul eax, [screen_height]
     mov ecx, eax
-    mov al, 0                   ; Black
+    xor al, al
     rep stosb
-
-    ; Draw terminal border
-    mov edi, 10
-    mov esi, 10
-    mov eax, [screen_width]
-    sub eax, 20
-    mov edx, eax                ; Width
-    mov eax, [screen_height]
-    sub eax, 20
-    mov ecx, eax                ; Height
-    mov r8b, COL3D_TERMINAL
-    call draw_rect_outline
 
     ; Draw "TERMINAL" title
     mov rdi, [screen_fb]
@@ -408,11 +618,21 @@ ui3d_render_terminal:
     mov eax, [screen_pitch]
     imul eax, 20
     add rdi, rax
-    lea rsi, [str3d_terminal]
+    lea rsi, [term_title]
     mov r8d, COL3D_TERMINAL
     call draw_text
 
-    ; Draw "Press ESC to exit" at bottom
+    ; Draw prompt "> "
+    mov rdi, [screen_fb]
+    add rdi, 20
+    mov eax, [screen_pitch]
+    imul eax, 50
+    add rdi, rax
+    lea rsi, [term_prompt]
+    mov r8d, COL3D_TERMINAL
+    call draw_text
+
+    ; Draw ESC hint
     mov rdi, [screen_fb]
     add rdi, 20
     mov eax, [screen_pitch]
@@ -421,28 +641,32 @@ ui3d_render_terminal:
     imul eax, ebx
     add rdi, rax
     lea rsi, [str_esc_exit]
-    mov r8d, COL3D_TEXT
+    mov r8d, 0x666666
     call draw_text
 
     pop rsi
     pop rdi
+    pop rbx
     pop rax
     ret
+
+term_title:     db "MATHIS TERMINAL", 0
 
 ; ============================================================================
 ; UI3D_RENDER_FILES - Render files browser inside view
 ; ============================================================================
 ui3d_render_files:
     push rax
+    push rbx
     push rdi
     push rsi
 
-    ; Clear to dark background
+    ; Clear to dark background (24-bit = 3 bytes per pixel)
     mov rdi, [screen_fb]
-    mov eax, [screen_width]
+    mov eax, [screen_pitch]
     imul eax, [screen_height]
     mov ecx, eax
-    mov al, 0
+    xor al, al
     rep stosb
 
     ; Draw files border
@@ -454,7 +678,7 @@ ui3d_render_files:
     mov eax, [screen_height]
     sub eax, 20
     mov ecx, eax
-    mov r8b, COL3D_FILES
+    mov r8d, COL3D_FILES
     call draw_rect_outline
 
     ; Draw "FILES" title
@@ -481,6 +705,7 @@ ui3d_render_files:
 
     pop rsi
     pop rdi
+    pop rbx
     pop rax
     ret
 
@@ -495,9 +720,9 @@ ui3d_render_hypercube:
     push rdi
     push rsi
 
-    ; Clear to black
+    ; Clear to black (24-bit = 3 bytes per pixel)
     mov rdi, [screen_fb]
-    mov eax, [screen_width]
+    mov eax, [screen_pitch]
     imul eax, [screen_height]
     mov ecx, eax
     xor al, al
@@ -550,7 +775,7 @@ ui3d_render_hypercube:
     mov esi, eax
 
     ; Draw neuron dot
-    mov dl, COL3D_HYPERCUBE
+    mov edx, COL3D_HYPERCUBE
     call draw_pixel_3d
     ; Draw slightly larger
     inc edi
@@ -588,12 +813,13 @@ ui3d_render_hypercube:
 ; ============================================================================
 ui3d_render_settings:
     push rax
+    push rbx
     push rdi
     push rsi
 
-    ; Clear
+    ; Clear (24-bit = 3 bytes per pixel)
     mov rdi, [screen_fb]
-    mov eax, [screen_width]
+    mov eax, [screen_pitch]
     imul eax, [screen_height]
     mov ecx, eax
     xor al, al
@@ -608,7 +834,7 @@ ui3d_render_settings:
     mov eax, [screen_height]
     sub eax, 20
     mov ecx, eax
-    mov r8b, COL3D_SETTINGS
+    mov r8d, COL3D_SETTINGS
     call draw_rect_outline
 
     ; Draw "SETTINGS" title
@@ -635,6 +861,7 @@ ui3d_render_settings:
 
     pop rsi
     pop rdi
+    pop rbx
     pop rax
     ret
 
@@ -645,7 +872,7 @@ str_esc_exit:   db "Press ESC to return", 0
 ; ============================================================================
 ui3d_delay:
     push rcx
-    mov ecx, 100000
+    mov ecx, 10000              ; Reduced delay for smoother render
 .delay_loop:
     nop
     loop .delay_loop
@@ -658,4 +885,6 @@ ui3d_delay:
 ui3d_exit:
     mov dword [ui_running], 0
     ret
+
+term_prompt:        db "> ", 0
 
