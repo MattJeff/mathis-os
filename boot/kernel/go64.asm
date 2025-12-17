@@ -2219,6 +2219,11 @@ str_dlg_new:     db "CREATE NEW", 0
 str_dlg_cancel:  db "[ESC] Cancel", 0
 str_dlg_create:  db "[ENTER] Create", 0
 
+; DRAW_DIALOG_NEW - Draw dialog box overlay
+draw_dialog_new:
+    nop
+    ret
+
 ; ════════════════════════════════════════════════════════════════════════════
 ; DRAW TEXT - rdi=screen pos, rsi=string, r8d=color (supports 8/24/32-bit)
 ; Uses 8x8 bitmap font, draws on single horizontal line
