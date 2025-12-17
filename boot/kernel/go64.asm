@@ -2645,59 +2645,7 @@ check_window_clicks:
     pop rax
     ret
 
-; ════════════════════════════════════════════════════════════════════════════
-; OPEN WINDOW - edi=type, esi=x, edx=y
-; ════════════════════════════════════════════════════════════════════════════
-open_window:
-    push rax
-    push rbx
-    push rcx
-
-    ; Find empty slot
-    xor ecx, ecx
-.find_slot:
-    cmp ecx, MAX_WINDOWS
-    jge .no_slot
-
-    mov eax, ecx
-    shl eax, 5
-    cmp byte [windows + rax], 0
-    je .found_slot
-    inc ecx
-    jmp .find_slot
-
-.found_slot:
-    lea rbx, [windows + rax]
-
-    ; Setup window
-    mov byte [rbx], 1               ; flags = open
-    mov byte [rbx + 1], dil         ; type
-    mov word [rbx + 2], si          ; x
-    mov word [rbx + 4], dx          ; y
-    mov word [rbx + 6], 120         ; width
-    mov word [rbx + 8], 80          ; height
-
-    ; Set title based on type
-    cmp dil, 1
-    jne .not_term
-    mov qword [rbx + 16], str_win_terminal
-    jmp .title_done
-.not_term:
-    cmp dil, 2
-    jne .not_files
-    mov qword [rbx + 16], str_win_files
-    jmp .title_done
-.not_files:
-    mov qword [rbx + 16], str_win_3d
-.title_done:
-
-    mov [active_window], cl
-
-.no_slot:
-    pop rcx
-    pop rbx
-    pop rax
-    ret
+; open_window moved to ui/window.asm
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; EXECUTE COMMAND
