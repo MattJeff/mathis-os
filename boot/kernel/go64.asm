@@ -2214,6 +2214,7 @@ str_status_asm:  db "ASM", 0
 files_selected:  dd 0
 files_viewing:   db 0
 files_dirty:     db 1              ; Start dirty to draw first frame
+files_dialog:    db 0              ; 0=none, 1=new
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; DRAW TEXT - rdi=screen pos, rsi=string, r8d=color (supports 8/24/32-bit)
