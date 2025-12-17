@@ -2879,6 +2879,7 @@ tss64_end:
 %include "ui/input.asm"
 %include "ui/window.asm"
 %include "ui/terminal.asm"
+%include "ui/desktop.asm"
 
 ; INPUT MODULES (keyboard/mouse)
 %include "input/state.asm"
