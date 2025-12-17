@@ -2316,111 +2316,7 @@ mouse_isr64:
 ; check_window_clicks moved to ui/window.asm
 ; open_window moved to ui/window.asm
 
-; ════════════════════════════════════════════════════════════════════════════
-; EXECUTE COMMAND
-; ════════════════════════════════════════════════════════════════════════════
-execute_cmd:
-    push rax
-    push rbx
-    push rcx
-    push rdi
-
-    ; Check commands
-    cmp dword [cmd_buf], 'help'
-    je .cmd_help
-    cmp dword [cmd_buf], 'clea'
-    je .cmd_clear
-    cmp word [cmd_buf], 'ls'
-    je .cmd_ls
-    cmp word [cmd_buf], 'ps'
-    je .cmd_ps
-    cmp dword [cmd_buf], 'kill'
-    je .cmd_kill
-    jmp .cmd_unknown
-
-.cmd_help:
-    mov rsi, str_help_result
-    mov rdi, result_buf
-    call copy_string
-    mov byte [show_result], 1
-    jmp .clear_cmd
-
-.cmd_clear:
-    mov byte [show_result], 0
-    jmp .clear_cmd
-
-.cmd_ls:
-    mov rsi, str_ls_result
-    mov rdi, result_buf
-    call copy_string
-    mov byte [show_result], 1
-    jmp .clear_cmd
-
-.cmd_ps:
-    ; Show process list - format: "3 procs running"
-    call get_process_count
-    mov rdi, result_buf
-    add al, '0'                             ; Convert to ASCII
-    mov [rdi], al
-    mov byte [rdi + 1], ' '
-    mov byte [rdi + 2], 'p'
-    mov byte [rdi + 3], 'r'
-    mov byte [rdi + 4], 'o'
-    mov byte [rdi + 5], 'c'
-    mov byte [rdi + 6], 's'
-    mov byte [rdi + 7], 0
-    mov byte [show_result], 1
-    jmp .clear_cmd
-
-.cmd_kill:
-    ; kill <pid> - Kill a process (parse single digit PID)
-    movzx edi, byte [cmd_buf + 5]           ; Get char after "kill "
-    sub edi, '0'                            ; Convert to number
-    cmp edi, 0
-    jle .kill_failed
-    cmp edi, 9
-    jg .kill_failed
-    call kill_process
-    test eax, eax
-    jnz .kill_failed
-    ; Success
-    mov rdi, result_buf
-    mov byte [rdi], 'O'
-    mov byte [rdi + 1], 'K'
-    mov byte [rdi + 2], 0
-    mov byte [show_result], 1
-    jmp .clear_cmd
-.kill_failed:
-    mov rdi, result_buf
-    mov byte [rdi], 'E'
-    mov byte [rdi + 1], 'r'
-    mov byte [rdi + 2], 'r'
-    mov byte [rdi + 3], 0
-    mov byte [show_result], 1
-    jmp .clear_cmd
-
-.cmd_unknown:
-    mov byte [show_result], 0
-
-.clear_cmd:
-    mov rdi, cmd_buf
-    mov rcx, 32
-    xor al, al
-    rep stosb
-    mov byte [cmd_pos], 0
-
-    pop rdi
-    pop rcx
-    pop rbx
-    pop rax
-    ret
-
-copy_string:
-    lodsb
-    stosb
-    test al, al
-    jnz copy_string
-    ret
+; execute_cmd and copy_string moved to ui/terminal.asm
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; DEMO PROCESSES - Background tasks for multitasking demonstration
@@ -2982,6 +2878,7 @@ tss64_end:
 %include "ui/files.asm"
 %include "ui/input.asm"
 %include "ui/window.asm"
+%include "ui/terminal.asm"
 
 ; INPUT MODULES (keyboard/mouse)
 %include "input/state.asm"
