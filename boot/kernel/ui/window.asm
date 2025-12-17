@@ -306,3 +306,101 @@ draw_windows:
     pop r12
     pop rbx
     ret
+
+; ════════════════════════════════════════════════════════════════════════════
+; DRAW TERMINAL WINDOW CONTENT
+; ════════════════════════════════════════════════════════════════════════════
+draw_terminal_window:
+    push rbx
+    push r13
+    push r14
+
+    ; Get window position
+    movzx r13, word [rbx + 2]       ; x
+    movzx r14, word [rbx + 4]       ; y
+
+    ; Draw terminal header at (x+6, y+TITLEBAR_H+4)
+    mov rdi, [screen_fb]
+    mov eax, r14d
+    add eax, TITLEBAR_H + 4
+    imul eax, [screen_pitch]
+    add rdi, rax
+    add rdi, r13
+    add rdi, 6
+    mov rsi, str_term_header
+    mov r8d, COL_GREEN
+    call draw_text
+
+    ; Draw help text at (x+6, y+TITLEBAR_H+14)
+    mov rdi, [screen_fb]
+    mov eax, r14d
+    add eax, TITLEBAR_H + 14
+    imul eax, [screen_pitch]
+    add rdi, rax
+    add rdi, r13
+    add rdi, 6
+    mov rsi, str_term_help
+    mov r8d, COL_TEXT
+    call draw_text
+
+    ; Draw prompt at (x+6, y+TITLEBAR_H+34)
+    mov rdi, [screen_fb]
+    mov eax, r14d
+    add eax, TITLEBAR_H + 34
+    imul eax, [screen_pitch]
+    add rdi, rax
+    add rdi, r13
+    add rdi, 6
+    mov rsi, str_prompt
+    mov r8d, COL_YELLOW
+    call draw_text
+
+    ; Draw command buffer at (x+70, y+TITLEBAR_H+34)
+    mov rdi, [screen_fb]
+    mov eax, r14d
+    add eax, TITLEBAR_H + 34
+    imul eax, [screen_pitch]
+    add rdi, rax
+    add rdi, r13
+    add rdi, 70
+    mov rsi, cmd_buf
+    mov r8d, COL_TEXT
+    call draw_text
+
+    ; Draw cursor (blinking)
+    mov rax, [tick_count]
+    test al, 0x10
+    jz .no_cursor
+    movzx ecx, byte [cmd_pos]
+    shl ecx, 3                      ; * 8 pixels
+    mov rdi, [screen_fb]
+    mov eax, r14d
+    add eax, TITLEBAR_H + 34
+    imul eax, [screen_pitch]
+    add rdi, rax
+    add rdi, r13
+    add rdi, 70
+    add rdi, rcx
+    mov byte [rdi], COL_TEXT
+    mov byte [rdi + 1], COL_TEXT
+.no_cursor:
+
+    ; Draw result if any
+    cmp byte [show_result], 0
+    je .no_result
+    mov rdi, [screen_fb]
+    mov eax, r14d
+    add eax, TITLEBAR_H + 50
+    imul eax, [screen_pitch]
+    add rdi, rax
+    add rdi, r13
+    add rdi, 6
+    mov rsi, result_buf
+    mov r8d, COL_CYAN
+    call draw_text
+.no_result:
+
+    pop r14
+    pop r13
+    pop rbx
+    ret
