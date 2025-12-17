@@ -3364,6 +3364,7 @@ tss64_end:
 %include "ui/dialog.asm"
 %include "ui/files.asm"
 %include "ui/input.asm"
+%include "ui/window.asm"
 
 ; INPUT MODULES (keyboard/mouse)
 %include "input/state.asm"
