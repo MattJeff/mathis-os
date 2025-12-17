@@ -95,3 +95,61 @@ draw_start_menu:
 
     pop rbx
     ret
+
+; ════════════════════════════════════════════════════════════════════════════
+; DRAW MOUSE CURSOR
+; ════════════════════════════════════════════════════════════════════════════
+draw_mouse_cursor:
+    push rax
+    push rbx
+    push rcx
+    push rdi
+    push r9
+
+    mov r9d, [screen_pitch]              ; Save pitch in r9
+
+    movzx eax, word [mouse_y]
+    imul eax, r9d
+    movzx ebx, word [mouse_x]
+    add eax, ebx
+    mov rdi, [screen_fb]
+    add rdi, rax
+
+    ; Simple arrow cursor (8 pixels tall)
+    mov byte [rdi], COL_CURSOR
+    add rdi, r9
+    mov byte [rdi], COL_CURSOR
+    mov byte [rdi + 1], COL_CURSOR
+    add rdi, r9
+    mov byte [rdi], COL_CURSOR
+    mov byte [rdi + 1], COL_BORDER
+    mov byte [rdi + 2], COL_CURSOR
+    add rdi, r9
+    mov byte [rdi], COL_CURSOR
+    mov byte [rdi + 1], COL_BORDER
+    mov byte [rdi + 2], COL_BORDER
+    mov byte [rdi + 3], COL_CURSOR
+    add rdi, r9
+    mov byte [rdi], COL_CURSOR
+    mov byte [rdi + 1], COL_CURSOR
+    mov byte [rdi + 2], COL_CURSOR
+    mov byte [rdi + 3], COL_CURSOR
+    mov byte [rdi + 4], COL_CURSOR
+    add rdi, r9
+    mov byte [rdi], COL_CURSOR
+    mov byte [rdi + 1], COL_CURSOR
+    mov byte [rdi + 2], COL_BORDER
+    mov byte [rdi + 3], COL_CURSOR
+    add rdi, r9
+    mov byte [rdi], COL_CURSOR
+    add rdi, r9
+    add rdi, 2
+    mov byte [rdi], COL_CURSOR
+    mov byte [rdi + 1], COL_CURSOR
+
+    pop r9
+    pop rdi
+    pop rcx
+    pop rbx
+    pop rax
+    ret
