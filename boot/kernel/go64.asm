@@ -252,6 +252,8 @@ long_mode_entry:
 ; MAIN LOOP
 ; ════════════════════════════════════════════════════════════════════════════
 main_loop:
+    cmp byte [mode_flag], 4
+    je files_mode
     cmp byte [mode_flag], 3
     je gui3d_mode
     cmp byte [mode_flag], 2
@@ -1499,6 +1501,507 @@ shell_mode:
     jmp main_loop
 
 ; ════════════════════════════════════════════════════════════════════════════
+; FILES MODE - File Manager
+; ════════════════════════════════════════════════════════════════════════════
+files_mode:
+    ; Only redraw if dirty flag is set
+    cmp byte [files_dirty], 0
+    je .files_skip_draw
+    mov byte [files_dirty], 0        ; Clear dirty flag
+
+    push rax
+    push rbx
+    push rcx
+    push rdx
+    push rdi
+    push rsi
+    push r8
+    push r9
+
+    ; Check if viewing a file
+    cmp byte [files_viewing], 1
+    je .files_view_mode
+
+    ; === FILE LIST MODE (2D) ===
+    ; Constants: LEFT_MARGIN=80, ROW_HEIGHT=25, SIZE_COL=600
+
+    ; Clear screen - dark background
+    mov rdi, [screen_fb]
+    mov eax, [screen_width]
+    imul eax, [screen_height]
+    mov ecx, eax
+    mov eax, 0x001a1a1a
+.files_clear:
+    mov dword [rdi], eax
+    add rdi, 4
+    dec ecx
+    jnz .files_clear
+
+    ; Draw top header bar (40 pixels high)
+    mov rdi, [screen_fb]
+    mov eax, [screen_width]
+    imul eax, 40
+    mov ecx, eax
+    mov eax, 0x00403020
+.files_header:
+    mov dword [rdi], eax
+    add rdi, 4
+    dec ecx
+    jnz .files_header
+
+    ; Header: "FILES" (y=12)
+    mov rdi, [screen_fb]
+    add rdi, 120
+    mov eax, [screen_pitch]
+    imul eax, 14
+    add rdi, rax
+    mov rsi, str_files_icon
+    mov r8d, 0x00FFFFFF
+    call draw_text
+
+    ; Header right: "[ESC] Back"
+    mov rdi, [screen_fb]
+    mov eax, [screen_width]
+    sub eax, 120
+    shl eax, 2
+    add rdi, rax
+    mov eax, [screen_pitch]
+    imul eax, 14
+    add rdi, rax
+    mov rsi, str_esc_back
+    mov r8d, 0x00808080
+    call draw_text
+
+    ; Separator line under header
+    mov rdi, [screen_fb]
+    mov eax, [screen_pitch]
+    imul eax, 40
+    add rdi, rax
+    mov ecx, [screen_width]
+    mov eax, 0x00505050
+.files_sep1:
+    mov dword [rdi], eax
+    add rdi, 4
+    dec ecx
+    jnz .files_sep1
+
+    ; Path line: "/ (root)" (y=60)
+    mov rdi, [screen_fb]
+    add rdi, 120
+    mov eax, [screen_pitch]
+    imul eax, 60
+    add rdi, rax
+    mov rsi, str_path_icon
+    mov r8d, 0x0080FF80
+    call draw_text
+
+    ; Separator under path (y=85)
+    mov rdi, [screen_fb]
+    mov eax, [screen_pitch]
+    imul eax, 85
+    add rdi, rax
+    mov ecx, [screen_width]
+    mov eax, 0x00404040
+.files_sep2:
+    mov dword [rdi], eax
+    add rdi, 4
+    dec ecx
+    jnz .files_sep2
+
+    ; Column header: Name (y=110)
+    mov rdi, [screen_fb]
+    add rdi, 160
+    mov eax, [screen_pitch]
+    imul eax, 110
+    add rdi, rax
+    mov rsi, str_col_name
+    mov r8d, 0x00A0A0A0
+    call draw_text
+
+    ; Column header: Size (x=600)
+    mov rdi, [screen_fb]
+    add rdi, 2400                ; 600 * 4
+    mov eax, [screen_pitch]
+    imul eax, 110
+    add rdi, rax
+    mov rsi, str_col_size
+    mov r8d, 0x00A0A0A0
+    call draw_text
+
+    ; Separator under column headers (y=130)
+    mov rdi, [screen_fb]
+    mov eax, [screen_pitch]
+    imul eax, 130
+    add rdi, rax
+    add rdi, 100
+    mov ecx, 200
+    mov eax, 0x00404040
+.files_sep3:
+    mov dword [rdi], eax
+    add rdi, 4
+    dec ecx
+    jnz .files_sep3
+
+    ; === Draw file entries (starting y=150, 30px apart) ===
+
+    ; Entry 0: PROJECTS folder (y=150)
+    mov eax, [files_selected]
+    test eax, eax
+    jnz .files_e0_nosel
+    ; Selection bar (full width)
+    mov rdi, [screen_fb]
+    mov eax, [screen_pitch]
+    imul eax, 148
+    add rdi, rax
+    add rdi, 100
+    mov eax, [screen_width]
+    sub eax, 60
+    mov ecx, eax
+    mov eax, 0x00804020
+.files_sel0:
+    mov dword [rdi], eax
+    add rdi, 4
+    dec ecx
+    jnz .files_sel0
+    ; Selection indicator >
+    mov rdi, [screen_fb]
+    add rdi, 120
+    mov eax, [screen_pitch]
+    imul eax, 155
+    add rdi, rax
+    mov rsi, str_sel_arrow
+    mov r8d, 0x0000FFFF
+    call draw_text
+    mov r8d, 0x00FFFFFF
+    jmp .files_e0_draw
+.files_e0_nosel:
+    mov r8d, 0x0060DDFF
+.files_e0_draw:
+    mov rdi, [screen_fb]
+    add rdi, 160
+    mov eax, [screen_pitch]
+    imul eax, 155
+    add rdi, rax
+    mov rsi, str_files_e0
+    call draw_text
+    mov rdi, [screen_fb]
+    add rdi, 2400
+    mov eax, [screen_pitch]
+    imul eax, 155
+    add rdi, rax
+    mov rsi, str_size_dir
+    mov r8d, 0x00808080
+    call draw_text
+
+    ; Entry 1: README.TXT (y=185)
+    mov eax, [files_selected]
+    cmp eax, 1
+    jne .files_e1_nosel
+    mov rdi, [screen_fb]
+    mov eax, [screen_pitch]
+    imul eax, 183
+    add rdi, rax
+    add rdi, 100
+    mov eax, [screen_width]
+    sub eax, 60
+    mov ecx, eax
+    mov eax, 0x00804020
+.files_sel1:
+    mov dword [rdi], eax
+    add rdi, 4
+    dec ecx
+    jnz .files_sel1
+    mov rdi, [screen_fb]
+    add rdi, 120
+    mov eax, [screen_pitch]
+    imul eax, 190
+    add rdi, rax
+    mov rsi, str_sel_arrow
+    mov r8d, 0x0000FFFF
+    call draw_text
+    mov r8d, 0x00FFFFFF
+    jmp .files_e1_draw
+.files_e1_nosel:
+    mov r8d, 0x00E0E0E0
+.files_e1_draw:
+    mov rdi, [screen_fb]
+    add rdi, 160
+    mov eax, [screen_pitch]
+    imul eax, 190
+    add rdi, rax
+    mov rsi, str_files_e1
+    call draw_text
+    mov rdi, [screen_fb]
+    add rdi, 2400
+    mov eax, [screen_pitch]
+    imul eax, 190
+    add rdi, rax
+    mov rsi, str_size_readme
+    mov r8d, 0x00808080
+    call draw_text
+
+    ; Entry 2: HELLO.ASM (y=220)
+    mov eax, [files_selected]
+    cmp eax, 2
+    jne .files_e2_nosel
+    mov rdi, [screen_fb]
+    mov eax, [screen_pitch]
+    imul eax, 218
+    add rdi, rax
+    add rdi, 100
+    mov eax, [screen_width]
+    sub eax, 60
+    mov ecx, eax
+    mov eax, 0x00804020
+.files_sel2:
+    mov dword [rdi], eax
+    add rdi, 4
+    dec ecx
+    jnz .files_sel2
+    mov rdi, [screen_fb]
+    add rdi, 120
+    mov eax, [screen_pitch]
+    imul eax, 225
+    add rdi, rax
+    mov rsi, str_sel_arrow
+    mov r8d, 0x0000FFFF
+    call draw_text
+    mov r8d, 0x00FFFFFF
+    jmp .files_e2_draw
+.files_e2_nosel:
+    mov r8d, 0x00E0E0E0
+.files_e2_draw:
+    mov rdi, [screen_fb]
+    add rdi, 160
+    mov eax, [screen_pitch]
+    imul eax, 225
+    add rdi, rax
+    mov rsi, str_files_e2
+    call draw_text
+    mov rdi, [screen_fb]
+    add rdi, 2400
+    mov eax, [screen_pitch]
+    imul eax, 225
+    add rdi, rax
+    mov rsi, str_size_hello
+    mov r8d, 0x00808080
+    call draw_text
+
+    ; Footer separator
+    mov rdi, [screen_fb]
+    mov eax, [screen_height]
+    sub eax, 70
+    imul eax, [screen_pitch]
+    add rdi, rax
+    mov ecx, [screen_width]
+    mov eax, 0x00404040
+.files_sep4:
+    mov dword [rdi], eax
+    add rdi, 4
+    dec ecx
+    jnz .files_sep4
+
+    ; Footer help line 1
+    mov rdi, [screen_fb]
+    add rdi, 120
+    mov eax, [screen_height]
+    sub eax, 50
+    imul eax, [screen_pitch]
+    add rdi, rax
+    mov rsi, str_files_help1
+    mov r8d, 0x00909090
+    call draw_text
+
+    ; Footer help line 2
+    mov rdi, [screen_fb]
+    add rdi, 120
+    mov eax, [screen_height]
+    sub eax, 30
+    imul eax, [screen_pitch]
+    add rdi, rax
+    mov rsi, str_files_help2
+    mov r8d, 0x00909090
+    call draw_text
+
+    jmp .files_done
+
+.files_view_mode:
+    ; === FILE VIEWER MODE ===
+    ; Clear to dark blue
+    mov rdi, [screen_fb]
+    mov eax, [screen_width]
+    imul eax, [screen_height]
+    mov ecx, eax
+    mov eax, 0x00301010          ; Dark editor background
+.files_vclear:
+    mov dword [rdi], eax
+    add rdi, 4
+    dec ecx
+    jnz .files_vclear
+
+    ; Draw header with filename
+    mov rdi, [screen_fb]
+    mov eax, [screen_width]
+    imul eax, 20
+    mov ecx, eax
+    mov eax, 0x00402020
+.files_vheader:
+    mov dword [rdi], eax
+    add rdi, 4
+    dec ecx
+    jnz .files_vheader
+
+    ; Draw filename in header
+    mov rdi, [screen_fb]
+    mov eax, [screen_pitch]
+    imul eax, 4
+    add rdi, rax
+    add rdi, 40
+    ; Pick filename based on selection
+    cmp dword [files_selected], 1
+    jne .files_vname_asm
+    mov rsi, str_view_readme
+    jmp .files_vname_draw
+.files_vname_asm:
+    mov rsi, str_view_hello
+.files_vname_draw:
+    mov r8d, 0x00FFFFFF
+    call draw_text
+
+    ; Draw file content
+    mov rdi, [screen_fb]
+    mov eax, [screen_pitch]
+    imul eax, 40
+    add rdi, rax
+    add rdi, 40
+
+    ; Pick content based on selection
+    cmp dword [files_selected], 1
+    jne .files_vcontent_asm
+    ; README.TXT content
+    mov rsi, str_readme_l1
+    mov r8d, 0x0080FF80          ; Green text
+    call draw_text
+    mov rdi, [screen_fb]
+    mov eax, [screen_pitch]
+    imul eax, 60
+    add rdi, rax
+    add rdi, 40
+    mov rsi, str_readme_l2
+    call draw_text
+    mov rdi, [screen_fb]
+    mov eax, [screen_pitch]
+    imul eax, 80
+    add rdi, rax
+    add rdi, 40
+    mov rsi, str_readme_l3
+    call draw_text
+    jmp .files_vfooter
+
+.files_vcontent_asm:
+    ; HELLO.ASM content
+    mov r8d, 0x0080FFFF          ; Yellow text
+    mov rsi, str_asm_l1
+    call draw_text
+    mov rdi, [screen_fb]
+    mov eax, [screen_pitch]
+    imul eax, 55
+    add rdi, rax
+    add rdi, 40
+    mov rsi, str_asm_l2
+    call draw_text
+    mov rdi, [screen_fb]
+    mov eax, [screen_pitch]
+    imul eax, 70
+    add rdi, rax
+    add rdi, 40
+    mov rsi, str_asm_l3
+    call draw_text
+    mov rdi, [screen_fb]
+    mov eax, [screen_pitch]
+    imul eax, 85
+    add rdi, rax
+    add rdi, 40
+    mov rsi, str_asm_l4
+    call draw_text
+    mov rdi, [screen_fb]
+    mov eax, [screen_pitch]
+    imul eax, 100
+    add rdi, rax
+    add rdi, 40
+    mov rsi, str_asm_l5
+    call draw_text
+    mov rdi, [screen_fb]
+    mov eax, [screen_pitch]
+    imul eax, 115
+    add rdi, rax
+    add rdi, 40
+    mov rsi, str_asm_l6
+    call draw_text
+
+.files_vfooter:
+    ; Draw footer
+    mov rdi, [screen_fb]
+    mov eax, [screen_height]
+    sub eax, 30
+    imul eax, [screen_pitch]
+    add rdi, rax
+    add rdi, 40
+    mov rsi, str_view_help
+    mov r8d, 0x00808080
+    call draw_text
+
+.files_done:
+    pop r9
+    pop r8
+    pop rsi
+    pop rdi
+    pop rdx
+    pop rcx
+    pop rbx
+    pop rax
+
+.files_skip_draw:
+    ; Small delay to reduce CPU usage
+    mov ecx, 50000
+.files_delay:
+    pause
+    dec ecx
+    jnz .files_delay
+    jmp main_loop
+
+; Strings for file manager
+str_files_icon:  db "FILES", 0
+str_esc_back:    db "[ESC] Back", 0
+str_path_icon:   db "/ (root)", 0
+str_col_name:    db "Name", 0
+str_col_size:    db "Size", 0
+str_sel_arrow:   db ">", 0
+str_files_e0:    db "[D] PROJECTS/", 0
+str_files_e1:    db "[F] README.TXT", 0
+str_files_e2:    db "[F] HELLO.ASM", 0
+str_size_dir:    db "--", 0
+str_size_readme: db "45 B", 0
+str_size_hello:  db "128 B", 0
+str_files_help1: db "[W/S] Navigate  [ENTER] Open  [N] New  [D] Delete  [R] Rename", 0
+str_files_help2: db "[TAB] Switch mode", 0
+str_view_readme: db "README.TXT", 0
+str_view_hello:  db "HELLO.ASM", 0
+str_view_help:   db "[ESC] Close file", 0
+str_readme_l1:   db "Welcome to MATHIS OS!", 0
+str_readme_l2:   db "", 0
+str_readme_l3:   db "This is a test file.", 0
+str_asm_l1:      db "; Hello World in x86 Assembly", 0
+str_asm_l2:      db "section .text", 0
+str_asm_l3:      db "global _start", 0
+str_asm_l4:      db "_start:", 0
+str_asm_l5:      db "    mov rax, 1      ; write", 0
+str_asm_l6:      db "    mov rdi, 1      ; stdout", 0
+files_selected:  dd 0
+files_viewing:   db 0
+files_dirty:     db 1              ; Start dirty to draw first frame
+
+; ════════════════════════════════════════════════════════════════════════════
 ; DRAW TEXT - rdi=screen pos, rsi=string, r8d=color (supports 8/24/32-bit)
 ; Uses 8x8 bitmap font, draws on single horizontal line
 ; ════════════════════════════════════════════════════════════════════════════
@@ -2251,6 +2754,49 @@ keyboard_isr64:
     jmp .kb_done
 
 .key_press:
+    ; FILES mode (mode 4) - handle W/S for navigation, Enter for open
+    cmp byte [mode_flag], 4
+    jne .not_files_mode
+    cmp bl, 0x11                    ; W = up
+    je .files_key_up
+    cmp bl, 0x1F                    ; S = down
+    je .files_key_down
+    cmp bl, 0x1C                    ; Enter = open file
+    je .files_key_enter
+    cmp bl, 0x01                    ; ESC = close viewer
+    je .files_key_esc
+    ; All other keys (Tab, etc) go to normal handler
+    jmp .not_files_mode
+
+.files_key_up:
+    cmp dword [files_selected], 0
+    je .kb_done
+    dec dword [files_selected]
+    mov byte [files_dirty], 1       ; Mark for redraw
+    jmp .kb_done
+
+.files_key_down:
+    cmp dword [files_selected], 2   ; Max = 2 (3 entries: 0,1,2)
+    jge .kb_done
+    inc dword [files_selected]
+    mov byte [files_dirty], 1       ; Mark for redraw
+    jmp .kb_done
+
+.files_key_enter:
+    ; Open file if not a folder (entry 0 is folder)
+    cmp dword [files_selected], 0
+    je .kb_done                     ; Can't open folder yet
+    mov byte [files_viewing], 1     ; Enter viewing mode
+    mov byte [files_dirty], 1       ; Mark for redraw
+    jmp .kb_done
+
+.files_key_esc:
+    ; Close viewer, return to file list
+    mov byte [files_viewing], 0
+    mov byte [files_dirty], 1       ; Mark for redraw
+    jmp .kb_done
+
+.not_files_mode:
     ; If in 3D mode (mode 3), store scancode for 3D engine and skip other handlers
     cmp byte [mode_flag], 3
     jne .not_3d_mode
@@ -2279,9 +2825,11 @@ keyboard_isr64:
     cmp bl, 0x0F
     jne .check_f9
     inc byte [mode_flag]
-    cmp byte [mode_flag], 4
-    jl .kb_done
+    cmp byte [mode_flag], 5
+    jl .tab_mode_done
     mov byte [mode_flag], 0
+.tab_mode_done:
+    mov byte [files_dirty], 1       ; Mark files mode for redraw
     jmp .kb_done
 
 .check_f9:
@@ -3500,3 +4048,6 @@ tss64_end:
 %include "gfx3d/world3d.asm"
 %include "gfx3d/ui3d.asm"
 %include "gfx3d/effects3d.asm"
+
+; FILES MANAGER
+%include "files/files_ui.asm"
