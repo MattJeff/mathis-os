@@ -153,3 +153,132 @@ draw_mouse_cursor:
     pop rbx
     pop rax
     ret
+
+; ════════════════════════════════════════════════════════════════════════════
+; DRAW ICONS
+; ════════════════════════════════════════════════════════════════════════════
+draw_icon_terminal:
+    ; Terminal icon: rectangle with lines (32-bit)
+    push rax
+    push rbx
+    push rdi
+    push rcx
+
+    ; Background
+    push rdx
+    mov r8d, edx
+    mov edx, 16
+    mov ecx, 16
+    call fill_rect
+    pop rdx
+
+    ; Border
+    mov r8d, COL_BORDER
+    mov edx, 16
+    mov ecx, 16
+    call draw_rect
+
+    ; Lines inside (text simulation) - 32-bit pixels
+    ; Calculate position: (y+3) * pitch + (x+3) * 4
+    mov eax, esi
+    add eax, 3                      ; y + 3
+    imul eax, [screen_pitch]
+    mov ebx, edi
+    add ebx, 3                      ; x + 3
+    shl ebx, 2                      ; * 4 for 32-bit
+    add eax, ebx
+    mov rbx, [screen_fb]
+    add rax, rbx
+    ; Draw 5 white pixels on first line
+    mov ecx, 0x00FFFFFF             ; White color (BGRA)
+    mov dword [rax], ecx
+    mov dword [rax + 4], ecx
+    mov dword [rax + 8], ecx
+    mov dword [rax + 12], ecx
+    mov dword [rax + 16], ecx
+    ; Move down 3 rows and draw 3 more pixels
+    mov ebx, [screen_pitch]
+    imul ebx, 3
+    add rax, rbx
+    mov dword [rax], ecx
+    mov dword [rax + 4], ecx
+    mov dword [rax + 8], ecx
+
+    pop rcx
+    pop rdi
+    pop rbx
+    pop rax
+    ret
+
+draw_icon_folder:
+    ; Folder icon
+    push rax
+    push rbx
+    push rdi
+    push rsi
+
+    ; Tab part
+    mov r8d, edx
+    push rdx
+    mov edx, 8
+    mov ecx, 4
+    call fill_rect
+    pop rdx
+
+    ; Main folder body
+    push rdi
+    push rsi
+    add esi, 4
+    mov r8d, edx
+    mov edx, 16
+    mov ecx, 12
+    call fill_rect
+    pop rsi
+    pop rdi
+
+    ; Border
+    mov r8d, COL_BORDER
+    add esi, 4
+    mov edx, 16
+    mov ecx, 12
+    call draw_rect
+
+    pop rsi
+    pop rdi
+    pop rbx
+    pop rax
+    ret
+
+draw_icon_cube:
+    ; 3D cube icon
+    push rax
+    push rdi
+    push rsi
+
+    ; Draw simple cube shape
+    mov r8d, edx
+    mov edx, 12
+    mov ecx, 12
+    add edi, 2
+    add esi, 4
+    call fill_rect
+
+    ; Border
+    mov r8d, COL_BORDER
+    mov edx, 12
+    mov ecx, 12
+    call draw_rect
+
+    ; 3D effect lines
+    sub edi, 2
+    sub esi, 4
+    mov r8d, COL_BORDER
+    mov edx, edi
+    add edx, 12
+    mov ecx, esi
+    call draw_line_h
+
+    pop rsi
+    pop rdi
+    pop rax
+    ret
