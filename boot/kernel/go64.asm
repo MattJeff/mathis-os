@@ -252,6 +252,9 @@ long_mode_entry:
 ; MAIN LOOP
 ; ════════════════════════════════════════════════════════════════════════════
 main_loop:
+    ; Process keyboard events (new event-driven system)
+    call process_input
+
     cmp byte [mode_flag], 4
     je files_mode
     cmp byte [mode_flag], 3
