@@ -2222,6 +2222,10 @@ str_dlg_create:  db "[ENTER] Create", 0
 ; DRAW_DIALOG_NEW - Draw dialog box overlay
 draw_dialog_new:
     push rax
+    push rbx
+    push rcx
+    pop rcx
+    pop rbx
     pop rax
     ret
 
