@@ -433,6 +433,7 @@ files_draw_entry_row:
     push r11
 
     mov r10d, ecx                    ; save text_y
+    mov [files_temp_y], ecx          ; also save to global for size/mod calls
     mov r11d, r8d                    ; save color
 
     ; Check if selected
@@ -489,15 +490,18 @@ files_draw_entry_size:
     push rax
     push rdi
     push r8
+    push r9
 
     mov rdi, [screen_fb]
     add rdi, 2200                    ; 550 * 4
     mov eax, [screen_pitch]
-    imul eax, r10d                   ; use saved text_y from r10
+    mov r9d, [files_temp_y]          ; use saved text_y from global
+    imul eax, r9d
     add rdi, rax
     mov r8d, FILES_COL_GRAY
     call draw_text
 
+    pop r9
     pop r8
     pop rdi
     pop rax
@@ -511,15 +515,18 @@ files_draw_entry_mod:
     push rax
     push rdi
     push r8
+    push r9
 
     mov rdi, [screen_fb]
     add rdi, 2800                    ; 700 * 4
     mov eax, [screen_pitch]
-    imul eax, r10d                   ; use saved text_y from r10
+    mov r9d, [files_temp_y]          ; use saved text_y from global
+    imul eax, r9d
     add rdi, rax
     mov r8d, FILES_COL_GRAY
     call draw_text
 
+    pop r9
     pop r8
     pop rdi
     pop rax

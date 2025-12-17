@@ -33,8 +33,8 @@ files_mode:
     call files_draw_header
     call files_draw_pathbar
     call files_draw_table_frame
-    ; call files_draw_columns
-    ; call files_draw_entries
+    call files_draw_columns
+    call files_draw_entries
     ; call files_draw_footer
     jmp .files_done
 
