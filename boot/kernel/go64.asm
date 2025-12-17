@@ -4278,5 +4278,11 @@ tss64_end:
 %include "gfx3d/ui3d.asm"
 %include "gfx3d/effects3d.asm"
 
+; UI MODULES (new modular structure)
+%include "ui/draw.asm"
+%include "ui/dialog.asm"
+%include "ui/files.asm"
+%include "ui/input.asm"
+
 ; FILES MANAGER
 %include "files/files_ui.asm"
