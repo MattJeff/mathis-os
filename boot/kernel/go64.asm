@@ -2893,6 +2893,7 @@ tss64_end:
 %include "handlers/gui_keys.asm"
 %include "handlers/files_keys.asm"
 %include "handlers/terminal_keys.asm"
+%include "handlers/shell_keys.asm"
 
 ; FILES MANAGER
 %include "files/files_ui.asm"

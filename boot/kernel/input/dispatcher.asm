@@ -39,7 +39,15 @@ process_input:
     cmp bl, 2                           ; Mode GUI
     je .dispatch_gui
 
-    ; Mode 0 ou 1 = pas de handler special
+    cmp bl, 1                           ; Mode SHELL
+    je .dispatch_shell
+
+    ; Mode 0 = graphics mode (pas de handler)
+    jmp .no_key
+
+.dispatch_shell:
+    mov al, [key_pressed]
+    call handle_shell_keys
     jmp .no_key
 
 .dispatch_files:
