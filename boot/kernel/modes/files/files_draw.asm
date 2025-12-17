@@ -451,10 +451,11 @@ files_draw_entry:
     mov r10d, edx                    ; save text_y
     mov r11d, r8d                    ; save color
 
-    ; Check if selected - just change color, no highlight
+    ; Check if selected - just change color
     cmp ebx, [files_selected]
     jne .no_sel
     mov r11d, FILES_COL_WHITE
+
 .no_sel:
     ; Draw name at (120, text_y)
     mov rdi, [screen_fb]
