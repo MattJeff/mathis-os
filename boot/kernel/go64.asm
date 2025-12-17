@@ -2221,7 +2221,8 @@ str_dlg_create:  db "[ENTER] Create", 0
 
 ; DRAW_DIALOG_NEW - Draw dialog box overlay
 draw_dialog_new:
-    nop
+    push rax
+    pop rax
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
