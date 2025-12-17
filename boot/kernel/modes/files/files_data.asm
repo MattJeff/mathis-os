@@ -27,6 +27,11 @@ str_mod_1:        db "Dec 17 14:30", 0
 str_mod_2:        db "Dec 17 12:00", 0
 str_mod_3:        db "Dec 16 23:42", 0
 
+; Entry 3
+str_files_e3:     db "DOCS/", 0
+str_size_e3:      db "--", 0
+str_mod_4:        db "Dec 15 10:00", 0
+
 ; Help text
 str_files_help1:  db "[W/S] Navigate  [ENTER] Open  [N] New  [D] Del  [R] Rename", 0
 str_files_help2:  db "[TAB] Switch mode  [ESC] Back", 0
