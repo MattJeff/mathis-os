@@ -28,8 +28,8 @@ str_mod_2:        db "Dec 17 12:00", 0
 str_mod_3:        db "Dec 16 23:42", 0
 
 ; Help text
-str_files_help1:  db "[W/S] Navigate  [ENTER] Open  [N] New  [D] Delete", 0
-str_files_help2:  db "[TAB] Switch mode", 0
+str_files_help1:  db "[W/S] Navigate  [ENTER] Open  [N] New  [D] Del  [R] Rename", 0
+str_files_help2:  db "[TAB] Switch mode  [ESC] Back", 0
 
 ; View mode strings
 str_view_readme:  db "README.TXT", 0

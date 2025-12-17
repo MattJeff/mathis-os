@@ -28,14 +28,13 @@ files_mode:
     jne .files_view_mode
 
     ; === FILE LIST MODE ===
-    ; DEBUG: Test each function one by one
     call files_clear_screen
     call files_draw_header
     call files_draw_pathbar
     call files_draw_table_frame
     call files_draw_columns
     call files_draw_entries
-    ; call files_draw_footer
+    call files_draw_footer
     jmp .files_done
 
 .files_view_mode:

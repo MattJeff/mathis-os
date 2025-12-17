@@ -520,31 +520,41 @@ files_draw_footer:
     push rsi
     push r8
     push r9
+    push r10
 
-    ; Footer background (y=700-768)
-    mov r9d, 700
+    ; Calculate footer Y position (screen_height - 50)
+    mov r10d, [screen_height]
+    sub r10d, 50                     ; Footer starts 50px from bottom
+
+    ; Footer background (50px high)
+    mov r9d, r10d
+    mov eax, [screen_height]
 .ftr_bg:
-    cmp r9d, 768
+    cmp r9d, eax
     jge .ftr_bg_done
     mov rdi, [screen_fb]
+    push rax
     mov eax, [screen_pitch]
     imul eax, r9d
     add rdi, rax
+    pop rax
     mov ecx, [screen_width]
+    push rax
     mov eax, FILES_COL_PATHBAR
 .ftr_row:
     mov dword [rdi], eax
     add rdi, 4
     dec ecx
     jnz .ftr_row
+    pop rax
     inc r9d
     jmp .ftr_bg
 .ftr_bg_done:
 
-    ; Footer separator (y=700)
+    ; Footer separator line
     mov rdi, [screen_fb]
     mov eax, [screen_pitch]
-    imul eax, 700
+    imul eax, r10d
     add rdi, rax
     mov ecx, [screen_width]
     mov eax, FILES_COL_SEP
@@ -554,25 +564,29 @@ files_draw_footer:
     dec ecx
     jnz .ftr_sep
 
-    ; Help line 1 (y=720)
+    ; Help line 1 (15px below footer start)
     mov rdi, [screen_fb]
-    add rdi, 160
-    mov eax, [screen_pitch]
-    imul eax, 720
+    mov eax, r10d
+    add eax, 15
+    imul eax, [screen_pitch]
     add rdi, rax
+    add rdi, 40
     mov rsi, str_files_help1
     mov r8d, FILES_COL_FOOTER
     call draw_text
 
-    ; Help line 2 (y=745)
+    ; Help line 2 (32px below footer start)
     mov rdi, [screen_fb]
-    add rdi, 160
-    mov eax, [screen_pitch]
-    imul eax, 745
+    mov eax, r10d
+    add eax, 32
+    imul eax, [screen_pitch]
     add rdi, rax
+    add rdi, 40
     mov rsi, str_files_help2
     mov r8d, FILES_COL_FOOTER
     call draw_text
+
+    pop r10
 
     pop r9
     pop r8
