@@ -1,13 +1,13 @@
 # FILES MODE - TODO
 
-## Step 1: UI 2D File List (base)
-- [ ] Header bar avec "FILES" et "[ESC] Back"
-- [ ] Path display "/home/mat/projects"
-- [ ] Table avec colonnes: Name, Size, Modified
-- [ ] Bordures de table (ASCII box)
-- [ ] 3 entries: PROJECTS/, README.TXT, HELLO.ASM
-- [ ] Selection avec ">" indicator
-- [ ] Footer: "[W/S] Navigate [ENTER] Open..."
+## Step 1: UI 2D File List (base) ✅ DONE
+- [x] Header bar avec "FILES" et "[ESC] Back"
+- [x] Path display "/ (root)"
+- [x] Table avec colonnes: Name, Size, Modified
+- [x] Bordures de table (box)
+- [x] 3 entries: PROJECTS/, README.TXT, HELLO.ASM
+- [x] Selection highlight (40px row)
+- [x] Footer: "[W/S] Navigate [ENTER] Open..."
 
 ## Step 2: Text Editor amélioré
 - [ ] Header "EDIT: filename" avec "[ESC] Back"

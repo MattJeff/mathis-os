@@ -1966,7 +1966,7 @@ files_mode:
     mov eax, [screen_width]
     imul eax, [screen_height]
     mov ecx, eax
-    mov eax, 0x00301010          ; Dark editor background
+    mov eax, 0x001a1a1a          ; Dark background #1a1a1a
 .files_vclear:
     mov dword [rdi], eax
     add rdi, 4
@@ -1978,7 +1978,7 @@ files_mode:
     mov eax, [screen_width]
     imul eax, 20
     mov ecx, eax
-    mov eax, 0x00402020
+    mov eax, 0x00252525          ; Header #252525
 .files_vheader:
     mov dword [rdi], eax
     add rdi, 4
@@ -2014,7 +2014,7 @@ files_mode:
     jne .files_vcontent_asm
     ; README.TXT content
     mov rsi, str_readme_l1
-    mov r8d, 0x0080FF80          ; Green text
+    mov r8d, 0x00009a4a          ; Green #4a9000
     call draw_text
     mov rdi, [screen_fb]
     mov eax, [screen_pitch]
@@ -2034,7 +2034,7 @@ files_mode:
 
 .files_vcontent_asm:
     ; HELLO.ASM content
-    mov r8d, 0x0080FFFF          ; Yellow text
+    mov r8d, 0x00009a4a          ; Green for comment
     mov rsi, str_asm_l1
     call draw_text
     mov rdi, [screen_fb]
@@ -2136,6 +2136,16 @@ str_asm_l3:      db "global _start", 0
 str_asm_l4:      db "_start:", 0
 str_asm_l5:      db "    mov rax, 1      ; write", 0
 str_asm_l6:      db "    mov rdi, 1      ; stdout", 0
+str_edit_label:  db "EDIT:", 0
+str_ln_1:        db " 1", 0
+str_ln_2:        db " 2", 0
+str_ln_3:        db " 3", 0
+str_ln_4:        db " 4", 0
+str_ln_5:        db " 5", 0
+str_ln_6:        db " 6", 0
+str_status_pos:  db "Line 1, Col 1", 0
+str_status_txt:  db "TXT", 0
+str_status_asm:  db "ASM", 0
 files_selected:  dd 0
 files_viewing:   db 0
 files_dirty:     db 1              ; Start dirty to draw first frame
