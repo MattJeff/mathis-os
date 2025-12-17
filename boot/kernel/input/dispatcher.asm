@@ -69,48 +69,4 @@ process_input:
     pop rax
     ret
 
-; ════════════════════════════════════════════════════════════════════════════
-; HANDLE GLOBAL KEYS - Touches traitees dans tous les modes
-; ════════════════════════════════════════════════════════════════════════════
-; Entree: al = scancode
-; Sortie: al = 1 si handled, 0 sinon
-; ════════════════════════════════════════════════════════════════════════════
-handle_global_keys:
-    ; ESC = reboot
-    cmp al, 0x01
-    je .do_reboot
-
-    ; Tab = cycle modes
-    cmp al, 0x0F
-    je .do_tab
-
-    ; F9 = Ring 3 demo (si implemente)
-    cmp al, 0x43
-    je .do_f9
-
-    ; Pas handled
-    xor al, al
-    ret
-
-.do_reboot:
-    lidt [idt64_null]
-    int 0
-    ; Never returns
-
-.do_tab:
-    inc byte [mode_flag]
-    cmp byte [mode_flag], 5
-    jl .tab_done
-    mov byte [mode_flag], 0
-.tab_done:
-    mov byte [files_dirty], 1           ; Refresh si on entre en mode files
-    mov al, 1
-    ret
-
-.do_f9:
-    ; TODO: Launch Ring 3 user process
-    ; mov rdi, user_process_demo
-    ; mov rsi, user_stack_top
-    ; call switch_to_ring3
-    mov al, 1
-    ret
+; handle_global_keys moved to handlers/global_keys.asm
