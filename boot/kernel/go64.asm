@@ -2071,19 +2071,8 @@ files_selected:  dd 0
 files_viewing:   db 0
 files_dirty:     db 1              ; Start dirty to draw first frame
 files_dialog:    db 0              ; 0=none, 1=new
-str_dlg_new:     db "CREATE NEW", 0
-str_dlg_cancel:  db "[ESC] Cancel", 0
-str_dlg_create:  db "[ENTER] Create", 0
 
-; DRAW_DIALOG_NEW - Draw dialog box overlay
-draw_dialog_new:
-    push rax
-    push rbx
-    push rcx
-    pop rcx
-    pop rbx
-    pop rax
-    ret
+; dialog strings and draw_dialog_new moved to ui/dialog.asm
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; DRAW TEXT - rdi=screen pos, rsi=string, r8d=color (supports 8/24/32-bit)
