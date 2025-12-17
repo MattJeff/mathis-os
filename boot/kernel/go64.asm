@@ -596,100 +596,8 @@ draw_3d_window:
 
 ; draw_rect moved to ui/draw.asm
 
-; ════════════════════════════════════════════════════════════════════════════
-; GRAPHICS MODE - 3D Cube (fullscreen)
-; ════════════════════════════════════════════════════════════════════════════
-graphics_mode:
-    ; Clear screen to dark gray (32-bit mode)
-    push rbx
-    mov rdi, [screen_fb]
-    mov eax, [screen_width]
-    mov ebx, [screen_height]
-    imul eax, ebx               ; EAX = total pixels
-    mov ecx, eax                ; ECX = number of pixels
-    mov eax, 0x00303030         ; BGRA: dark gray
-.gfx_clear_loop:
-    mov dword [rdi], eax
-    add rdi, 4
-    dec ecx
-    jnz .gfx_clear_loop
-    pop rbx
-
-    ; Draw 3D mode text at center of screen
-    mov rdi, [screen_fb]
-    mov eax, [screen_pitch]
-    imul eax, 100
-    add rdi, rax
-    add rdi, 120
-    mov rsi, str_3d_mode
-    mov r8d, COL_GREEN
-    call draw_text
-
-    ; Draw help text near bottom
-    mov rdi, [screen_fb]
-    mov eax, [screen_height]
-    sub eax, 50
-    imul eax, [screen_pitch]
-    add rdi, rax
-    add rdi, 10
-    mov rsi, str_help_gfx
-    mov r8d, 7
-    call draw_text
-
-    mov rcx, 1000000
-.gfx_delay:
-    dec rcx
-    jnz .gfx_delay
-
-    jmp main_loop
-
-; ════════════════════════════════════════════════════════════════════════════
-; SHELL MODE
-; ════════════════════════════════════════════════════════════════════════════
-shell_mode:
-    ; Clear screen to dark blue (32-bit mode)
-    push rbx
-    mov rdi, [screen_fb]
-    mov eax, [screen_width]
-    mov ebx, [screen_height]
-    imul eax, ebx               ; EAX = total pixels
-    mov ecx, eax                ; ECX = number of pixels
-    mov eax, 0x00000060         ; BGRA: dark blue (B=0x60)
-.shell_clear_loop:
-    mov dword [rdi], eax
-    add rdi, 4
-    dec ecx
-    jnz .shell_clear_loop
-    pop rbx
-
-    ; Draw banner at (10, 10)
-    mov rdi, [screen_fb]
-    mov eax, [screen_pitch]
-    imul eax, 10
-    add rdi, rax
-    add rdi, 10
-    mov rsi, str_banner
-    mov r8d, COL_TEXT_WHITE
-    call draw_text
-
-    ; Draw help at bottom
-    mov rdi, [screen_fb]
-    mov eax, [screen_height]
-    sub eax, 40
-    imul eax, [screen_pitch]
-    add rdi, rax
-    add rdi, 10
-    mov rsi, str_help_shell
-    mov r8d, 7
-    call draw_text
-
-    mov rcx, 500000
-.shell_delay:
-    dec rcx
-    jnz .shell_delay
-
-    jmp main_loop
-
+; graphics_mode moved to modes/graphics.asm
+; shell_mode moved to modes/shell.asm
 ; files_mode moved to modes/files/files_main.asm
 
 ; ════════════════════════════════════════════════════════════════════════════
@@ -1399,7 +1307,9 @@ tss64_end:
 %include "handlers/terminal_keys.asm"
 %include "handlers/shell_keys.asm"
 
-; FILES MANAGER (modular structure)
+; MODES
+%include "modes/graphics.asm"
+%include "modes/shell.asm"
 %include "modes/files/files_main.asm"
 
 ; SYSTEM (ISRs, setup)
