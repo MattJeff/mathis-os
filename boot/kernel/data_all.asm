@@ -117,9 +117,7 @@ prompt_line:        dd 9
 edit_mode:          db 0
 file_content_len:   dd 0
 file_content:       times 512 db 0
-shift_state:        db 0
-ctrl_state:         db 0
-alt_state:          db 0
+; shift_state, ctrl_state, alt_state moved to input/state.asm
 
 ; Scancode to ASCII (uppercase/shifted)
 scancode_shift:
