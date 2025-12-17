@@ -139,11 +139,28 @@ ui3d_input:
     ; Clear the scancode so we don't process it again
     mov byte [key3d_scancode], 0
 
+    ; TAB (0x0F) = Change mode (global, always handled first)
+    cmp al, 0x0F
+    je .do_tab
+
     ; Check current state for input handling
     mov ebx, [ui_state]
     cmp ebx, UI_STATE_SPACE
     je .space_input
     jmp .app_input
+
+.do_tab:
+    ; Cycle mode: 3 -> 4 -> 0 -> 1 -> 2 -> 3
+    inc byte [mode_flag]
+    cmp byte [mode_flag], 5
+    jl .tab_done
+    mov byte [mode_flag], 0
+.tab_done:
+    mov byte [files_dirty], 1           ; Force redraw when entering files mode
+    mov byte [key_ready], 0             ; Clear so main_loop doesn't re-process TAB
+    mov byte [key_pressed], 0           ; Also clear key_pressed
+    mov byte [key3d_scancode], 0        ; And 3D scancode
+    jmp .no_input
 
 .space_input:
     ; Movement keys (WASD)

@@ -64,6 +64,9 @@ handle_global_keys:
 .tab_ok:
     ; Refresh files mode si on y entre
     mov byte [files_dirty], 1
+    ; Clear key state to prevent double-processing
+    mov byte [key_pressed], 0
+    mov byte [key3d_scancode], 0
     mov al, 1
     pop rbx
     ret

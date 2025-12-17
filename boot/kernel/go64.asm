@@ -1189,6 +1189,7 @@ tss64_end:
 %include "handlers/files_keys.asm"
 %include "handlers/terminal_keys.asm"
 %include "handlers/shell_keys.asm"
+%include "handlers/3d_keys.asm"
 
 ; MODES
 %include "modes/graphics.asm"

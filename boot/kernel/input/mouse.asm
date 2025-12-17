@@ -69,3 +69,9 @@ mouse_init:
     test al, 1
     jz .wait_read
     ret
+
+; ════════════════════════════════════════════════════════════════════════════
+; HANDLE MOUSE CLICK - Stub (TODO: implement later)
+; ════════════════════════════════════════════════════════════════════════════
+handle_mouse_click:
+    ret

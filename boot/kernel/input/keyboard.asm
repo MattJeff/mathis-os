@@ -33,9 +33,14 @@ keyboard_isr64:
     cmp al, 0x38                        ; Alt
     je .alt_on
 
-    ; Normal key - store event
+    ; Normal key - check if it's a repeat (same key still pressed)
+    cmp al, [key_pressed]
+    je .done                            ; Ignore repeat, don't set key_ready again
+
+    ; New key - store event
     mov [key_pressed], al
     mov byte [key_ready], 1             ; Signal nouvelle touche
+    mov [key3d_scancode], al            ; Also store for 3D mode
     jmp .done
 
 .shift_on:
@@ -53,6 +58,13 @@ keyboard_isr64:
     ; === KEY RELEASE ===
 .handle_release:
     and al, 0x7F                        ; Remove release bit
+
+    ; Clear key_pressed if this key was released
+    cmp al, [key_pressed]
+    jne .check_modifiers
+    mov byte [key_pressed], 0           ; Clear so next press is detected
+
+.check_modifiers:
     cmp al, 0x2A
     je .shift_off
     cmp al, 0x36
