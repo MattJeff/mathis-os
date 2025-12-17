@@ -1256,27 +1256,7 @@ draw_icon_cube:
     pop rax
     ret
 
-draw_line_h:
-    ; Simple horizontal line edi=x, esi=y, edx=x2, r8d=color
-    push rax
-    push rbx
-    push rdi
-    mov eax, esi
-    imul eax, [screen_pitch]
-    add eax, edi
-    mov rbx, [screen_fb]
-    add rax, rbx
-    mov rdi, rax
-.loop_h:
-    mov byte [rdi], r8b
-    inc rdi
-    inc edi
-    cmp edi, edx
-    jle .loop_h
-    pop rdi
-    pop rbx
-    pop rax
-    ret
+; draw_line_h moved to ui/draw.asm
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; FILL RECT - edi=x, esi=y, edx=w, ecx=h, r8d=color (32-bit BGRA)
