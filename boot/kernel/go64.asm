@@ -729,31 +729,7 @@ mouse_isr64:
 
 ; execute_cmd and copy_string moved to ui/terminal.asm
 
-; ════════════════════════════════════════════════════════════════════════════
-; DEMO PROCESSES - Background tasks for multitasking demonstration
-; ════════════════════════════════════════════════════════════════════════════
-
-; Demo process 1 - Increments a counter (simulates background work)
-demo_process_1:
-    inc qword [demo1_counter]
-    ; Simulate work
-    mov rcx, 50000
-.work1:
-    nop
-    dec rcx
-    jnz .work1
-    jmp demo_process_1
-
-; Demo process 2 - Another background counter
-demo_process_2:
-    inc qword [demo2_counter]
-    ; Simulate different work
-    mov rcx, 30000
-.work2:
-    nop
-    dec rcx
-    jnz .work2
-    jmp demo_process_2
+; demo_process_1, demo_process_2 moved to sys/ring3.asm
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; RING 3 USER-MODE SUPPORT
