@@ -1976,7 +1976,7 @@ files_mode:
     ; Draw header with filename
     mov rdi, [screen_fb]
     mov eax, [screen_width]
-    imul eax, 20
+    imul eax, 40
     mov ecx, eax
     mov eax, 0x00252525          ; Header #252525
 .files_vheader:
@@ -1988,7 +1988,7 @@ files_mode:
     ; Draw filename in header
     mov rdi, [screen_fb]
     mov eax, [screen_pitch]
-    imul eax, 4
+    imul eax, 14
     add rdi, rax
     add rdi, 40
     ; Pick filename based on selection
@@ -2005,9 +2005,9 @@ files_mode:
     ; Draw file content
     mov rdi, [screen_fb]
     mov eax, [screen_pitch]
-    imul eax, 40
+    imul eax, 60
     add rdi, rax
-    add rdi, 40
+    add rdi, 80
 
     ; Pick content based on selection
     cmp dword [files_selected], 1
@@ -2033,44 +2033,59 @@ files_mode:
     jmp .files_vfooter
 
 .files_vcontent_asm:
-    ; HELLO.ASM content
-    mov r8d, 0x00009a4a          ; Green for comment
-    mov rsi, str_asm_l1
-    call draw_text
+    ; HELLO.ASM content - Line 1 (comment green)
     mov rdi, [screen_fb]
-    mov eax, [screen_pitch]
-    imul eax, 55
-    add rdi, rax
-    add rdi, 40
-    mov rsi, str_asm_l2
-    call draw_text
-    mov rdi, [screen_fb]
+    add rdi, 80
     mov eax, [screen_pitch]
     imul eax, 70
     add rdi, rax
-    add rdi, 40
+    mov rsi, str_asm_l1
+    mov r8d, 0x00009a4a
+    call draw_text
+    ; Line 2
+    mov rdi, [screen_fb]
+    add rdi, 80
+    mov eax, [screen_pitch]
+    imul eax, 90
+    add rdi, rax
+    mov rsi, str_asm_l2
+    mov r8d, 0x00d0d0d0
+    call draw_text
+    ; Line 3
+    mov rdi, [screen_fb]
+    add rdi, 80
+    mov eax, [screen_pitch]
+    imul eax, 110
+    add rdi, rax
     mov rsi, str_asm_l3
+    mov r8d, 0x00d0d0d0
     call draw_text
+    ; Line 4
     mov rdi, [screen_fb]
+    add rdi, 80
     mov eax, [screen_pitch]
-    imul eax, 85
+    imul eax, 130
     add rdi, rax
-    add rdi, 40
     mov rsi, str_asm_l4
+    mov r8d, 0x000066cc
     call draw_text
+    ; Line 5
     mov rdi, [screen_fb]
+    add rdi, 80
     mov eax, [screen_pitch]
-    imul eax, 100
+    imul eax, 150
     add rdi, rax
-    add rdi, 40
     mov rsi, str_asm_l5
+    mov r8d, 0x00d0d0d0
     call draw_text
+    ; Line 6
     mov rdi, [screen_fb]
+    add rdi, 80
     mov eax, [screen_pitch]
-    imul eax, 115
+    imul eax, 170
     add rdi, rax
-    add rdi, 40
     mov rsi, str_asm_l6
+    mov r8d, 0x00d0d0d0
     call draw_text
 
 .files_vfooter:
