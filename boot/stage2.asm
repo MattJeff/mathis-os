@@ -9,10 +9,11 @@
 KERNEL_SECTORS  equ 1024        ; 512KB = 1024 sectors
 KERNEL_LBA      equ 9           ; Kernel starts at LBA 9
 
-; VESA modes - 32-bit color for high quality graphics
-; 32-bit modes provide 16 million colors with smooth gradients
-; QEMU std VGA 32-bit modes: 0x118 often works as 32-bit
-VESA_MODE       equ 0x118           ; 1024x768x32 - true color!
+; VESA mode preferences - we'll scan for a 32-bit mode
+; Common 32-bit modes: 0x112 (640x480), 0x115 (800x600), 0x11B (1280x1024)
+; If 32-bit not found, falls back to 24-bit
+PREFERRED_WIDTH  equ 1024
+PREFERRED_HEIGHT equ 768
 
 start:
     mov si, msg_loading
@@ -60,26 +61,114 @@ start:
     mov si, msg_ok
     call print_string
 
-    ; === Try VESA 640x480x256 ===
+    ; === Scan VESA modes for 32-bit ===
     mov si, msg_vesa
     call print_string
 
-    ; Get VESA mode info
-    mov ax, 0x4F01              ; Get mode info
-    mov cx, VESA_MODE           ; Mode 0x101 = 640x480x256
-    mov di, mode_info           ; Buffer for mode info
+    ; First get VESA info block to find mode list pointer
+    mov ax, 0x4F00              ; Get VESA info
+    mov di, vesa_info           ; Buffer for VESA info
+    mov dword [di], 'VBE2'      ; Request VBE 2.0+ info
     int 0x10
-    cmp ax, 0x004F              ; Check success
+    cmp ax, 0x004F
     jne .vesa_fail
 
-    ; Check if mode supports LFB (bit 7 of mode attributes)
-    mov ax, [mode_info]         ; Mode attributes at offset 0
-    test ax, 0x80               ; LFB available?
-    jz .vesa_fail
+    ; Get pointer to mode list (offset 14 = segment:offset)
+    mov si, [vesa_info + 14]    ; Offset of mode list
+    mov ax, [vesa_info + 16]    ; Segment of mode list
+    mov es, ax                  ; ES:SI = mode list pointer
 
-    ; Set VESA mode with LFB
-    mov ax, 0x4F02              ; Set VESA mode
-    mov bx, VESA_MODE | 0x4000  ; Mode + LFB bit
+    ; Initialize best mode tracking
+    mov word [best_mode], 0xFFFF    ; No mode found yet
+    mov byte [best_bpp], 0
+
+.scan_modes:
+    mov cx, [es:si]             ; Get mode number
+    cmp cx, 0xFFFF              ; End of list?
+    je .scan_done
+    add si, 2                   ; Next mode in list
+
+    ; Get info for this mode
+    push es
+    push si
+    push cx
+
+    push ds
+    pop es                      ; ES = DS for mode_info buffer
+    mov ax, 0x4F01              ; Get mode info
+    mov di, mode_info
+    int 0x10
+
+    pop cx
+    pop si
+    pop es
+
+    cmp ax, 0x004F              ; Success?
+    jne .scan_modes
+
+    ; Check if mode has LFB support (bit 7)
+    mov ax, [mode_info]
+    test ax, 0x80
+    jz .scan_modes
+
+    ; Check resolution matches our preference (or close)
+    mov ax, [mode_info + 18]    ; Width
+    cmp ax, PREFERRED_WIDTH
+    jne .check_smaller_res
+    mov ax, [mode_info + 20]    ; Height
+    cmp ax, PREFERRED_HEIGHT
+    jne .check_smaller_res
+    jmp .resolution_ok
+
+.check_smaller_res:
+    ; Accept 800x600 or 640x480 as fallback
+    mov ax, [mode_info + 18]
+    cmp ax, 640
+    jl .scan_modes              ; Too small
+    cmp ax, 1280
+    jg .scan_modes              ; Too big
+
+.resolution_ok:
+    ; Check BPP - prefer 32, accept 24
+    mov al, [mode_info + 25]    ; BitsPerPixel
+    cmp al, 32
+    je .found_32bit
+    cmp al, 24
+    jne .scan_modes             ; Not 24 or 32, skip
+
+    ; It's 24-bit - save if we don't have 32-bit yet
+    cmp byte [best_bpp], 32
+    je .scan_modes              ; Already have 32-bit, skip
+    mov [best_mode], cx
+    mov [best_bpp], al
+    jmp .scan_modes
+
+.found_32bit:
+    ; Found 32-bit mode - this is what we want!
+    mov [best_mode], cx
+    mov byte [best_bpp], 32
+    ; Keep scanning in case there's a better 32-bit mode
+    jmp .scan_modes
+
+.scan_done:
+    ; Restore ES to data segment
+    push ds
+    pop es
+
+    ; Check if we found a suitable mode
+    cmp word [best_mode], 0xFFFF
+    je .vesa_fail
+
+    ; Get final mode info for the best mode we found
+    mov ax, 0x4F01
+    mov cx, [best_mode]
+    mov di, mode_info
+    int 0x10
+
+    ; Set the VESA mode with LFB
+    mov ax, 0x4F02
+    mov bx, [best_mode]
+    or bx, 0x4000               ; Enable LFB
     int 0x10
     cmp ax, 0x004F
     jne .vesa_fail
@@ -161,6 +250,8 @@ screen_height:  dw 200
 screen_pitch:   dw 320
 screen_bpp:     db 8            ; Bits per pixel (8, 24, or 32)
 vesa_mode:      db 0
+best_mode:      dw 0xFFFF       ; Best VESA mode found during scan
+best_bpp:       db 0            ; Best BPP found (prefer 32)
 
 ; DAP for LBA read
 align 4
@@ -179,9 +270,10 @@ msg_vesa:    db "VESA...", 0
 msg_vesa_ok: db "OK!", 13, 10, 0
 msg_vga:     db "VGA 320x200", 13, 10, 0
 
-; VESA info buffer (256 bytes for mode info)
+; VESA info buffers
 align 16
-mode_info: times 256 db 0
+vesa_info: times 512 db 0       ; VBE info block (512 bytes for VBE 2.0+)
+mode_info: times 256 db 0       ; Mode info block (256 bytes)
 
 [BITS 32]
 pm_entry:

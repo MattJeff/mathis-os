@@ -289,7 +289,7 @@ gui3d_mode:
 ; GUI MODE - Desktop Environment
 ; ════════════════════════════════════════════════════════════════════════════
 gui_mode:
-    ; === Draw Desktop Background (24-bit: teal/cyan color) ===
+    ; === Draw Desktop Background (32-bit BGRA: teal/cyan color) ===
     push rbx
     mov rdi, [screen_fb]
     mov eax, [screen_width]
@@ -297,11 +297,10 @@ gui_mode:
     sub ebx, TASKBAR_H
     imul eax, ebx               ; EAX = total pixels (minus taskbar)
     mov ecx, eax                ; ECX = number of pixels
+    mov eax, 0x00205080         ; BGRA: B=0x80, G=0x50, R=0x20, A=0x00
 .gui_clear_loop:
-    mov byte [rdi], 0x80        ; Blue component
-    mov byte [rdi+1], 0x50      ; Green component
-    mov byte [rdi+2], 0x20      ; Red component (teal desktop)
-    add rdi, 3
+    mov dword [rdi], eax        ; Write 4 bytes at once (32-bit pixel)
+    add rdi, 4
     dec ecx
     jnz .gui_clear_loop
     pop rbx
@@ -358,28 +357,39 @@ gui_mode:
     ; === Draw Open Windows === DISABLED FOR DEBUG
     ; call draw_windows
 
-    ; === Draw Taskbar ===
+    ; === Draw Taskbar (32-bit BGRA) ===
     ; Taskbar at y = screen_height - TASKBAR_H
+    push rbx
     mov rdi, [screen_fb]
     mov eax, [screen_height]
     sub eax, TASKBAR_H
     imul eax, [screen_pitch]
     add rdi, rax
-    mov eax, [screen_pitch]
+    ; Calculate pixels: screen_width * TASKBAR_H
+    mov eax, [screen_width]
     imul eax, TASKBAR_H
     mov ecx, eax
-    mov al, COL_TASKBAR
-    rep stosb
+    mov eax, 0x00303030         ; BGRA: dark gray
+.taskbar_fill_loop:
+    mov dword [rdi], eax
+    add rdi, 4
+    dec ecx
+    jnz .taskbar_fill_loop
 
-    ; Taskbar top highlight
+    ; Taskbar top highlight (32-bit BGRA)
     mov rdi, [screen_fb]
     mov eax, [screen_height]
     sub eax, TASKBAR_H
     imul eax, [screen_pitch]
     add rdi, rax
-    mov ecx, [screen_pitch]
-    mov al, COL_TASKBAR_LT
-    rep stosb
+    mov ecx, [screen_width]     ; One line of pixels
+    mov eax, 0x00606060         ; BGRA: light gray
+.taskbar_highlight_loop:
+    mov dword [rdi], eax
+    add rdi, 4
+    dec ecx
+    jnz .taskbar_highlight_loop
+    pop rbx
 
     ; Start button
     mov edi, 4
@@ -1119,10 +1129,11 @@ draw_mouse_cursor:
 ; DRAW ICONS
 ; ════════════════════════════════════════════════════════════════════════════
 draw_icon_terminal:
-    ; Terminal icon: rectangle with lines
+    ; Terminal icon: rectangle with lines (32-bit)
     push rax
     push rbx
     push rdi
+    push rcx
 
     ; Background
     push rdx
@@ -1138,26 +1149,33 @@ draw_icon_terminal:
     mov ecx, 16
     call draw_rect
 
-    ; Lines inside (text simulation)
-    mov rax, rsi
-    add rax, 3
+    ; Lines inside (text simulation) - 32-bit pixels
+    ; Calculate position: (y+3) * pitch + (x+3) * 4
+    mov eax, esi
+    add eax, 3                      ; y + 3
     imul eax, [screen_pitch]
-    add eax, edi
-    add eax, 3
+    mov ebx, edi
+    add ebx, 3                      ; x + 3
+    shl ebx, 2                      ; * 4 for 32-bit
+    add eax, ebx
     mov rbx, [screen_fb]
     add rax, rbx
-    mov byte [rax], COL_TEXT_WHITE
-    mov byte [rax + 1], COL_TEXT_WHITE
-    mov byte [rax + 2], COL_TEXT_WHITE
-    mov byte [rax + 3], COL_TEXT_WHITE
-    mov byte [rax + 4], COL_TEXT_WHITE
+    ; Draw 5 white pixels on first line
+    mov ecx, 0x00FFFFFF             ; White color (BGRA)
+    mov dword [rax], ecx
+    mov dword [rax + 4], ecx
+    mov dword [rax + 8], ecx
+    mov dword [rax + 12], ecx
+    mov dword [rax + 16], ecx
+    ; Move down 3 rows and draw 3 more pixels
     mov ebx, [screen_pitch]
     imul ebx, 3
     add rax, rbx
-    mov byte [rax], COL_TEXT_WHITE
-    mov byte [rax + 1], COL_TEXT_WHITE
-    mov byte [rax + 2], COL_TEXT_WHITE
+    mov dword [rax], ecx
+    mov dword [rax + 4], ecx
+    mov dword [rax + 8], ecx
 
+    pop rcx
     pop rdi
     pop rbx
     pop rax
@@ -1259,7 +1277,7 @@ draw_line_h:
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
-; FILL RECT - edi=x, esi=y, edx=w, ecx=h, r8d=color
+; FILL RECT - edi=x, esi=y, edx=w, ecx=h, r8d=color (32-bit BGRA)
 ; ════════════════════════════════════════════════════════════════════════════
 fill_rect:
     push rax
@@ -1269,22 +1287,29 @@ fill_rect:
     push rsi
     push r9
 
-    ; Calculate starting offset: y * pitch + x + framebuffer
+    ; Calculate starting offset: y * pitch + x*4 + framebuffer (32-bit)
     mov eax, esi
     imul eax, [screen_pitch]
-    add eax, edi
+    mov r9d, edi
+    shl r9d, 2                      ; x * 4 for 32-bit
+    add eax, r9d
     mov rdi, [screen_fb]
     add rdi, rax
-    mov ebx, edx                    ; width
+    mov ebx, edx                    ; width in pixels
     mov r9d, [screen_pitch]         ; save pitch for row advance
 
 .fill_row:
     push rcx
-    mov rcx, rbx
-    mov al, r8b
-    rep stosb
-    add rdi, r9                     ; advance by pitch
-    sub rdi, rbx                    ; back to start of next row
+    push rdi                        ; save row start
+    mov ecx, ebx                    ; pixel count for this row
+    mov eax, r8d                    ; color
+.fill_pixel:
+    mov dword [rdi], eax            ; Write 32-bit pixel
+    add rdi, 4
+    dec ecx
+    jnz .fill_pixel
+    pop rdi                         ; restore row start
+    add rdi, r9                     ; advance to next row (by pitch)
     pop rcx
     dec ecx
     jnz .fill_row
@@ -1298,7 +1323,7 @@ fill_rect:
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
-; DRAW RECT (outline) - edi=x, esi=y, edx=w, ecx=h, r8d=color
+; DRAW RECT (outline) - edi=x, esi=y, edx=w, ecx=h, r8d=color (32-bit BGRA)
 ; ════════════════════════════════════════════════════════════════════════════
 draw_rect:
     push rax
@@ -1308,48 +1333,68 @@ draw_rect:
     push rdi
     push rsi
     push r9
+    push r10
+    push r11
 
     mov r9d, [screen_pitch]         ; Save pitch
+    mov r11d, edx                   ; Save width in pixels
 
-    ; Top line
+    ; Calculate starting position: y * pitch + x * 4 + framebuffer (32-bit)
     mov eax, esi
     imul eax, r9d
-    add eax, edi
+    mov r10d, edi
+    shl r10d, 2                     ; x * 4 for 32-bit
+    add eax, r10d
     mov rbx, [screen_fb]
-    add rbx, rax
+    add rbx, rax                    ; rbx = top-left corner
+
+    ; Top line (32-bit)
     mov rdi, rbx
     push rcx
-    mov rcx, rdx
-    mov al, r8b
-    rep stosb
+    mov ecx, r11d                   ; width in pixels
+    mov eax, r8d
+.top_line:
+    mov dword [rdi], eax
+    add rdi, 4
+    dec ecx
+    jnz .top_line
     pop rcx
 
-    ; Bottom line
+    ; Bottom line (32-bit)
     push rcx
     dec ecx
     mov eax, ecx
     imul eax, r9d
-    add rbx, rax
     mov rdi, rbx
-    mov rcx, rdx
-    mov al, r8b
-    rep stosb
+    add rdi, rax                    ; rdi = bottom-left
+    mov ecx, r11d                   ; width in pixels
+    mov eax, r8d
+.bottom_line:
+    mov dword [rdi], eax
+    add rdi, 4
+    dec ecx
+    jnz .bottom_line
     pop rcx
-    sub rbx, rax
 
-    ; Left & right lines
+    ; Left & right lines (32-bit pixels)
     push rcx
+    mov rdi, rbx                    ; start at top-left
+    mov r10d, r11d
+    dec r10d
+    shl r10d, 2                     ; offset to right edge pixel (in bytes)
+    mov eax, r8d
 .vert_loop:
-    mov byte [rbx], r8b
-    mov rax, rbx
-    add rax, rdx
-    dec rax
-    mov byte [rax], r8b
-    add rbx, r9                     ; Use pitch
+    mov dword [rdi], eax            ; Left pixel
+    mov rsi, rdi
+    add rsi, r10
+    mov dword [rsi], eax            ; Right pixel
+    add rdi, r9                     ; next row (by pitch)
     dec ecx
     jnz .vert_loop
     pop rcx
 
+    pop r11
+    pop r10
     pop r9
     pop rsi
     pop rdi
@@ -1363,18 +1408,17 @@ draw_rect:
 ; GRAPHICS MODE - 3D Cube (fullscreen)
 ; ════════════════════════════════════════════════════════════════════════════
 graphics_mode:
-    ; Clear screen to dark gray (24-bit mode: write 3 bytes per pixel)
+    ; Clear screen to dark gray (32-bit mode)
     push rbx
     mov rdi, [screen_fb]
     mov eax, [screen_width]
     mov ebx, [screen_height]
     imul eax, ebx               ; EAX = total pixels
     mov ecx, eax                ; ECX = number of pixels
+    mov eax, 0x00303030         ; BGRA: dark gray
 .gfx_clear_loop:
-    mov byte [rdi], 0x30        ; Blue component (brighter gray)
-    mov byte [rdi+1], 0x30      ; Green component
-    mov byte [rdi+2], 0x30      ; Red component
-    add rdi, 3
+    mov dword [rdi], eax
+    add rdi, 4
     dec ecx
     jnz .gfx_clear_loop
     pop rbx
@@ -1411,18 +1455,17 @@ graphics_mode:
 ; SHELL MODE
 ; ════════════════════════════════════════════════════════════════════════════
 shell_mode:
-    ; Clear screen to dark blue (24-bit mode: write 3 bytes per pixel)
+    ; Clear screen to dark blue (32-bit mode)
     push rbx
     mov rdi, [screen_fb]
     mov eax, [screen_width]
     mov ebx, [screen_height]
     imul eax, ebx               ; EAX = total pixels
     mov ecx, eax                ; ECX = number of pixels
+    mov eax, 0x00000060         ; BGRA: dark blue (B=0x60)
 .shell_clear_loop:
-    mov byte [rdi], 0x60        ; Blue component
-    mov byte [rdi+1], 0x00      ; Green component
-    mov byte [rdi+2], 0x00      ; Red component
-    add rdi, 3
+    mov dword [rdi], eax
+    add rdi, 4
     dec ecx
     jnz .shell_clear_loop
     pop rbx
