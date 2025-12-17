@@ -70,7 +70,6 @@ files_selected:   dd 0               ; Currently selected file index
 files_viewing:    db 0               ; 0=list, 1=viewing README, 2=viewing ASM
 files_dirty:      db 1               ; Redraw flag (start dirty)
 files_dialog:     db 0               ; 0=none, 1=new file dialog
-files_temp_y:     dd 0               ; Temp variable for text_y between calls
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; CONSTANTS

@@ -179,61 +179,53 @@ view_draw_asm:
     push rdi
     push rsi
     push r8
+    push r9
+    push r10
 
     ; Line 1: comment (green)
-    mov edi, 70
-    mov rsi, str_ln_1
-    mov r8d, VIEW_COL_LINENUM
-    call view_draw_line_num
-    mov rsi, str_asm_l1
-    mov r8d, VIEW_COL_COMMENT
-    call view_draw_line_content
+    mov r9d, 70                      ; y position
+    mov rsi, str_ln_1                ; line number
+    mov r10, str_asm_l1              ; content
+    mov r8d, VIEW_COL_COMMENT        ; content color
+    call view_draw_line
 
     ; Line 2: section .text
-    mov edi, 90
+    mov r9d, 90
     mov rsi, str_ln_2
-    mov r8d, VIEW_COL_LINENUM
-    call view_draw_line_num
-    mov rsi, str_asm_l2
+    mov r10, str_asm_l2
     mov r8d, VIEW_COL_TEXT
-    call view_draw_line_content
+    call view_draw_line
 
     ; Line 3: global _start
-    mov edi, 110
+    mov r9d, 110
     mov rsi, str_ln_3
-    mov r8d, VIEW_COL_LINENUM
-    call view_draw_line_num
-    mov rsi, str_asm_l3
+    mov r10, str_asm_l3
     mov r8d, VIEW_COL_TEXT
-    call view_draw_line_content
+    call view_draw_line
 
     ; Line 4: _start: (label = blue)
-    mov edi, 130
+    mov r9d, 130
     mov rsi, str_ln_4
-    mov r8d, VIEW_COL_LINENUM
-    call view_draw_line_num
-    mov rsi, str_asm_l4
+    mov r10, str_asm_l4
     mov r8d, VIEW_COL_LABEL
-    call view_draw_line_content
+    call view_draw_line
 
     ; Line 5: mov rax, 1
-    mov edi, 150
+    mov r9d, 150
     mov rsi, str_ln_5
-    mov r8d, VIEW_COL_LINENUM
-    call view_draw_line_num
-    mov rsi, str_asm_l5
+    mov r10, str_asm_l5
     mov r8d, VIEW_COL_TEXT
-    call view_draw_line_content
+    call view_draw_line
 
     ; Line 6: mov rdi, 1
-    mov edi, 170
+    mov r9d, 170
     mov rsi, str_ln_6
-    mov r8d, VIEW_COL_LINENUM
-    call view_draw_line_num
-    mov rsi, str_asm_l6
+    mov r10, str_asm_l6
     mov r8d, VIEW_COL_TEXT
-    call view_draw_line_content
+    call view_draw_line
 
+    pop r10
+    pop r9
     pop r8
     pop rsi
     pop rdi
@@ -241,42 +233,40 @@ view_draw_asm:
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
-; VIEW_DRAW_LINE_NUM - Draw line number
-; Input: edi=y, rsi=str, r8d=color
+; VIEW_DRAW_LINE - Draw one line (number + content)
+; Input: r9d=y, rsi=line_num_str, r10=content_str, r8d=content_color
 ; ════════════════════════════════════════════════════════════════════════════
-view_draw_line_num:
+view_draw_line:
     push rax
     push rdi
-    push r9
+    push rsi
+    push r8
+    push r11
 
-    mov r9d, edi                     ; save y
+    mov r11d, r8d                    ; save content color
+
+    ; Draw line number at (10, y)
     mov rdi, [screen_fb]
     add rdi, 40                      ; x=10 * 4
     mov eax, [screen_pitch]
     imul eax, r9d
     add rdi, rax
+    mov r8d, VIEW_COL_LINENUM
     call draw_text
 
-    pop r9
-    pop rdi
-    pop rax
-    ret
-
-; ════════════════════════════════════════════════════════════════════════════
-; VIEW_DRAW_LINE_CONTENT - Draw line content
-; Input: edi=y (saved in r9), rsi=str, r8d=color
-; ════════════════════════════════════════════════════════════════════════════
-view_draw_line_content:
-    push rax
-    push rdi
-
+    ; Draw content at (35, y)
     mov rdi, [screen_fb]
     add rdi, 140                     ; x=35 * 4
     mov eax, [screen_pitch]
-    imul eax, r9d                    ; use saved y
+    imul eax, r9d
     add rdi, rax
+    mov rsi, r10                     ; content string
+    mov r8d, r11d                    ; content color
     call draw_text
 
+    pop r11
+    pop r8
+    pop rsi
     pop rdi
     pop rax
     ret

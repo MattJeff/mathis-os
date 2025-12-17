@@ -372,43 +372,47 @@ files_draw_entries:
     push rsi
     push r8
     push r9
+    push r10
+    push r11
+    push r12
+    push r13
+    push r14
 
-    ; Entry 0: PROJECTS/ at y=160 (selection y=145-185)
-    xor ebx, ebx                     ; entry index = 0
-    mov edx, 145                     ; selection y start
-    mov ecx, 160                     ; text y
-    mov rsi, str_files_e0
-    mov r8d, FILES_COL_FOLDER        ; folder = blue
-    call files_draw_entry_row
-    mov rsi, str_size_dir
-    call files_draw_entry_size
-    mov rsi, str_mod_1
-    call files_draw_entry_mod
+    ; Entry 0: PROJECTS/
+    xor ebx, ebx                     ; index = 0
+    mov ecx, 145                     ; sel_y
+    mov edx, 160                     ; text_y
+    mov r12, str_files_e0            ; name
+    mov r13, str_size_dir            ; size
+    mov r14, str_mod_1               ; modified
+    mov r8d, FILES_COL_FOLDER        ; color
+    call files_draw_entry
 
-    ; Entry 1: README.TXT at y=210 (selection y=195-235)
+    ; Entry 1: README.TXT
     mov ebx, 1
-    mov edx, 195
-    mov ecx, 210
-    mov rsi, str_files_e1
+    mov ecx, 195
+    mov edx, 210
+    mov r12, str_files_e1
+    mov r13, str_size_readme
+    mov r14, str_mod_2
     mov r8d, FILES_COL_TEXT
-    call files_draw_entry_row
-    mov rsi, str_size_readme
-    call files_draw_entry_size
-    mov rsi, str_mod_2
-    call files_draw_entry_mod
+    call files_draw_entry
 
-    ; Entry 2: HELLO.ASM at y=260 (selection y=245-285)
+    ; Entry 2: HELLO.ASM
     mov ebx, 2
-    mov edx, 245
-    mov ecx, 260
-    mov rsi, str_files_e2
+    mov ecx, 245
+    mov edx, 260
+    mov r12, str_files_e2
+    mov r13, str_size_hello
+    mov r14, str_mod_3
     mov r8d, FILES_COL_TEXT
-    call files_draw_entry_row
-    mov rsi, str_size_hello
-    call files_draw_entry_size
-    mov rsi, str_mod_3
-    call files_draw_entry_mod
+    call files_draw_entry
 
+    pop r14
+    pop r13
+    pop r12
+    pop r11
+    pop r10
     pop r9
     pop r8
     pop rsi
@@ -420,20 +424,21 @@ files_draw_entries:
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
-; FILES_DRAW_ENTRY_ROW - Draw single entry name with selection
-; Input: ebx=index, edx=sel_y, ecx=text_y, rsi=name, r8d=color
+; FILES_DRAW_ENTRY - Draw one complete entry (name + size + modified)
+; Input: ebx=index, ecx=sel_y, edx=text_y, r12=name, r13=size, r14=mod, r8d=color
 ; ════════════════════════════════════════════════════════════════════════════
-files_draw_entry_row:
+files_draw_entry:
     push rax
     push rcx
     push rdx
     push rdi
+    push rsi
+    push r8
     push r9
     push r10
     push r11
 
-    mov r10d, ecx                    ; save text_y
-    mov [files_temp_y], ecx          ; also save to global for size/mod calls
+    mov r10d, edx                    ; save text_y
     mov r11d, r8d                    ; save color
 
     ; Check if selected
@@ -441,22 +446,22 @@ files_draw_entry_row:
     jne .no_selection
 
     ; Draw selection highlight (40 pixels high)
-    mov r9d, edx                     ; y start
-    add edx, 40                      ; y end
+    mov r9d, ecx                     ; y start
+    add ecx, 40                      ; y end
 .sel_bg:
-    cmp r9d, edx
+    cmp r9d, ecx
     jge .sel_done
     mov rdi, [screen_fb]
     mov eax, [screen_pitch]
     imul eax, r9d
     add rdi, rax
     add rdi, 404
-    mov ecx, 820
+    mov edx, 820
     mov eax, FILES_COL_SELECT
 .sel_row:
     mov dword [rdi], eax
     add rdi, 4
-    dec ecx
+    dec edx
     jnz .sel_row
     inc r9d
     jmp .sel_bg
@@ -470,65 +475,38 @@ files_draw_entry_row:
     mov eax, [screen_pitch]
     imul eax, r10d
     add rdi, rax
-    mov r8d, r11d
+    mov rsi, r12                     ; name string
+    mov r8d, r11d                    ; color
+    call draw_text
+
+    ; Draw size at (550, text_y)
+    mov rdi, [screen_fb]
+    add rdi, 2200                    ; 550 * 4
+    mov eax, [screen_pitch]
+    imul eax, r10d
+    add rdi, rax
+    mov rsi, r13                     ; size string
+    mov r8d, FILES_COL_GRAY
+    call draw_text
+
+    ; Draw modified at (700, text_y)
+    mov rdi, [screen_fb]
+    add rdi, 2800                    ; 700 * 4
+    mov eax, [screen_pitch]
+    imul eax, r10d
+    add rdi, rax
+    mov rsi, r14                     ; mod string
+    mov r8d, FILES_COL_GRAY
     call draw_text
 
     pop r11
     pop r10
     pop r9
+    pop r8
+    pop rsi
     pop rdi
     pop rdx
     pop rcx
-    pop rax
-    ret
-
-; ════════════════════════════════════════════════════════════════════════════
-; FILES_DRAW_ENTRY_SIZE - Draw size column
-; Input: ecx=text_y (from previous call), rsi=size_str
-; ════════════════════════════════════════════════════════════════════════════
-files_draw_entry_size:
-    push rax
-    push rdi
-    push r8
-    push r9
-
-    mov rdi, [screen_fb]
-    add rdi, 2200                    ; 550 * 4
-    mov eax, [screen_pitch]
-    mov r9d, [files_temp_y]          ; use saved text_y from global
-    imul eax, r9d
-    add rdi, rax
-    mov r8d, FILES_COL_GRAY
-    call draw_text
-
-    pop r9
-    pop r8
-    pop rdi
-    pop rax
-    ret
-
-; ════════════════════════════════════════════════════════════════════════════
-; FILES_DRAW_ENTRY_MOD - Draw modified column
-; Input: rsi=mod_str
-; ════════════════════════════════════════════════════════════════════════════
-files_draw_entry_mod:
-    push rax
-    push rdi
-    push r8
-    push r9
-
-    mov rdi, [screen_fb]
-    add rdi, 2800                    ; 700 * 4
-    mov eax, [screen_pitch]
-    mov r9d, [files_temp_y]          ; use saved text_y from global
-    imul eax, r9d
-    add rdi, rax
-    mov r8d, FILES_COL_GRAY
-    call draw_text
-
-    pop r9
-    pop r8
-    pop rdi
     pop rax
     ret
 
