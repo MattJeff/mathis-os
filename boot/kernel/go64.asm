@@ -2215,6 +2215,9 @@ files_selected:  dd 0
 files_viewing:   db 0
 files_dirty:     db 1              ; Start dirty to draw first frame
 files_dialog:    db 0              ; 0=none, 1=new
+str_dlg_new:     db "CREATE NEW", 0
+str_dlg_cancel:  db "[ESC] Cancel", 0
+str_dlg_create:  db "[ENTER] Create", 0
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; DRAW TEXT - rdi=screen pos, rsi=string, r8d=color (supports 8/24/32-bit)
