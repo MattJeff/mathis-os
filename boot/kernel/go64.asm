@@ -1198,3 +1198,4 @@ tss64_end:
 ; SYSTEM (ISRs, setup)
 %include "sys/timer.asm"
 %include "sys/setup.asm"
+%include "sys/ring3.asm"
