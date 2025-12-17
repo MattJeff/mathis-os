@@ -730,43 +730,7 @@ mouse_isr64:
 ; execute_cmd and copy_string moved to ui/terminal.asm
 
 ; demo_process_1, demo_process_2 moved to sys/ring3.asm
-
-; ════════════════════════════════════════════════════════════════════════════
-; RING 3 USER-MODE SUPPORT
-; ════════════════════════════════════════════════════════════════════════════
-
-; Switch to Ring 3 (user mode)
-; RDI = user entry point
-; RSI = user stack pointer
-switch_to_ring3:
-    cli                             ; Disable interrupts during switch
-
-    ; Build iretq stack frame to "return" to Ring 3
-    push USER_DATA_SEL              ; SS (user data selector with RPL=3)
-    push rsi                        ; RSP (user stack)
-    pushfq                          ; RFLAGS
-    or qword [rsp], 0x200           ; Set IF (interrupts enabled)
-    push USER_CODE_SEL              ; CS (user code selector with RPL=3)
-    push rdi                        ; RIP (user entry point)
-
-    ; Clear registers for clean user state
-    xor rax, rax
-    xor rbx, rbx
-    xor rcx, rcx
-    xor rdx, rdx
-    xor rsi, rsi
-    xor rdi, rdi
-    xor rbp, rbp
-    xor r8, r8
-    xor r9, r9
-    xor r10, r10
-    xor r11, r11
-    xor r12, r12
-    xor r13, r13
-    xor r14, r14
-    xor r15, r15
-
-    iretq                           ; "Return" to user mode
+; switch_to_ring3 moved to sys/ring3.asm
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; USER-MODE DEMO PROCESS
