@@ -408,6 +408,16 @@ files_draw_entries:
     mov r8d, FILES_COL_TEXT
     call files_draw_entry
 
+    ; Entry 3: PROJECTS/
+    mov ebx, 3
+    mov ecx, 295
+    mov edx, 310
+    mov r12, str_files_e0
+    mov r13, str_size_dir
+    mov r14, str_mod_1
+    mov r8d, FILES_COL_FOLDER
+    call files_draw_entry
+
     pop r14
     pop r13
     pop r12
@@ -441,61 +451,38 @@ files_draw_entry:
     mov r10d, edx                    ; save text_y
     mov r11d, r8d                    ; save color
 
-    ; Check if selected
+    ; Check if selected - just change color, no highlight
     cmp ebx, [files_selected]
-    jne .no_selection
-
-    ; Draw selection highlight (40 pixels high)
-    mov r9d, ecx                     ; y start
-    add ecx, 40                      ; y end
-.sel_bg:
-    cmp r9d, ecx
-    jge .sel_done
-    mov rdi, [screen_fb]
-    mov eax, [screen_pitch]
-    imul eax, r9d
-    add rdi, rax
-    add rdi, 404
-    mov edx, 820
-    mov eax, FILES_COL_SELECT
-.sel_row:
-    mov dword [rdi], eax
-    add rdi, 4
-    dec edx
-    jnz .sel_row
-    inc r9d
-    jmp .sel_bg
-.sel_done:
-    mov r11d, FILES_COL_WHITE        ; selected = white text
-
-.no_selection:
+    jne .no_sel
+    mov r11d, FILES_COL_WHITE
+.no_sel:
     ; Draw name at (120, text_y)
     mov rdi, [screen_fb]
-    add rdi, 480                     ; 120 * 4
+    add rdi, 480
     mov eax, [screen_pitch]
     imul eax, r10d
     add rdi, rax
-    mov rsi, r12                     ; name string
-    mov r8d, r11d                    ; color
+    mov rsi, r12
+    mov r8d, r11d                    ; use saved color
     call draw_text
 
     ; Draw size at (550, text_y)
     mov rdi, [screen_fb]
-    add rdi, 2200                    ; 550 * 4
+    add rdi, 2200
     mov eax, [screen_pitch]
     imul eax, r10d
     add rdi, rax
-    mov rsi, r13                     ; size string
+    mov rsi, r13
     mov r8d, FILES_COL_GRAY
     call draw_text
 
     ; Draw modified at (700, text_y)
     mov rdi, [screen_fb]
-    add rdi, 2800                    ; 700 * 4
+    add rdi, 2800
     mov eax, [screen_pitch]
     imul eax, r10d
     add rdi, rax
-    mov rsi, r14                     ; mod string
+    mov rsi, r14
     mov r8d, FILES_COL_GRAY
     call draw_text
 
