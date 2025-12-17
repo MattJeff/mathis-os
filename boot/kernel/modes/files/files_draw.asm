@@ -378,13 +378,13 @@ files_draw_entries:
     push r13
     push r14
 
-    ; Entry 0: PROJECTS/
+    ; Entry 0: DOCS/ (remplace PROJECTS)
     xor ebx, ebx                     ; index = 0
     mov ecx, 145                     ; sel_y
     mov edx, 160                     ; text_y
-    mov r12, str_files_e0            ; name
-    mov r13, str_size_dir            ; size
-    mov r14, str_mod_1               ; modified
+    mov r12, str_files_e3            ; name
+    mov r13, str_size_e3             ; size
+    mov r14, str_mod_4               ; modified
     mov r8d, FILES_COL_FOLDER        ; color
     call files_draw_entry
 
