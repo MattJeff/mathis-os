@@ -4268,7 +4268,8 @@ tss64:
 tss64_end:
 
 ; ════════════════════════════════════════════════════════════════════════════
-; 3D ENGINE INCLUDES
+; 3D ENGINE INCLUDES (DEPRECATED - will be moved to deprecated/3d/)
+; Keep for now until 2D UI is fully stable
 ; ════════════════════════════════════════════════════════════════════════════
 %include "gfx3d/math3d.asm"
 %include "gfx3d/camera3d.asm"
