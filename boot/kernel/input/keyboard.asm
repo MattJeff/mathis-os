@@ -11,9 +11,7 @@
 ; Entree: IRQ1 declenche
 ; Sortie: key_pressed et key_ready mis a jour
 ; ════════════════════════════════════════════════════════════════════════════
-; NOTE: Ce label remplace l'ancien keyboard_isr64 dans go64.asm
-; L'ancien sera commente une fois l'integration terminee
-keyboard_isr64_new:
+keyboard_isr64:
     push rax
     push rbx
 
