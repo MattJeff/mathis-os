@@ -910,16 +910,7 @@ drag_window:    db 0
 drag_offset_x:  dw 0
 drag_offset_y:  dw 0
 
-; Mouse state
-mouse_x:        dw 160
-mouse_y:        dw 100
-mouse_buttons:  db 0
-mouse_cycle:    db 0
-mouse_byte0:    db 0
-mouse_byte1:    db 0
-mouse_byte2:    db 0
-last_mouse_btn: db 0                    ; For click debounce
-click_cooldown: dd 0                    ; Cooldown timer between clicks
+; Mouse state moved to input/state.asm
 
 ; Terminal state
 cmd_buf:        times 64 db 0
