@@ -731,55 +731,7 @@ mouse_isr64:
 
 ; demo_process_1, demo_process_2 moved to sys/ring3.asm
 ; switch_to_ring3 moved to sys/ring3.asm
-
-; ════════════════════════════════════════════════════════════════════════════
-; USER-MODE DEMO PROCESS
-; This code runs in Ring 3! It can only use syscalls to interact with kernel.
-; New syscall numbers: see syscalls.asm
-; ════════════════════════════════════════════════════════════════════════════
-user_process_demo:
-    ; Running in Ring 3 now!
-    ; Get our PID via syscall
-    mov rax, SYS_GETPID             ; syscall 11
-    int 0x80                        ; Returns PID in RAX
-
-    ; Draw a pixel pattern using syscalls to prove we're in user mode
-    mov r12, 10                     ; x position
-    mov r13, 180                    ; y position (near bottom)
-    mov r14, 0                      ; color counter
-
-.user_loop:
-    ; sys_putpixel: draw pixel at (x, y) with color
-    mov rax, SYS_PUTPIXEL           ; syscall 40
-    mov rdi, r12                    ; x
-    mov rsi, r13                    ; y
-    mov rdx, r14                    ; color
-    int 0x80
-
-    ; Move to next position
-    inc r12
-    cmp r12, 300
-    jl .no_wrap
-    mov r12, 10
-    inc r14                         ; Next color
-.no_wrap:
-
-    ; Yield to let other processes run
-    mov rax, SYS_YIELD              ; syscall 18
-    int 0x80
-
-    ; Small delay using sleep syscall (10ms)
-    mov rax, SYS_SLEEP              ; syscall 17
-    mov rdi, 10                     ; 10 milliseconds
-    int 0x80
-
-    jmp .user_loop
-
-; User stack area (must be in mapped memory)
-align 16
-user_stack_bottom:
-    times 4096 db 0                 ; 4KB user stack
-user_stack_top:
+; user_process_demo, user_stack moved to sys/ring3.asm
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; INCLUDE SCHEDULER MODULE
