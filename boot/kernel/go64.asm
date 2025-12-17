@@ -3790,6 +3790,13 @@ tss64_end:
 %include "input/scancode.asm"
 %include "input/mouse.asm"
 %include "input/keyboard.asm"
+%include "input/dispatcher.asm"
+
+; INPUT HANDLERS (event-driven)
+%include "handlers/global_keys.asm"
+%include "handlers/gui_keys.asm"
+%include "handlers/files_keys.asm"
+%include "handlers/terminal_keys.asm"
 
 ; FILES MANAGER
 %include "files/files_ui.asm"
