@@ -378,44 +378,44 @@ files_draw_entries:
     push r13
     push r14
 
-    ; Entry 0: DOCS/ (remplace PROJECTS)
-    xor ebx, ebx                     ; index = 0
-    mov ecx, 145                     ; sel_y
-    mov edx, 160                     ; text_y
-    mov r12, str_files_e3            ; name
-    mov r13, str_size_e3             ; size
-    mov r14, str_mod_4               ; modified
-    mov r8d, FILES_COL_FOLDER        ; color
+    ; Entry 0: PROJECTS/
+    xor ebx, ebx
+    mov ecx, 145
+    mov edx, 160
+    mov r12, str_files_e0
+    mov r13, str_size_dir
+    mov r14, str_mod_1
+    mov r8d, FILES_COL_FOLDER
     call files_draw_entry
 
-    ; Entry 1: README.TXT
+    ; Entry 1: DOCS/
     mov ebx, 1
     mov ecx, 195
     mov edx, 210
+    mov r12, str_files_e3
+    mov r13, str_size_e3
+    mov r14, str_mod_4
+    mov r8d, FILES_COL_FOLDER
+    call files_draw_entry
+
+    ; Entry 2: README.TXT
+    mov ebx, 2
+    mov ecx, 245
+    mov edx, 260
     mov r12, str_files_e1
     mov r13, str_size_readme
     mov r14, str_mod_2
     mov r8d, FILES_COL_TEXT
     call files_draw_entry
 
-    ; Entry 2: HELLO.ASM
-    mov ebx, 2
-    mov ecx, 245
-    mov edx, 260
+    ; Entry 3: HELLO.ASM
+    mov ebx, 3
+    mov ecx, 295
+    mov edx, 310
     mov r12, str_files_e2
     mov r13, str_size_hello
     mov r14, str_mod_3
     mov r8d, FILES_COL_TEXT
-    call files_draw_entry
-
-    ; Entry 3: PROJECTS/
-    mov ebx, 3
-    mov ecx, 295
-    mov edx, 310
-    mov r12, str_files_e0
-    mov r13, str_size_dir
-    mov r14, str_mod_1
-    mov r8d, FILES_COL_FOLDER
     call files_draw_entry
 
     pop r14

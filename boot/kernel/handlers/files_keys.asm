@@ -70,7 +70,7 @@ handle_files_keys:
 ; DOWN - Move selection down
 ; ════════════════════════════════════════════════════════════════════════════
 .key_down:
-    cmp dword [files_selected], 2       ; Max = 2 (3 entries: 0,1,2)
+    cmp dword [files_selected], 3       ; Max = 3 (4 entries: 0-3)
     jge .handled                        ; Already at bottom
     inc dword [files_selected]
     mov byte [files_dirty], 1           ; Mark for redraw
@@ -81,16 +81,18 @@ handle_files_keys:
 ; ════════════════════════════════════════════════════════════════════════════
 .key_enter:
     ; Check if viewing a file
-    cmp byte [files_viewing], 1
-    je .handled                         ; Already viewing, ignore
+    cmp byte [files_viewing], 0
+    jne .handled                        ; Already viewing, ignore
 
-    ; Check selection
-    cmp dword [files_selected], 0
-    je .handled                         ; Can't open folder yet (entry 0)
+    ; Check selection - skip folders (0=PROJECTS, 1=DOCS)
+    cmp dword [files_selected], 2
+    jl .handled                         ; Can't open folders yet
 
-    ; Open file for viewing
-    mov byte [files_viewing], 1
-    mov byte [files_dirty], 1           ; Mark for redraw
+    ; Open file: files_viewing = files_selected - 1 (2->1, 3->2)
+    mov eax, [files_selected]
+    dec eax
+    mov byte [files_viewing], al
+    mov byte [files_dirty], 1
     jmp .handled
 
 ; ════════════════════════════════════════════════════════════════════════════
