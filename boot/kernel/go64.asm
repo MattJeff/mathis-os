@@ -3847,5 +3847,11 @@ tss64_end:
 %include "ui/files.asm"
 %include "ui/input.asm"
 
+; INPUT MODULES (keyboard/mouse)
+%include "input/state.asm"
+%include "input/scancode.asm"
+%include "input/mouse.asm"
+%include "input/keyboard.asm"
+
 ; FILES MANAGER
 %include "files/files_ui.asm"
