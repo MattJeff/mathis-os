@@ -73,13 +73,14 @@ files_clear_screen:
     push rcx
     push rdi
 
-    ; DEBUG: Use simple fixed values
-    mov edi, 0xFD000000             ; VESA LFB address
-    mov ecx, 1024 * 768             ; Fixed size
-    mov eax, 0x00FF0000             ; RED for debug
+    mov rdi, [screen_fb]
+    mov eax, [screen_width]
+    imul eax, [screen_height]
+    mov ecx, eax
+    mov eax, FILES_COL_BG           ; Dark background (0x00181818)
 .clear_loop:
-    mov dword [edi], eax
-    add edi, 4
+    mov dword [rdi], eax
+    add rdi, 4
     dec ecx
     jnz .clear_loop
 

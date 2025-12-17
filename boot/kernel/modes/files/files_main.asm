@@ -9,9 +9,6 @@
 ; FILES MODE - Entry point
 ; ════════════════════════════════════════════════════════════════════════════
 files_mode:
-    ; DEBUG: Force redraw every frame to test
-    mov byte [files_dirty], 1
-
     ; Only redraw if dirty flag is set
     cmp byte [files_dirty], 0
     je .files_skip_draw
@@ -34,8 +31,8 @@ files_mode:
     ; DEBUG: Test each function one by one
     call files_clear_screen
     call files_draw_header
-    ; call files_draw_pathbar
-    ; call files_draw_table_frame
+    call files_draw_pathbar
+    call files_draw_table_frame
     ; call files_draw_columns
     ; call files_draw_entries
     ; call files_draw_footer
