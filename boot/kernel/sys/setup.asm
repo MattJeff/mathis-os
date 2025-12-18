@@ -10,15 +10,34 @@
 ; ════════════════════════════════════════════════════════════════════════════
 setup_idt64:
     push rax
+    push rbx
     push rdi
     push rcx
 
-    ; Clear IDT
+    ; ══════════════════════════════════════════════════════════════════
+    ; 1. Fill exceptions 0-31 with default catch-all handler
+    ;    This prevents triple fault if any exception occurs
+    ; ══════════════════════════════════════════════════════════════════
     mov rdi, idt64
-    mov rcx, 512
-    xor rax, rax
-    rep stosq
+    mov rcx, 32
+.fill_exceptions:
+    mov rax, default_exception_handler
+    ; Build IDT entry manually (16 bytes)
+    mov word [rdi], ax              ; Offset 15:0
+    mov word [rdi + 2], 0x08        ; Kernel code selector
+    mov byte [rdi + 4], 0           ; IST = 0
+    mov byte [rdi + 5], 0x8E        ; Present, DPL=0, Interrupt Gate
+    shr rax, 16
+    mov word [rdi + 6], ax          ; Offset 31:16
+    shr rax, 16
+    mov dword [rdi + 8], eax        ; Offset 63:32
+    mov dword [rdi + 12], 0         ; Reserved
+    add rdi, 16
+    loop .fill_exceptions
 
+    ; ══════════════════════════════════════════════════════════════════
+    ; 2. Hardware IRQs (0x20-0x2F)
+    ; ══════════════════════════════════════════════════════════════════
     ; IRQ0 (timer) at 0x20
     mov rdi, idt64 + 0x20 * 16
     mov rax, timer_isr64
@@ -37,14 +56,25 @@ setup_idt64:
     ; INT 0x80 (syscall) - Ring 3 callable
     mov rdi, idt64 + 0x80 * 16
     mov rax, syscall_isr64
-    call set_idt_entry_user        ; DPL=3 so user can call it
+    call set_idt_entry_user         ; DPL=3 so user can call it
 
     lidt [idt64_ptr]
 
     pop rcx
     pop rdi
+    pop rbx
     pop rax
     ret
+
+; ════════════════════════════════════════════════════════════════════════════
+; DEFAULT EXCEPTION HANDLER - Catch-all to prevent triple fault
+; Simply halts the CPU instead of rebooting
+; ════════════════════════════════════════════════════════════════════════════
+default_exception_handler:
+    cli                             ; Disable interrupts
+.halt_loop:
+    hlt                             ; Halt CPU
+    jmp .halt_loop                  ; Loop forever if NMI wakes us
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; SET_IDT_ENTRY - Standard IDT entry (DPL=0, kernel only)

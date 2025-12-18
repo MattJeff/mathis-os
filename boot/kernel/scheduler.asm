@@ -215,6 +215,10 @@ create_process:
     mov [rdi + PCB_ENTRY], r8
     mov [rdi + PCB_RIP], r8
 
+    ; DEBUG: Magic value pour confirmer le context switch
+    mov rax, 0xDEADBEEFCAFEBABE
+    mov [rdi + PCB_RAX], rax
+
     ; Setup flags (interrupts enabled)
     mov qword [rdi + PCB_RFLAGS], 0x202
 

@@ -187,7 +187,7 @@ long_mode_entry:
     ; Initialize FAT32 filesystem
     call fat32_init
 
-    ; Create demo processes
+    ; Create demo processes (2 processes with register-only operations)
     mov rdi, demo_process_1
     mov rsi, str_proc_demo1
     call create_process

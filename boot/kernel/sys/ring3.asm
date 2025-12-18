@@ -11,27 +11,17 @@
 ; DEMO PROCESSES - Background tasks for multitasking demonstration
 ; ════════════════════════════════════════════════════════════════════════════
 
-; Demo process 1 - Increments a counter (simulates background work)
+; Demo process 1 - Simple infinite loop (register only)
 demo_process_1:
-    inc qword [demo1_counter]
-    ; Simulate work
-    mov rcx, 50000
-.work1:
-    nop
-    dec rcx
-    jnz .work1
-    jmp demo_process_1
+.loop1:
+    inc rbx
+    jmp .loop1
 
-; Demo process 2 - Another background counter
+; Demo process 2 - Simple infinite loop (register only)
 demo_process_2:
-    inc qword [demo2_counter]
-    ; Simulate different work
-    mov rcx, 30000
-.work2:
-    nop
-    dec rcx
-    jnz .work2
-    jmp demo_process_2
+.loop2:
+    inc r12
+    jmp .loop2
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; SWITCH TO RING 3 (User Mode)
