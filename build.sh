@@ -20,11 +20,8 @@ nasm -f bin stage2.asm -o stage2.bin
 # Build kernel (with linker)
 echo "[3/5] Building 512KB kernel..."
 cd kernel
-# Compile to ELF64 object file
 nasm -f elf64 core.asm -o core.o
-# Link with linker script to binary
 x86_64-elf-ld -T kernel.ld --oformat binary -o ../kernel.bin core.o
-# Clean up object file
 rm -f core.o
 cd ..
 
