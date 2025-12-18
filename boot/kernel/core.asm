@@ -18,7 +18,7 @@ FB_PITCH        equ 0x51C
 FB_BPP          equ 0x520
 
 [BITS 32]
-[ORG 0x10000]
+section .entry
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; ENTRY POINT
