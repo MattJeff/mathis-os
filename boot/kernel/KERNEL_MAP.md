@@ -204,3 +204,101 @@ See CONVENTIONS.md for full details. Summary:
 ```bash
 qemu-system-x86_64 -hda boot/mathis.img -m 128M
 ```
+
+---
+
+## SOLID Architecture (En cours)
+
+Voir **SOLID_PLAN.md** pour le plan détaillé.
+
+### Principes
+
+| Principe | Application |
+|----------|-------------|
+| **S**ingle Responsibility | 1 fichier = 1 responsabilité |
+| **O**pen/Closed | V-Tables pour extension sans modification |
+| **L**iskov Substitution | Widgets interchangeables |
+| **I**nterface Segregation | Services avec API minimale |
+| **D**ependency Inversion | Service registry, pas de dépendances directes |
+
+### Structure Cible
+
+```
+kernel/
+├── core/           # Boot + Main loop (fait)
+├── mm/             # Memory (heap allocator)
+├── services/       # Abstractions (registry, interfaces)
+├── drivers/        # Implementations (vesa, ps2, fat32)
+├── widgets/        # UI components (button, window, etc.)
+├── events/         # Event system (queue, dispatch)
+├── apps/           # Applications (desktop, terminal, files)
+└── sys/            # System services (fait)
+```
+
+### V-Table Widget System
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    WIDGET INHERITANCE                        │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│    Widget (base)                                             │
+│      │                                                       │
+│      ├── Container                                           │
+│      │     ├── Window                                        │
+│      │     └── Panel                                         │
+│      │                                                       │
+│      ├── Button                                              │
+│      ├── Label                                               │
+│      ├── TextBox                                             │
+│      ├── List                                                │
+│      └── Icon                                                │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+
+Widget V-Table:
+  [0]  draw(self)
+  [8]  on_click(self, x, y)
+  [16] on_key(self, scancode)
+  [24] on_focus(self, focused)
+  [32] destroy(self)
+  [40] get_size(self)
+```
+
+### Service Registry
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    SERVICE ARCHITECTURE                      │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│   ┌─────────────┐                                           │
+│   │   Kernel    │                                           │
+│   │  main_loop  │                                           │
+│   └──────┬──────┘                                           │
+│          │                                                   │
+│          ▼                                                   │
+│   ┌─────────────────────────────────────────┐               │
+│   │          SERVICE REGISTRY               │               │
+│   │  ┌─────┬─────┬─────┬─────┬─────┬─────┐  │               │
+│   │  │VIDEO│INPUT│ALLOC│ FS  │ NET │TIMER│  │               │
+│   │  └──┬──┴──┬──┴──┬──┴──┬──┴──┬──┴──┬──┘  │               │
+│   └─────┼─────┼─────┼─────┼─────┼─────┼─────┘               │
+│         │     │     │     │     │     │                     │
+│         ▼     ▼     ▼     ▼     ▼     ▼                     │
+│       VESA   PS2   HEAP  FAT32 E1000  PIT                   │
+│      Driver Driver Alloc Driver Driver Timer                │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Phases d'Implémentation
+
+| Phase | Description | Statut |
+|-------|-------------|--------|
+| 0 | Cleanup + Modularisation | ✅ Fait |
+| 1 | Heap Allocator (kmalloc/kfree) | ⏳ À faire |
+| 2 | Service Registry | ⏳ À faire |
+| 3 | Widget System (V-Tables) | ⏳ À faire |
+| 4 | Desktop Refactor | ⏳ À faire |
+| 5 | Event System | ⏳ À faire |
