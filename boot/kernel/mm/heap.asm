@@ -569,3 +569,11 @@ heap_used_size:     dq 0                ; Currently allocated
 ; Statistics
 heap_alloc_count:   dd 0                ; Number of allocations
 heap_free_count:    dd 0                ; Number of frees
+
+; ════════════════════════════════════════════════════════════════════════════
+; KERNEL API ALIASES (kmalloc/kfree)
+; ════════════════════════════════════════════════════════════════════════════
+kmalloc:    jmp malloc
+kfree:      jmp free
+krealloc:   jmp realloc
+kcalloc:    jmp calloc
