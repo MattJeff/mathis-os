@@ -180,6 +180,10 @@ long_mode_entry:
     ; Initialize heap allocator
     call heap_init
 
+    ; Initialize service registry (SOLID Phase 2)
+    ; TODO: call registry_init cause boot loop - à investiguer
+    ; call alloc_svc_init
+
     ; Initialize FAT32 filesystem
     call fat32_init
 

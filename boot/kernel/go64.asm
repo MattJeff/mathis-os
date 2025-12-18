@@ -537,3 +537,7 @@ tss64_end:
 %include "sys/timer.asm"
 %include "sys/setup.asm"
 %include "sys/ring3.asm"
+
+; SERVICES (SOLID Phase 2)
+%include "services/registry.asm"
+%include "services/alloc_svc.asm"
