@@ -431,6 +431,43 @@ dialog_set_callbacks:
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
+; DIALOG_GET_INPUT - Get input text from dialog (polymorphic)
+; Input:  RDI = dialog widget
+; Output: RAX = pointer to input buffer (or 0 if no input)
+;
+; Works with: dialog_new (DN_NAME_BUF), dialog_rename (DR_NAME_BUF)
+; ════════════════════════════════════════════════════════════════════════════
+dialog_get_input:
+    test rdi, rdi
+    jz .no_input
+
+    ; Check dialog type by looking at vtable
+    mov rax, [rdi + W_VTABLE]
+
+    ; Check if it's dialog_new
+    lea rcx, [dialog_new_vtable]
+    cmp rax, rcx
+    je .get_new_input
+
+    ; Check if it's dialog_rename
+    lea rcx, [dialog_rename_vtable]
+    cmp rax, rcx
+    je .get_rename_input
+
+    ; Unknown dialog type
+.no_input:
+    xor eax, eax
+    ret
+
+.get_new_input:
+    mov rax, [rdi + DN_NAME_BUF]
+    ret
+
+.get_rename_input:
+    mov rax, [rdi + DR_NEW_NAME_BUF]
+    ret
+
+; ════════════════════════════════════════════════════════════════════════════
 ; DATA
 ; ════════════════════════════════════════════════════════════════════════════
 dlg_btn_ok:         db "OK", 0

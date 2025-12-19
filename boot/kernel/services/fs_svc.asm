@@ -4,6 +4,13 @@
 ; Abstract filesystem interface - implementations (FAT32, etc) register here.
 ; All filesystem operations go through this service - no direct driver calls.
 ;
+; Architecture (SOLID):
+;   - fs_svc.asm: Service interface + vtable (this file)
+;   - fs/crud/create.asm: File/directory creation
+;   - fs/crud/read.asm: File/directory reading
+;   - fs/crud/update.asm: File writing and seeking
+;   - fs/crud/delete.asm: File/directory deletion and rename
+;
 ; Usage:
 ;   mov edi, SVC_FS
 ;   call get_service
@@ -454,13 +461,10 @@ fs_read:
 ;         RSI = buffer
 ;         EDX = size (bytes to write)
 ; Output: EAX = bytes written, or -1 on error
-; NOTE: Write support is limited - use with caution!
 ; ════════════════════════════════════════════════════════════════════════════
 fs_write:
-    ; TODO: Implement safe write
-    ; For now, return error (writes disabled for safety)
-    mov eax, -1
-    ret
+    ; Delegate to CRUD module
+    jmp crud_write
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; FS_SEEK - Seek in a file
@@ -563,8 +567,7 @@ fs_readdir:
     ; Read directory entries
     mov rdi, fat32_sector_buffer
     call fat32_read_cluster
-    test eax, eax
-    jz .readdir_error
+    jc .readdir_error                   ; CF set = error
 
     ; Parse directory entries
     mov rbx, fat32_sector_buffer
@@ -797,22 +800,62 @@ fs_stat:
 ; FS_MKDIR - Create a directory
 ; Input:  RDI = path
 ; Output: EAX = 1 on success, 0 on error
-; NOTE: Not implemented - returns error
 ; ════════════════════════════════════════════════════════════════════════════
 fs_mkdir:
-    ; TODO: Implement when write support is safe
-    xor eax, eax
+    push rbx
+    push r12
+
+    ; Clean path (strip trailing /)
+    mov r12, rdi
+    call fs_clean_path              ; Result in fs_path_buffer
+
+    ; Call CRUD
+    lea rdi, [fs_path_buffer]
+    call crud_create_dir
+    mov ebx, eax                    ; Save result
+
+    ; Dispatch event if successful
+    test eax, eax
+    jz .mkdir_done
+    mov edi, FS_EVT_MKDIR
+    lea rsi, [fs_path_buffer]
+    call fs_dispatch_event
+
+.mkdir_done:
+    mov eax, ebx
+    pop r12
+    pop rbx
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; FS_DELETE - Delete a file or empty directory
 ; Input:  RDI = path
 ; Output: EAX = 1 on success, 0 on error
-; NOTE: Not implemented - returns error
 ; ════════════════════════════════════════════════════════════════════════════
 fs_delete:
-    ; TODO: Implement when write support is safe
-    xor eax, eax
+    push rbx
+    push r12
+
+    ; Clean path (strip trailing /)
+    mov r12, rdi
+    call fs_clean_path              ; Result in fs_path_buffer
+
+    ; Call CRUD
+    lea rdi, [fs_path_buffer]
+    call crud_delete
+    mov ebx, eax                    ; Save result
+
+    ; Dispatch event if successful
+    test eax, eax
+    jz .delete_done
+    mov edi, FS_EVT_DELETE
+    lea rsi, [fs_path_buffer]
+    call fs_dispatch_event
+
+.delete_done:
+    mov eax, ebx
+    pop r12
+    pop rbx
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
@@ -820,11 +863,109 @@ fs_delete:
 ; Input:  RDI = old path
 ;         RSI = new path
 ; Output: EAX = 1 on success, 0 on error
-; NOTE: Not implemented - returns error
 ; ════════════════════════════════════════════════════════════════════════════
 fs_rename:
-    ; TODO: Implement when write support is safe
-    xor eax, eax
+    push rbx
+    push r12
+    push r13
+
+    mov r12, rdi                    ; old path
+    mov r13, rsi                    ; new path
+
+    ; Clean old path
+    mov rdi, r12
+    call fs_clean_path
+    ; Copy to secondary buffer
+    lea rsi, [fs_path_buffer]
+    lea rdi, [fs_path_buffer2]
+    call fs_strcpy
+
+    ; Clean new path
+    mov rdi, r13
+    call fs_clean_path
+
+    ; Call CRUD (old in rdi, new in rsi)
+    lea rdi, [fs_path_buffer2]
+    lea rsi, [fs_path_buffer]
+    call crud_rename
+    mov ebx, eax
+
+    ; Dispatch event if successful
+    test eax, eax
+    jz .rename_done
+    mov edi, FS_EVT_RENAME
+    lea rsi, [fs_path_buffer]
+    call fs_dispatch_event
+
+.rename_done:
+    mov eax, ebx
+    pop r13
+    pop r12
+    pop rbx
+    ret
+
+; ════════════════════════════════════════════════════════════════════════════
+; FS_CLEAN_PATH - Copy path to buffer and strip trailing /
+; Input:  RDI = source path
+; Output: fs_path_buffer contains cleaned path
+; ════════════════════════════════════════════════════════════════════════════
+fs_clean_path:
+    push rax
+    push rcx
+    push rdi
+    push rsi
+
+    mov rsi, rdi                    ; source
+    lea rdi, [fs_path_buffer]       ; dest
+    mov ecx, 30                     ; max chars
+
+.copy_loop:
+    lodsb
+    test al, al
+    jz .copy_done
+    stosb
+    dec ecx
+    jnz .copy_loop
+
+.copy_done:
+    mov byte [rdi], 0               ; null terminate
+
+    ; Strip trailing /
+    lea rdi, [fs_path_buffer]
+.find_end:
+    cmp byte [rdi], 0
+    je .at_end
+    inc rdi
+    jmp .find_end
+
+.at_end:
+    lea rax, [fs_path_buffer]
+    cmp rdi, rax                    ; empty string?
+    je .clean_done
+    dec rdi                         ; point to last char
+    cmp byte [rdi], '/'
+    jne .clean_done
+    mov byte [rdi], 0               ; remove trailing /
+
+.clean_done:
+    pop rsi
+    pop rdi
+    pop rcx
+    pop rax
+    ret
+
+; ════════════════════════════════════════════════════════════════════════════
+; FS_STRCPY - Copy null-terminated string
+; Input:  RSI = source, RDI = dest
+; ════════════════════════════════════════════════════════════════════════════
+fs_strcpy:
+    push rax
+.strcpy_loop:
+    lodsb
+    stosb
+    test al, al
+    jnz .strcpy_loop
+    pop rax
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
@@ -913,3 +1054,10 @@ align 8
 fs_fd_table:        times (FS_MAX_OPEN_FILES * FS_FD_SIZE) db 0
 fs_temp_name:       times 12 db 0       ; 8.3 name buffer
 fs_temp_path:       times 256 db 0      ; Path buffer
+fs_path_buffer:     times 32 db 0       ; Clean path buffer (strip /)
+fs_path_buffer2:    times 32 db 0       ; Second buffer for rename
+
+; ════════════════════════════════════════════════════════════════════════════
+; INCLUDE EVENTS SUBSYSTEM
+; ════════════════════════════════════════════════════════════════════════════
+%include "services/fs_events.asm"

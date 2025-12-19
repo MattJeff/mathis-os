@@ -836,6 +836,7 @@ fat32_write_cluster:
     ; Write all sectors in cluster
     mov ecx, [fat32_sectors_per_cluster]
     call ata_write_sectors
+    jc .write_fail                      ; Check for actual write error!
 
     pop rsi
     pop rdx
@@ -1366,10 +1367,11 @@ fat32_create_dir:
     ; Change attribute to directory
     mov byte [rax + FAT32_DIR_ATTR], FAT32_ATTR_DIRECTORY
 
-    ; Write directory back
+    ; Write directory back (with DIRECTORY attribute)
     mov eax, r9d
     mov rsi, fat32_dir_buffer
     call fat32_write_cluster
+    jc .mkdir_error                     ; Failed to write parent dir!
 
     ; Initialize new directory with . and ..
     mov rdi, fat32_cluster_buffer
@@ -1408,6 +1410,7 @@ fat32_create_dir:
     mov eax, r10d
     mov rsi, fat32_cluster_buffer
     call fat32_write_cluster
+    jc .mkdir_error                     ; Write failed!
 
     mov eax, r10d                       ; Return new dir cluster
     jmp .mkdir_done

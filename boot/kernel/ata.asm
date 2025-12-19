@@ -1,6 +1,7 @@
 ; ════════════════════════════════════════════════════════════════════════════
-; MATHIS KERNEL - ATA DRIVER (PIO Mode)
+; MATHIS KERNEL - ATA DRIVER (PIO Mode) - 32-bit version
 ; Read/write disk sectors for filesystem persistence
+; Used by kernel boot code (32-bit mode)
 ; ════════════════════════════════════════════════════════════════════════════
 ; Disk layout:
 ;   LBA 0:       Boot sector
@@ -87,11 +88,11 @@ ata_wait_drq:
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
-; ATA_READ_SECTOR - Read one sector (512 bytes)
+; ATA_READ_SECTOR_32 - Read one sector (512 bytes) - 32-bit version
 ; Input: EAX = LBA, EDI = buffer address
 ; Output: CF set on error
 ; ════════════════════════════════════════════════════════════════════════════
-ata_read_sector:
+ata_read_sector_32:
     push eax
     push ebx
     push ecx
@@ -166,11 +167,11 @@ ata_read_sector:
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
-; ATA_WRITE_SECTOR - Write one sector (512 bytes)
+; ATA_WRITE_SECTOR_32 - Write one sector (512 bytes) - 32-bit version
 ; Input: EAX = LBA, ESI = buffer address
 ; Output: CF set on error
 ; ════════════════════════════════════════════════════════════════════════════
-ata_write_sector:
+ata_write_sector_32:
     push eax
     push ebx
     push ecx
@@ -249,10 +250,10 @@ ata_write_sector:
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
-; ATA_READ_SECTORS - Read multiple sectors
+; ATA_READ_SECTORS_32 - Read multiple sectors - 32-bit version
 ; Input: EAX = start LBA, ECX = count, EDI = buffer
 ; ════════════════════════════════════════════════════════════════════════════
-ata_read_sectors:
+ata_read_sectors_32:
     push eax
     push ecx
     push edi
@@ -260,7 +261,7 @@ ata_read_sectors:
 .read_loop:
     test ecx, ecx
     jz .done
-    call ata_read_sector
+    call ata_read_sector_32
     jc .done                        ; Stop on error
     inc eax                         ; Next LBA
     add edi, 512                    ; Next buffer position
@@ -274,10 +275,10 @@ ata_read_sectors:
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
-; ATA_WRITE_SECTORS - Write multiple sectors
+; ATA_WRITE_SECTORS_32 - Write multiple sectors - 32-bit version
 ; Input: EAX = start LBA, ECX = count, ESI = buffer
 ; ════════════════════════════════════════════════════════════════════════════
-ata_write_sectors:
+ata_write_sectors_32:
     push eax
     push ecx
     push esi
@@ -285,7 +286,7 @@ ata_write_sectors:
 .write_loop:
     test ecx, ecx
     jz .done
-    call ata_write_sector
+    call ata_write_sector_32
     jc .done
     inc eax
     add esi, 512
@@ -300,17 +301,17 @@ ata_write_sectors:
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; FS_SAVE - Save RAM filesystem to disk
-; Saves 64KB (128 sectors) starting at LBA 521
+; Saves 64KB (128 sectors) starting at LBA 1033
 ; ════════════════════════════════════════════════════════════════════════════
 fs_save_to_disk:
     push eax
     push ecx
     push esi
 
-    mov eax, FS_START_LBA           ; Start at LBA 521
+    mov eax, FS_START_LBA           ; Start at LBA 1033
     mov ecx, 128                    ; 128 sectors = 64KB
     mov esi, FS_BASE                ; RAM filesystem at 0x30000
-    call ata_write_sectors
+    call ata_write_sectors_32
 
     pop esi
     pop ecx
@@ -319,17 +320,17 @@ fs_save_to_disk:
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; FS_LOAD - Load filesystem from disk to RAM
-; Loads 64KB (128 sectors) from LBA 521
+; Loads 64KB (128 sectors) from LBA 1033
 ; ════════════════════════════════════════════════════════════════════════════
 fs_load_from_disk:
     push eax
     push ecx
     push edi
 
-    mov eax, FS_START_LBA           ; Start at LBA 521
+    mov eax, FS_START_LBA           ; Start at LBA 1033
     mov ecx, 128                    ; 128 sectors = 64KB
     mov edi, FS_BASE                ; RAM filesystem at 0x30000
-    call ata_read_sectors
+    call ata_read_sectors_32
 
     ; Check if valid FS was loaded (magic = "MTHSFS")
     cmp dword [FS_BASE], 'MTHS'

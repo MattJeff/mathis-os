@@ -192,6 +192,9 @@ long_mode_entry:
     ; Initialize filesystem service (wraps FAT32)
     call fs_svc_init
 
+    ; Initialize filesystem events (for desktop/files notifications)
+    call fs_events_init
+
     ; Initialize event system (SOLID Phase 5)
     call evt_system_init
 

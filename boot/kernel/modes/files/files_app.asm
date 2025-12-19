@@ -57,10 +57,11 @@ fa_date_bufs:       times (16 * FA_MAX_ENTRIES) db 0
 fa_dirent_buf:      times (FA_FS_DIRENT_SIZE * FA_MAX_ENTRIES) db 0
 
 ; Fallback mock data (used when filesystem not mounted)
-fa_mock_name_0:     db "PROJECTS/", 0
-fa_mock_name_1:     db "DOCS/", 0
-fa_mock_name_2:     db "README.TXT", 0
-fa_mock_name_3:     db "HELLO.ASM", 0
+; Names prefixed with [MOCK] to indicate mock data visually
+fa_mock_name_0:     db "[MOCK] PROJECTS/", 0
+fa_mock_name_1:     db "[MOCK] DOCS/", 0
+fa_mock_name_2:     db "[MOCK] README.TXT", 0
+fa_mock_name_3:     db "[MOCK] HELLO.ASM", 0
 fa_mock_mod:        db "--", 0
 
 fa_current_path:    db "/ (root)", 0
@@ -583,21 +584,26 @@ files_app_on_key:
 ; ════════════════════════════════════════════════════════════════════════════
 
 ; Called when file is selected (Enter or double-click)
+; Input: RDI = widget, ESI = selected index
 fa_on_file_select:
     push rbx
-    mov rbx, rdi                    ; widget
+    push rax
 
-    ; Get selected index
-    call file_list_get_selected
+    ; Get selected index (passed in ESI, but use RDI to call helper)
+    call file_list_get_selected     ; RDI already has widget
 
-    ; Check if it's a directory (index 0 or 1)
-    cmp eax, 2
-    jl .done                        ; Can't open directories yet
+    ; Check actual file flags (not hardcoded index!)
+    imul eax, 32                    ; FILE_ENTRY_SIZE = 32
+    lea rbx, [fa_entries + rax]
+    mov eax, [rbx + FE_FLAGS]
+    test eax, FEF_DIRECTORY
+    jnz .done                       ; Can't open directories yet
 
     ; Open file in editor
     call fa_open_file_editor
 
 .done:
+    pop rax
     pop rbx
     ret
 
@@ -773,48 +779,203 @@ fa_str_compare:
     pop rsi
     ret
 
-; Dialog callbacks
-; NOTE: FAT32 CRUD operations disabled for safety until fully tested
+; ════════════════════════════════════════════════════════════════════════════
+; DIALOG CALLBACKS - Now using real CRUD operations
+; ════════════════════════════════════════════════════════════════════════════
+
+; Called when "Create" button is clicked in New File dialog
 fa_on_new_confirm:
-    ; TODO: Re-enable FAT32 create when safe
-    ; For now, just close dialog
+    push rbx
+    push r12
+    push r13
+
+    ; Get filename from dialog input
+    mov rdi, [fa_dialog]
+    test rdi, rdi
+    jz .new_done
+
+    ; Check if folder was selected
+    call dialog_new_is_folder
+    mov r13d, eax                   ; r13 = is_folder flag
+
+    ; Get input text from dialog
+    mov rdi, [fa_dialog]
+    call dialog_new_get_name
+    test rax, rax
+    jz .new_done
+    mov r12, rax                    ; r12 = new filename
+
+    ; Check if creating folder or file
+    test r13d, r13d
+    jnz .create_folder
+
+    ; Create FILE using CRUD
+    mov rdi, r12
+    mov esi, FS_O_CREATE            ; Create flag
+    call crud_create_file
+    cmp eax, -1
+    je .new_done                    ; Creation failed
+
+    ; Close the fd (we just created the file)
+    mov edi, eax
+    call fs_close
+    jmp .new_refresh
+
+.create_folder:
+    ; Create FOLDER using fs_mkdir
+    mov rdi, r12
+    call fs_mkdir
+    test eax, eax
+    jz .new_done                    ; Creation failed
+
+.new_refresh:
+
+    ; Refresh file list
+    call fa_load_directory
+
+    ; Update file list widget
+    mov rdi, [fa_file_list]
+    mov rsi, fa_entries
+    mov edx, [fa_entry_count]
+    call file_list_set_entries
+
+.new_done:
     call fa_close_dialog
+    pop r13
+    pop r12
+    pop rbx
     ret
 
+; Called when "Delete" button is clicked in Delete dialog
 fa_on_delete_confirm:
-    ; TODO: Re-enable FAT32 delete when safe
-    ; For now, just close dialog
+    push rbx
+    push r12
+
+    ; Get selected entry name
+    mov rdi, [fa_file_list]
+    call file_list_get_selected
+    imul eax, 32
+    lea rbx, [fa_entries + rax]
+    mov r12, [rbx + FE_NAME]        ; r12 = filename to delete
+
+    ; Delete using fs_delete (handles "/" stripping automatically)
+    mov rdi, r12
+    call fs_delete
+    test eax, eax
+    jz .delete_done                 ; Deletion failed
+
+    ; Refresh file list
+    call fa_load_directory
+
+    ; Update file list widget
+    mov rdi, [fa_file_list]
+    mov rsi, fa_entries
+    mov edx, [fa_entry_count]
+    call file_list_set_entries
+
+.delete_done:
     call fa_close_dialog
+    pop r12
+    pop rbx
     ret
 
+; Called when "Rename" button is clicked in Rename dialog
 fa_on_rename_confirm:
-    ; TODO: Implement rename (requires FAT32 rename function)
+    push rbx
+    push r12
+    push r13
+
+    ; Get old filename (selected entry)
+    mov rdi, [fa_file_list]
+    call file_list_get_selected
+    imul eax, 32
+    lea rbx, [fa_entries + rax]
+    mov r12, [rbx + FE_NAME]        ; r12 = old filename
+
+    ; Get new filename from dialog input
+    mov rdi, [fa_dialog]
+    test rdi, rdi
+    jz .rename_done
+
+    call dialog_get_input
+    test rax, rax
+    jz .rename_done
+    mov r13, rax                    ; r13 = new filename
+
+    ; Rename using CRUD
+    mov rdi, r12                    ; old path
+    mov rsi, r13                    ; new path
+    call crud_rename
+    test eax, eax
+    jz .rename_done                 ; Rename failed
+
+    ; Refresh file list
+    call fa_load_directory
+
+    ; Update file list widget
+    mov rdi, [fa_file_list]
+    mov rsi, fa_entries
+    mov edx, [fa_entry_count]
+    call file_list_set_entries
+
+.rename_done:
     call fa_close_dialog
+    pop r13
+    pop r12
+    pop rbx
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
-; FA_SAVE_FILE - Save current editor content to disk
-; NOTE: FAT32 write disabled for safety - only clears modified flag
+; FA_SAVE_FILE - Save current editor content to disk using CRUD
 ; ════════════════════════════════════════════════════════════════════════════
 fa_save_file:
     push rbx
+    push r12
+    push r13
 
     ; Check if editor exists
     mov rdi, [fa_editor]
     test rdi, rdi
     jz .save_done
 
-    ; TODO: Re-enable when FAT32 write is fully tested
-    ; For now, just clear modified flag to show "Saved"
+    ; Check if we have a filename
+    mov r12, [fa_current_file]
+    test r12, r12
+    jz .save_done
 
-    ; Clear modified flag in editor (visual feedback)
+    ; Get text from editor
+    mov rdi, [fa_editor]
+    call text_editor_get_text       ; RAX = text ptr, EDX = length
+    test rax, rax
+    jz .save_done
+
+    mov r13, rax                    ; r13 = text content
+    mov ebx, edx                    ; ebx = length
+
+    ; Write file using CRUD
+    mov rdi, r12                    ; path = filename
+    mov rsi, r13                    ; data = text content
+    mov edx, ebx                    ; size = length
+    call crud_write_file
+    cmp eax, -1
+    je .save_failed
+
+    ; Success - clear modified flag
     mov rdi, [fa_editor]
     mov dword [rdi + TE_MODIFIED], 0
     or dword [rdi + W_FLAGS], WF_DIRTY
+    jmp .save_refresh
 
+.save_failed:
+    ; Write failed - keep modified flag set
+    ; TODO: Show error message
+
+.save_refresh:
     mov byte [files_dirty], 1
 
 .save_done:
+    pop r13
+    pop r12
     pop rbx
     ret
 
@@ -890,3 +1051,4 @@ files_app_cleanup:
 
     mov byte [fa_initialized], 0
     ret
+

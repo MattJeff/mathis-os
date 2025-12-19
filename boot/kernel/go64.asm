@@ -102,6 +102,11 @@ acpi_init:
 %include "mm/heap.asm"
 
 ; ════════════════════════════════════════════════════════════════════════════
+; INCLUDE ATA64 DRIVER (64-bit disk I/O)
+; ════════════════════════════════════════════════════════════════════════════
+%include "fs/ata64.asm"
+
+; ════════════════════════════════════════════════════════════════════════════
 ; INCLUDE FAT32 FILESYSTEM
 ; ════════════════════════════════════════════════════════════════════════════
 %include "fs/fat32.asm"
@@ -885,6 +890,12 @@ gui_term_btn:       dq 0            ; Terminal button pointer
 %include "services/video_svc.asm"
 %include "services/input_svc.asm"
 %include "services/fs_svc.asm"
+
+; CRUD MODULES (SOLID - Single Responsibility)
+%include "fs/crud/create.asm"
+%include "fs/crud/read.asm"
+%include "fs/crud/update.asm"
+%include "fs/crud/delete.asm"
 
 ; EVENTS (SOLID Phase 5)
 %include "events/events.asm"
