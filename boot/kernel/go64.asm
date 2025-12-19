@@ -610,9 +610,14 @@ gui_mode:
 %include "services/alloc_svc.asm"
 %include "services/video_svc.asm"
 %include "services/input_svc.asm"
+%include "services/fs_svc.asm"
 
 ; WIDGETS (SOLID Phase 5)
 %include "widgets/widget.asm"
+%include "widgets/label.asm"
+%include "widgets/button.asm"
+%include "widgets/container.asm"
+%include "widgets/window.asm"
 %include "widgets/header.asm"
 %include "widgets/pathbar.asm"
 %include "widgets/file_list.asm"

@@ -28,47 +28,40 @@ fa_state:           dd FA_STATE_LIST
 fa_initialized:     db 0
 
 ; ════════════════════════════════════════════════════════════════════════════
-; MOCK FILE ENTRIES (to be replaced with real FAT32 data)
+; FS_SVC CONSTANTS (must match services/fs_svc.asm)
 ; ════════════════════════════════════════════════════════════════════════════
-fa_entries:
-    ; Entry 0: PROJECTS/
-    dq fa_name_0            ; FE_NAME
-    dd 0                    ; FE_SIZE
-    dd FEF_DIRECTORY        ; FE_FLAGS
-    dq fa_mod_0             ; FE_MOD_DATE
-    dq 0                    ; FE_RESERVED
+FA_FS_DIRENT_SIZE   equ 64              ; Size of FS_DIRENT structure
+FA_FS_DIRENT_NAME   equ 0               ; Name offset in FS_DIRENT
+FA_FS_DIRENT_SIZE_OFF equ 32            ; Size offset in FS_DIRENT
+FA_FS_DIRENT_FLAGS  equ 36              ; Flags offset in FS_DIRENT
+FA_FS_ENTRY_DIR     equ 0x01            ; Directory flag
 
-    ; Entry 1: DOCS/
-    dq fa_name_1
-    dd 0
-    dd FEF_DIRECTORY
-    dq fa_mod_1
-    dq 0
+; ════════════════════════════════════════════════════════════════════════════
+; DYNAMIC FILE ENTRIES (loaded from filesystem via fs_svc)
+; ════════════════════════════════════════════════════════════════════════════
+FA_MAX_ENTRIES      equ 32              ; Max entries to display
 
-    ; Entry 2: README.TXT
-    dq fa_name_2
-    dd 45
-    dd 0
-    dq fa_mod_2
-    dq 0
+; Entry array - FILE_ENTRY_SIZE (32 bytes) * FA_MAX_ENTRIES
+; Structure: dq name_ptr, dd size, dd flags, dq mod_date_ptr, dq reserved
+fa_entries:         times (32 * FA_MAX_ENTRIES) db 0
 
-    ; Entry 3: HELLO.ASM
-    dq fa_name_3
-    dd 128
-    dd 0
-    dq fa_mod_3
-    dq 0
+fa_entry_count:     dd 0
 
-fa_entry_count:     dd 4
+; Name buffers for entries (32 bytes each, matches FS_DIRENT_NAME)
+fa_name_bufs:       times (32 * FA_MAX_ENTRIES) db 0
 
-fa_name_0:          db "PROJECTS/", 0
-fa_name_1:          db "DOCS/", 0
-fa_name_2:          db "README.TXT", 0
-fa_name_3:          db "HELLO.ASM", 0
-fa_mod_0:           db "Dec 17 14:30", 0
-fa_mod_1:           db "Dec 15 10:00", 0
-fa_mod_2:           db "Dec 17 12:00", 0
-fa_mod_3:           db "Dec 16 23:42", 0
+; Date string buffers (16 bytes each)
+fa_date_bufs:       times (16 * FA_MAX_ENTRIES) db 0
+
+; Temporary buffer for fs_readdir results
+fa_dirent_buf:      times (FA_FS_DIRENT_SIZE * FA_MAX_ENTRIES) db 0
+
+; Fallback mock data (used when filesystem not mounted)
+fa_mock_name_0:     db "PROJECTS/", 0
+fa_mock_name_1:     db "DOCS/", 0
+fa_mock_name_2:     db "README.TXT", 0
+fa_mock_name_3:     db "HELLO.ASM", 0
+fa_mock_mod:        db "--", 0
 
 fa_current_path:    db "/ (root)", 0
 fa_title_files:     db "FILES", 0
@@ -113,6 +106,9 @@ files_app_init:
     push r14
     push r15
 
+    ; Load directory from filesystem
+    call fa_load_directory
+
     ; Get screen dimensions
     mov r12d, [screen_width]
     mov r13d, [screen_height]
@@ -145,7 +141,7 @@ files_app_init:
     call file_list_create
     mov [fa_file_list], rax
 
-    ; Set file entries
+    ; Set file entries (now from dynamic data)
     mov rdi, rax
     mov rsi, fa_entries
     mov edx, [fa_entry_count]
@@ -176,6 +172,165 @@ files_app_init:
 
 .done:
     ret
+
+; ════════════════════════════════════════════════════════════════════════════
+; FA_LOAD_DIRECTORY - Load directory entries from filesystem
+; Uses fs_svc to get real file listing, falls back to mock data
+; ════════════════════════════════════════════════════════════════════════════
+fa_load_directory:
+    push rbx
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    push r12
+    push r13
+    push r14
+    push r15
+
+    ; Try to get filesystem service
+    mov edi, SVC_FS
+    call get_service
+    test rax, rax
+    jz .use_mock                    ; No FS service, use mock data
+
+    mov r15, rax                    ; r15 = fs_vtable
+
+    ; Call fs_readdir("/", buffer, max_entries)
+    lea rdi, [fa_root_path]         ; path = "/"
+    lea rsi, [fa_dirent_buf]        ; buffer for results
+    mov edx, FA_MAX_ENTRIES         ; max entries
+    call [r15 + FS_READDIR]
+
+    cmp eax, -1
+    je .use_mock                    ; Error, use mock data
+    test eax, eax
+    jz .use_mock                    ; No entries, use mock data
+
+    ; eax = number of entries read
+    mov r14d, eax                   ; r14 = entry count
+    mov [fa_entry_count], eax
+
+    ; Convert FS_DIRENT entries to FILE_ENTRY format
+    xor r12d, r12d                  ; r12 = current index
+    lea r13, [fa_dirent_buf]        ; r13 = source dirent
+
+.convert_loop:
+    cmp r12d, r14d
+    jge .load_done
+
+    ; Calculate destination pointers
+    ; FILE_ENTRY: dq name_ptr, dd size, dd flags, dq mod_date_ptr, dq reserved
+    mov eax, r12d
+    imul eax, FILE_ENTRY_SIZE       ; 32 bytes per entry
+    lea rbx, [fa_entries + rax]     ; rbx = dest FILE_ENTRY
+
+    ; Calculate name buffer pointer
+    mov eax, r12d
+    shl eax, 5                      ; * 32 bytes per name
+    lea rcx, [fa_name_bufs + rax]   ; rcx = name buffer
+
+    ; Calculate date buffer pointer
+    mov eax, r12d
+    shl eax, 4                      ; * 16 bytes per date
+    lea rdx, [fa_date_bufs + rax]   ; rdx = date buffer
+
+    ; Copy name from dirent to name buffer
+    push rcx
+    push rdx
+    mov rdi, rcx                    ; dest = name buffer
+    lea rsi, [r13 + FA_FS_DIRENT_NAME] ; src = dirent name
+    mov ecx, 31                     ; max 31 chars
+.copy_name:
+    lodsb
+    stosb
+    test al, al
+    jz .name_copied
+    dec ecx
+    jnz .copy_name
+    mov byte [rdi], 0               ; Ensure null terminated
+.name_copied:
+    pop rdx
+    pop rcx
+
+    ; Set name pointer in FILE_ENTRY
+    mov [rbx + FE_NAME], rcx
+
+    ; Copy size
+    mov eax, [r13 + FA_FS_DIRENT_SIZE_OFF]
+    mov [rbx + FE_SIZE], eax
+
+    ; Convert flags (FS_ENTRY_* to FEF_*)
+    mov eax, [r13 + FA_FS_DIRENT_FLAGS]
+    xor ecx, ecx
+    test eax, FA_FS_ENTRY_DIR
+    jz .not_dir_flag
+    or ecx, FEF_DIRECTORY
+.not_dir_flag:
+    mov [rbx + FE_FLAGS], ecx
+
+    ; Set date pointer (use placeholder for now)
+    lea rax, [fa_mock_mod]          ; TODO: Convert timestamp to string
+    mov [rbx + FE_MOD_DATE], rax
+
+    ; Clear reserved
+    mov qword [rbx + FE_RESERVED], 0
+
+    ; Next entry
+    add r13, FA_FS_DIRENT_SIZE
+    inc r12d
+    jmp .convert_loop
+
+.use_mock:
+    ; Fallback: create mock entries
+    mov dword [fa_entry_count], 4
+
+    ; Entry 0: PROJECTS/
+    lea rax, [fa_mock_name_0]
+    mov [fa_entries + 0*32 + FE_NAME], rax
+    mov dword [fa_entries + 0*32 + FE_SIZE], 0
+    mov dword [fa_entries + 0*32 + FE_FLAGS], FEF_DIRECTORY
+    lea rax, [fa_mock_mod]
+    mov [fa_entries + 0*32 + FE_MOD_DATE], rax
+
+    ; Entry 1: DOCS/
+    lea rax, [fa_mock_name_1]
+    mov [fa_entries + 1*32 + FE_NAME], rax
+    mov dword [fa_entries + 1*32 + FE_SIZE], 0
+    mov dword [fa_entries + 1*32 + FE_FLAGS], FEF_DIRECTORY
+    lea rax, [fa_mock_mod]
+    mov [fa_entries + 1*32 + FE_MOD_DATE], rax
+
+    ; Entry 2: README.TXT
+    lea rax, [fa_mock_name_2]
+    mov [fa_entries + 2*32 + FE_NAME], rax
+    mov dword [fa_entries + 2*32 + FE_SIZE], 45
+    mov dword [fa_entries + 2*32 + FE_FLAGS], 0
+    lea rax, [fa_mock_mod]
+    mov [fa_entries + 2*32 + FE_MOD_DATE], rax
+
+    ; Entry 3: HELLO.ASM
+    lea rax, [fa_mock_name_3]
+    mov [fa_entries + 3*32 + FE_NAME], rax
+    mov dword [fa_entries + 3*32 + FE_SIZE], 128
+    mov dword [fa_entries + 3*32 + FE_FLAGS], 0
+    lea rax, [fa_mock_mod]
+    mov [fa_entries + 3*32 + FE_MOD_DATE], rax
+
+.load_done:
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    pop rbx
+    ret
+
+; Path for root directory
+fa_root_path:       db "/", 0
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; FILES_APP_DRAW - Draw all widgets
@@ -356,12 +511,16 @@ files_app_on_key:
     jmp .handled_redraw
 
 .show_delete_dialog:
-    ; Get selected entry name
+    ; Get selected entry name from fa_entries
     mov rdi, [fa_file_list]
     call file_list_get_selected
-    ; TODO: Get actual filename from entry
-    mov rsi, fa_name_2              ; Placeholder
-    xor edx, edx                    ; is_folder = 0
+    ; Get filename pointer from entry
+    imul eax, 32                    ; FILE_ENTRY_SIZE = 32
+    lea rbx, [fa_entries + rax]
+    mov rsi, [rbx + FE_NAME]        ; Get name pointer
+    ; Check if directory
+    mov edx, [rbx + FE_FLAGS]
+    and edx, FEF_DIRECTORY          ; is_folder flag
     call dialog_delete_create
     mov [fa_dialog], rax
     test rax, rax
@@ -374,7 +533,12 @@ files_app_on_key:
     jmp .handled_redraw
 
 .show_rename_dialog:
-    mov rsi, fa_name_2              ; Placeholder filename
+    ; Get selected entry name from fa_entries
+    mov rdi, [fa_file_list]
+    call file_list_get_selected
+    imul eax, 32
+    lea rbx, [fa_entries + rax]
+    mov rsi, [rbx + FE_NAME]        ; Get current filename
     call dialog_rename_create
     mov [fa_dialog], rax
     test rax, rax
@@ -442,6 +606,7 @@ fa_open_file_editor:
     push rbx
     push r12
     push r13
+    push r14
 
     ; Get selected index
     mov rdi, [fa_file_list]
@@ -453,6 +618,11 @@ fa_open_file_editor:
     imul eax, 32
     lea rbx, [fa_entries + rax]
     mov r13, [rbx]                  ; r13 = pointer to filename string
+
+    ; Check if it's a directory
+    mov eax, [rbx + FE_FLAGS]
+    test eax, FEF_DIRECTORY
+    jnz .fail                       ; Can't open directories
 
     ; Save current filename for save operation
     mov [fa_current_file], r13
@@ -468,40 +638,63 @@ fa_open_file_editor:
     test rax, rax
     jz .fail
 
-    ; Convert filename to FAT32 8.3 format
-    mov rsi, r13
-    lea rdi, [fa_fat32_name]
-    call fat32_convert_name
+    ; Try to read file using fs_svc
+    mov edi, SVC_FS
+    call get_service
+    test rax, rax
+    jz .use_mock                    ; No FS service
 
-    ; Try to read file from FAT32
-    lea rsi, [fa_fat32_name]
-    lea rdi, [fa_file_buffer]
-    mov edx, FA_FILE_BUF_SIZE
-    call fat32_read_file
+    mov r14, rax                    ; r14 = fs_vtable
+
+    ; Use fs_read_file helper: (path, buffer, max_size) -> bytes_read
+    mov rdi, r13                    ; path = filename
+    lea rsi, [fa_file_buffer]       ; buffer
+    mov edx, FA_FILE_BUF_SIZE       ; max size
+    call fs_read_file
+    cmp eax, -1
+    je .use_mock                    ; Read failed
     test eax, eax
-    jz .use_mock                    ; FAT32 read failed, use mock data
+    jz .load_empty                  ; Empty file
 
-    ; Load FAT32 content into editor
+    ; Load content into editor
     mov rdi, [fa_editor]
     lea rsi, [fa_file_buffer]
-    mov edx, eax                    ; Size from fat32_read_file
+    mov edx, eax                    ; Size from fs_read_file
+    call text_editor_set_text
+    jmp .set_state
+
+.load_empty:
+    mov rdi, [fa_editor]
+    lea rsi, [fa_empty_content]
+    xor edx, edx
     call text_editor_set_text
     jmp .set_state
 
 .use_mock:
-    ; Fallback to mock content if FAT32 not available
+    ; Fallback to mock content if filesystem not available
     mov rdi, [fa_editor]
-    cmp r12d, 2                     ; README.TXT
-    je .load_readme
-    cmp r12d, 3                     ; HELLO.ASM
-    je .load_asm
-    ; Empty file
+    ; Check filename to determine which mock content
+    mov rsi, r13
+    lea rdi, [fa_mock_name_2]       ; "README.TXT"
+    call fa_str_compare
+    test eax, eax
+    jnz .load_readme
+
+    mov rsi, r13
+    lea rdi, [fa_mock_name_3]       ; "HELLO.ASM"
+    call fa_str_compare
+    test eax, eax
+    jnz .load_asm
+
+    ; Unknown file - load empty
+    mov rdi, [fa_editor]
     lea rsi, [fa_empty_content]
     xor edx, edx
     call text_editor_set_text
     jmp .set_state
 
 .load_readme:
+    mov rdi, [fa_editor]
     mov rsi, fa_readme_content
     mov edx, [fa_readme_len]
     call text_editor_set_text
@@ -546,9 +739,38 @@ fa_open_file_editor:
     mov byte [files_dirty], 1
 
 .fail:
+    pop r14
     pop r13
     pop r12
     pop rbx
+    ret
+
+; ════════════════════════════════════════════════════════════════════════════
+; FA_STR_COMPARE - Compare two null-terminated strings
+; Input:  RSI = string1, RDI = string2
+; Output: EAX = 1 if equal, 0 if not
+; ════════════════════════════════════════════════════════════════════════════
+fa_str_compare:
+    push rsi
+    push rdi
+.cmp_loop:
+    mov al, [rsi]
+    mov ah, [rdi]
+    cmp al, ah
+    jne .not_equal
+    test al, al
+    jz .equal                       ; Both reached null
+    inc rsi
+    inc rdi
+    jmp .cmp_loop
+.equal:
+    mov eax, 1
+    jmp .cmp_done
+.not_equal:
+    xor eax, eax
+.cmp_done:
+    pop rdi
+    pop rsi
     ret
 
 ; Dialog callbacks
