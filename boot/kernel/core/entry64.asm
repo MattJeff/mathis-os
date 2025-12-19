@@ -192,6 +192,9 @@ long_mode_entry:
     ; Initialize filesystem service (wraps FAT32)
     call fs_svc_init
 
+    ; Initialize event system (SOLID Phase 5)
+    call evt_system_init
+
     ; Create demo processes (2 processes with register-only operations)
     mov rdi, demo_process_1
     mov rsi, str_proc_demo1

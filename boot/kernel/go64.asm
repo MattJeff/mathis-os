@@ -886,6 +886,9 @@ gui_term_btn:       dq 0            ; Terminal button pointer
 %include "services/input_svc.asm"
 %include "services/fs_svc.asm"
 
+; EVENTS (SOLID Phase 5)
+%include "events/events.asm"
+
 ; WIDGETS (SOLID Phase 5)
 %include "widgets/widget.asm"
 %include "widgets/label.asm"

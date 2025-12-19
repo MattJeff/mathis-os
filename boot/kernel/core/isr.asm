@@ -94,6 +94,18 @@ mouse_isr64:
     mov word [mouse_y], ax
 .y_max_ok:
 
+    ; Post mouse move event (SOLID Phase 5)
+    push r8
+    push r9
+    movzx edi, word [mouse_x]           ; X position
+    movzx esi, word [mouse_y]           ; Y position
+    movsx edx, byte [mouse_byte1]       ; delta_x
+    movsx ecx, byte [mouse_byte2]       ; delta_y (not negated - raw)
+    neg ecx                             ; Apply Y inversion
+    call evt_post_mouse_move
+    pop r9
+    pop r8
+
     ; Check for click (with debounce + cooldown)
     mov ecx, [click_cooldown]
     test ecx, ecx
@@ -113,6 +125,17 @@ mouse_isr64:
 
     ; Button just pressed (0->1 transition)
     mov dword [click_cooldown], 15      ; 15 packets cooldown (~150ms)
+
+    ; Post mouse down event (SOLID Phase 5)
+    push r8
+    push r9
+    movzx edi, word [mouse_x]
+    movzx esi, word [mouse_y]
+    mov dl, MBTN_LEFT
+    call evt_post_mouse_down
+    pop r9
+    pop r8
+
     call handle_mouse_click
 
 .no_click:
