@@ -17,16 +17,31 @@ handle_global_keys:
     push rbx
 
     ; ─────────────────────────────────────────────────────────────────────────
-    ; ESC (0x01) = Reboot
+    ; ESC (0x01) = Reboot (but NOT if files mode has dialog/editor active)
     ; ─────────────────────────────────────────────────────────────────────────
     cmp al, 0x01
-    je .do_reboot
+    jne .skip_esc_check
+    ; Check if in files mode with dialog or editor active
+    cmp byte [mode_flag], 4
+    jne .do_reboot                  ; Not in files mode, allow reboot
+    cmp dword [fa_state], FA_STATE_LIST
+    jne .not_handled_global         ; Dialog or editor active, let files handle ESC
+    jmp .do_reboot
+.skip_esc_check:
 
     ; ─────────────────────────────────────────────────────────────────────────
     ; Tab (0x0F) = Cycle modes (0 → 1 → 2 → 3 → 4 → 0)
+    ; BUT: Skip if files mode has dialog/editor active
     ; ─────────────────────────────────────────────────────────────────────────
     cmp al, 0x0F
-    je .do_tab
+    jne .skip_tab_check
+    ; Check if in files mode with dialog or editor active
+    cmp byte [mode_flag], 4
+    jne .do_tab                     ; Not in files mode, allow tab cycling
+    cmp dword [fa_state], FA_STATE_LIST
+    jne .not_handled_global         ; Dialog or editor active, let files handle it
+    jmp .do_tab
+.skip_tab_check:
 
     ; ─────────────────────────────────────────────────────────────────────────
     ; F9 (0x43) = Launch Ring 3 user process demo
@@ -41,6 +56,7 @@ handle_global_keys:
     je .do_f10
 
     ; Pas handled
+.not_handled_global:
     xor al, al
     pop rbx
     ret

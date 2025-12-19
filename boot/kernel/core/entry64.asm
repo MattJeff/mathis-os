@@ -180,10 +180,11 @@ long_mode_entry:
     ; Initialize heap allocator
     call heap_init
 
-    ; Initialize service registry (SOLID Phase 2)
-    ; TODO: Fix crash - RIP jumps to .fixed section (0x8F254)
-    ; call registry_init
-    ; call alloc_svc_init
+    ; Initialize service registry (SOLID Phase 2+3+4)
+    call registry_init
+    call alloc_svc_init
+    call video_svc_init
+    call input_svc_init
 
     ; Initialize FAT32 filesystem
     call fat32_init

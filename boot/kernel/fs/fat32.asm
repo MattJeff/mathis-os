@@ -803,17 +803,33 @@ fat32_is_mounted:
 ; Output: CF set on error
 ; ════════════════════════════════════════════════════════════════════════════
 fat32_write_cluster:
+    ; SAFETY: Check if FAT32 is mounted
+    cmp byte [fat32_mounted], 1
+    jne .write_error
+
     push rax
     push rbx
     push rcx
     push rdx
     push rsi
 
+    ; SAFETY: Validate cluster number (must be >= 2)
+    cmp eax, 2
+    jl .write_fail
+
+    ; SAFETY: Check data_lba is valid (must be > 1024 to be past kernel)
+    cmp dword [fat32_data_lba], 1024
+    jl .write_fail
+
     ; Calculate LBA from cluster
     sub eax, 2
     mov ebx, [fat32_sectors_per_cluster]
     imul eax, ebx
     add eax, [fat32_data_lba]
+
+    ; SAFETY: Verify LBA is in safe range (past kernel at LBA 1033)
+    cmp eax, 1033
+    jl .write_fail
 
     ; Write all sectors in cluster
     mov ecx, [fat32_sectors_per_cluster]
@@ -824,6 +840,17 @@ fat32_write_cluster:
     pop rcx
     pop rbx
     pop rax
+    clc
+    ret
+
+.write_fail:
+    pop rsi
+    pop rdx
+    pop rcx
+    pop rbx
+    pop rax
+.write_error:
+    stc
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
@@ -880,12 +907,24 @@ fat32_alloc_cluster:
 ; Input: EAX = cluster number, EDX = value
 ; ════════════════════════════════════════════════════════════════════════════
 fat32_set_cluster:
+    ; SAFETY: Check if FAT32 is mounted
+    cmp byte [fat32_mounted], 1
+    jne .set_error
+
     push rax
     push rbx
     push rcx
     push rdx
     push rdi
     push rsi
+
+    ; SAFETY: Validate cluster number
+    cmp eax, 2
+    jl .set_fail
+
+    ; SAFETY: Check fat_lba is valid
+    cmp dword [fat32_fat_lba], 1024
+    jl .set_fail
 
     mov ebx, edx                        ; Save value
 
@@ -899,6 +938,11 @@ fat32_set_cluster:
     ; Read FAT sector
     mov eax, ecx
     add eax, [fat32_fat_lba]
+
+    ; SAFETY: Verify FAT LBA is safe
+    cmp eax, 1033
+    jl .set_fail
+
     mov rdi, fat32_fat_buffer
     push rdx
     push rbx
@@ -919,6 +963,17 @@ fat32_set_cluster:
 
     add eax, [fat32_sectors_per_fat]
     call ata_write_sector
+    jmp .set_done
+
+.set_fail:
+    pop rsi
+    pop rdi
+    pop rdx
+    pop rcx
+    pop rbx
+    pop rax
+.set_error:
+    ret
 
 .set_done:
     pop rsi

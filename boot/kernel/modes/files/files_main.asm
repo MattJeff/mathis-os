@@ -1,18 +1,22 @@
 ; ============================================================================
-; MathisOS - File Manager Main
+; MathisOS - File Manager Main (REFACTORED with Widgets)
 ; ============================================================================
 ; Entry point pour le mode FILES (mode 4)
-; Orchestre les sous-modules: draw, view, nav, ops
+; Now uses widget system for UI
 ; ============================================================================
 
 ; ════════════════════════════════════════════════════════════════════════════
-; FILES MODE - Entry point
+; FILES MODE - Entry point (called from main_loop)
 ; ════════════════════════════════════════════════════════════════════════════
 files_mode:
+    ; Initialize widgets on first call
+    call files_app_init
+
     ; Only redraw if dirty flag is set
     cmp byte [files_dirty], 0
-    je .files_skip_draw
-    mov byte [files_dirty], 0        ; Clear dirty flag
+    je .skip_draw
+
+    mov byte [files_dirty], 0       ; Clear dirty flag
 
     push rax
     push rbx
@@ -23,25 +27,9 @@ files_mode:
     push r8
     push r9
 
-    ; Check if viewing a file
-    cmp byte [files_viewing], 0
-    jne .files_view_mode
+    ; Draw using widget system
+    call files_app_draw
 
-    ; === FILE LIST MODE ===
-    call files_clear_screen
-    call files_draw_header
-    call files_draw_pathbar
-    call files_draw_table_frame
-    call files_draw_columns
-    call files_draw_entries
-    call files_draw_footer
-    jmp .files_done
-
-.files_view_mode:
-    ; === FILE VIEW MODE ===
-    call files_draw_viewer
-
-.files_done:
     pop r9
     pop r8
     pop rsi
@@ -51,16 +39,22 @@ files_mode:
     pop rbx
     pop rax
 
-.files_skip_draw:
+.skip_draw:
     ; Small delay to reduce CPU usage
     mov ecx, 50000
-.files_delay:
+.delay:
     pause
     dec ecx
-    jnz .files_delay
+    jnz .delay
+
     jmp main_loop
 
-; Include sub-modules
+; Include widget-based app controller
+%include "modes/files/files_app.asm"
+
+; Legacy data (still needed for some variables)
 %include "modes/files/files_data.asm"
-%include "modes/files/files_draw.asm"
-%include "modes/files/files_view.asm"
+
+; Legacy draw functions (kept for reference, will be removed later)
+; %include "modes/files/files_draw.asm"
+; %include "modes/files/files_view.asm"

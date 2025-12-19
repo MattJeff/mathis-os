@@ -605,6 +605,20 @@ gui_mode:
 ; %include "sys/exc_bsod.asm"
 ; %include "sys/exc_handlers.asm"
 
-; SERVICES (SOLID Phase 2)
+; SERVICES (SOLID Phase 2+3+4)
 %include "services/registry.asm"
 %include "services/alloc_svc.asm"
+%include "services/video_svc.asm"
+%include "services/input_svc.asm"
+
+; WIDGETS (SOLID Phase 5)
+%include "widgets/widget.asm"
+%include "widgets/header.asm"
+%include "widgets/pathbar.asm"
+%include "widgets/file_list.asm"
+%include "widgets/statusbar.asm"
+%include "widgets/text_editor.asm"
+%include "widgets/dialogs/dialog_base.asm"
+%include "widgets/dialogs/dialog_new.asm"
+%include "widgets/dialogs/dialog_delete.asm"
+%include "widgets/dialogs/dialog_rename.asm"
