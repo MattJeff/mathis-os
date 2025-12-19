@@ -166,12 +166,11 @@ desktop_app_init:
     lea rsi, [desktop_cb_terminal]
     call button_set_callback
 
-    ; Style: transparent bg, visible text
+    ; Hide button visually (only for click detection)
     mov rdi, [desktop_icon_term]
-    mov esi, 0x00FFFFFF             ; fg = white
-    mov edx, 0x00000000             ; bg = transparent
-    mov ecx, 0x00000000             ; border = none
-    call button_set_colors
+    mov eax, [rdi + W_FLAGS]
+    and eax, ~WF_VISIBLE            ; Not visible, but still enabled for clicks
+    mov [rdi + W_FLAGS], eax
 
     ; Add to desktop_area
     mov rdi, r14
@@ -193,11 +192,11 @@ desktop_app_init:
     lea rsi, [desktop_cb_files]
     call button_set_callback
 
+    ; Hide button visually (only for click detection)
     mov rdi, [desktop_icon_files]
-    mov esi, 0x00FFFFFF
-    mov edx, 0x00000000
-    mov ecx, 0x00000000
-    call button_set_colors
+    mov eax, [rdi + W_FLAGS]
+    and eax, ~WF_VISIBLE
+    mov [rdi + W_FLAGS], eax
 
     mov rdi, r14
     mov rsi, [desktop_icon_files]
