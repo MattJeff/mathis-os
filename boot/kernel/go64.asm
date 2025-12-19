@@ -914,6 +914,8 @@ gui_term_btn:       dq 0            ; Terminal button pointer
 %include "widgets/file_list.asm"
 %include "widgets/statusbar.asm"
 %include "widgets/text_editor.asm"
+%include "widgets/desktop_icon.asm"
+%include "widgets/taskbar.asm"
 %include "widgets/dialogs/dialog_base.asm"
 %include "widgets/dialogs/dialog_new.asm"
 %include "widgets/dialogs/dialog_delete.asm"

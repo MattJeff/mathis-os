@@ -1,7 +1,11 @@
 ; ════════════════════════════════════════════════════════════════════════════
 ; DESKTOP_APP.ASM - Desktop Application using Widget System
 ; ════════════════════════════════════════════════════════════════════════════
-; Phase 4: SOLID Refactor - Desktop using containers, buttons, labels
+; Phase 4+5: SOLID Refactor - Desktop with widgets + FS event listener
+;
+; Features:
+;   - Widget-based UI (containers, buttons, labels)
+;   - FS event listener: auto-refresh icons when files created/deleted
 ;
 ; Structure:
 ;   - Root container (fullscreen)
@@ -9,6 +13,7 @@
 ;       - Terminal icon (button)
 ;       - Files icon (button)
 ;       - 3D Demo icon (button)
+;       - Dynamic file icons (from filesystem)
 ;     - Taskbar container (bottom bar)
 ;       - Start button
 ;       - Clock label
@@ -55,6 +60,13 @@ desktop_menu_reboot:    dq 0    ; Menu: Reboot
 desktop_menu_open:      db 0    ; Start menu visibility
 desktop_initialized:    db 0    ; Init flag
 desktop_last_buttons:   db 0    ; Previous mouse button state (for click detection)
+desktop_needs_refresh:  db 0    ; Set to 1 when FS event received
+desktop_fs_registered:  db 0    ; 1 if FS listener registered
+
+; Dynamic icons (files from root directory)
+DESKTOP_MAX_FILE_ICONS  equ 8
+desktop_file_icons:     times DESKTOP_MAX_FILE_ICONS dq 0  ; Pointers to file icon widgets
+desktop_file_icon_count: db 0   ; Number of active file icons
 
 ; Strings
 desktop_str_start:      db "Start", 0
@@ -404,6 +416,18 @@ desktop_app_init:
     ; Mark as initialized
     mov byte [desktop_initialized], 1
 
+    ; ═══════════════════════════════════════════════════════════════════════
+    ; REGISTER FS EVENT LISTENER (Phase 5: Observer Pattern)
+    ; ═══════════════════════════════════════════════════════════════════════
+    cmp byte [desktop_fs_registered], 1
+    je .already_init
+
+    lea rdi, [desktop_on_fs_event]
+    call fs_add_listener
+    test eax, eax
+    jz .already_init               ; Failed to register, continue anyway
+    mov byte [desktop_fs_registered], 1
+
 .already_init:
     mov eax, 1
     jmp .done
@@ -424,6 +448,9 @@ desktop_app_init:
 ; ════════════════════════════════════════════════════════════════════════════
 desktop_app_draw:
     push rbx
+
+    ; Check if FS events triggered a refresh
+    call desktop_check_refresh
 
     ; Draw root container (recursive)
     mov rdi, [desktop_root]
@@ -686,4 +713,80 @@ desktop_app_cleanup:
     mov byte [desktop_initialized], 0
 
 .done:
+    ret
+
+; ════════════════════════════════════════════════════════════════════════════
+; DESKTOP_ON_FS_EVENT - Callback for filesystem events (Observer Pattern)
+; ════════════════════════════════════════════════════════════════════════════
+; Input: EDI = event type (FS_EVT_*), RSI = path (null-terminated)
+; Called when files are created, deleted, renamed, etc.
+; ════════════════════════════════════════════════════════════════════════════
+desktop_on_fs_event:
+    push rbx
+    push r12
+
+    mov r12d, edi                   ; Save event type
+
+    ; Only care about CREATE, DELETE, MKDIR events for root folder
+    cmp edi, FS_EVT_CREATE
+    je .mark_refresh
+    cmp edi, FS_EVT_DELETE
+    je .mark_refresh
+    cmp edi, FS_EVT_MKDIR
+    je .mark_refresh
+    jmp .done
+
+.mark_refresh:
+    ; Mark that desktop needs icon refresh
+    mov byte [desktop_needs_refresh], 1
+
+    ; If currently in desktop mode, mark root for redraw
+    cmp byte [mode_flag], 2         ; MODE_DESKTOP
+    jne .done
+
+    mov rdi, [desktop_root]
+    test rdi, rdi
+    jz .done
+    or dword [rdi + W_FLAGS], WF_DIRTY
+
+.done:
+    pop r12
+    pop rbx
+    ret
+
+; ════════════════════════════════════════════════════════════════════════════
+; DESKTOP_CHECK_REFRESH - Check if refresh needed and perform it
+; ════════════════════════════════════════════════════════════════════════════
+; Call this from desktop_app_draw to handle pending refreshes
+; ════════════════════════════════════════════════════════════════════════════
+desktop_check_refresh:
+    cmp byte [desktop_needs_refresh], 0
+    je .done
+
+    ; Clear flag
+    mov byte [desktop_needs_refresh], 0
+
+    ; Trigger full redraw
+    mov rdi, [desktop_root]
+    test rdi, rdi
+    jz .done
+    or dword [rdi + W_FLAGS], WF_DIRTY
+
+    ; TODO: In future, could dynamically add/remove file icons here
+    ; For now, just redraw existing static icons
+
+.done:
+    ret
+
+; ════════════════════════════════════════════════════════════════════════════
+; DESKTOP_REFRESH_ICONS - Refresh file icons from filesystem
+; ════════════════════════════════════════════════════════════════════════════
+; Future: This will scan root directory and create icons for files
+; ════════════════════════════════════════════════════════════════════════════
+desktop_refresh_icons:
+    ; TODO: Implement dynamic icon creation
+    ; 1. Clear existing file icons
+    ; 2. Read root directory
+    ; 3. Create icon widget for each file/folder
+    ; 4. Position icons in grid
     ret
