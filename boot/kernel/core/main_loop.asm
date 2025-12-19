@@ -25,10 +25,35 @@ main_loop:
     cmp byte [mode_flag], 3
     je gui3d_mode
     cmp byte [mode_flag], 2
-    je gui_mode
+    je desktop_mode_wrapper
     cmp byte [mode_flag], 1
     je shell_mode
     jmp graphics_mode
+
+; ════════════════════════════════════════════════════════════════════════════
+; DESKTOP_MODE_WRAPPER - Widget-based desktop (replaces gui_mode)
+; ════════════════════════════════════════════════════════════════════════════
+desktop_mode_wrapper:
+    ; Initialize desktop if needed
+    cmp byte [desktop_initialized], 0
+    jne .desktop_draw
+
+    call desktop_app_init
+    test eax, eax
+    jz .desktop_fallback           ; If init fails, use legacy gui_mode
+
+.desktop_draw:
+    ; Draw desktop
+    call desktop_app_draw
+
+    ; Handle input
+    call desktop_app_input
+
+    jmp main_loop
+
+.desktop_fallback:
+    ; Fallback to legacy gui_mode if widget system fails
+    jmp gui_mode
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; 3D GUI MODE - Revolutionary 3D Navigation Interface

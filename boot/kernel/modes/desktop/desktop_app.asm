@@ -68,6 +68,18 @@ DESKTOP_MAX_FILE_ICONS  equ 8
 desktop_file_icons:     times DESKTOP_MAX_FILE_ICONS dq 0  ; Pointers to file icon widgets
 desktop_file_icon_count: db 0   ; Number of active file icons
 
+; Icon grid layout
+DESKTOP_ICON_START_X    equ 30      ; First column X
+DESKTOP_ICON_START_Y    equ 270     ; Start Y (below static icons)
+DESKTOP_ICON_GRID_W     equ 80      ; Grid cell width
+DESKTOP_ICON_GRID_H     equ 80      ; Grid cell height
+DESKTOP_ICONS_PER_ROW   equ 4       ; Icons per row
+
+; FS readdir buffer
+desktop_dirent_buf:     times (64 * DESKTOP_MAX_FILE_ICONS) db 0
+desktop_root_path:      db "/", 0
+desktop_name_bufs:      times (32 * DESKTOP_MAX_FILE_ICONS) db 0  ; Name string storage
+
 ; Strings
 desktop_str_start:      db "Start", 0
 desktop_str_clock:      db "12:00", 0
@@ -425,8 +437,12 @@ desktop_app_init:
     lea rdi, [desktop_on_fs_event]
     call fs_add_listener
     test eax, eax
-    jz .already_init               ; Failed to register, continue anyway
+    jz .skip_register              ; Failed to register, continue anyway
     mov byte [desktop_fs_registered], 1
+
+.skip_register:
+    ; Load initial file icons from filesystem
+    call desktop_refresh_icons
 
 .already_init:
     mov eax, 1
@@ -482,6 +498,7 @@ desktop_app_draw:
 ; ════════════════════════════════════════════════════════════════════════════
 desktop_draw_icons:
     push rbx
+    push r12
 
     ; Terminal icon graphic at (46, 38)
     mov edi, 46
@@ -501,6 +518,32 @@ desktop_draw_icons:
     mov edx, COL_GREEN
     call draw_icon_cube
 
+    ; Draw dynamic file icons
+    movzx ecx, byte [desktop_file_icon_count]
+    test ecx, ecx
+    jz .no_file_icons
+
+    xor r12d, r12d                  ; index
+.draw_file_icon_loop:
+    cmp r12d, ecx
+    jge .no_file_icons
+
+    ; Get icon widget and call its draw method
+    mov rdi, [desktop_file_icons + r12*8]
+    test rdi, rdi
+    jz .next_file_icon
+
+    ; Call widget_draw (uses vtable)
+    push rcx
+    call widget_draw
+    pop rcx
+
+.next_file_icon:
+    inc r12d
+    jmp .draw_file_icon_loop
+
+.no_file_icons:
+    pop r12
     pop rbx
     ret
 
@@ -766,14 +809,14 @@ desktop_check_refresh:
     ; Clear flag
     mov byte [desktop_needs_refresh], 0
 
+    ; Refresh file icons from filesystem
+    call desktop_refresh_icons
+
     ; Trigger full redraw
     mov rdi, [desktop_root]
     test rdi, rdi
     jz .done
     or dword [rdi + W_FLAGS], WF_DIRTY
-
-    ; TODO: In future, could dynamically add/remove file icons here
-    ; For now, just redraw existing static icons
 
 .done:
     ret
@@ -781,12 +824,199 @@ desktop_check_refresh:
 ; ════════════════════════════════════════════════════════════════════════════
 ; DESKTOP_REFRESH_ICONS - Refresh file icons from filesystem
 ; ════════════════════════════════════════════════════════════════════════════
-; Future: This will scan root directory and create icons for files
+; Scans root directory and creates icon widgets for each file/folder
 ; ════════════════════════════════════════════════════════════════════════════
 desktop_refresh_icons:
-    ; TODO: Implement dynamic icon creation
-    ; 1. Clear existing file icons
-    ; 2. Read root directory
-    ; 3. Create icon widget for each file/folder
-    ; 4. Position icons in grid
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+
+    ; ═══════════════════════════════════════════════════════════════════════
+    ; STEP 1: Clear existing dynamic icons
+    ; ═══════════════════════════════════════════════════════════════════════
+    movzx ecx, byte [desktop_file_icon_count]
+    test ecx, ecx
+    jz .no_clear
+
+    xor ebx, ebx                    ; index
+.clear_loop:
+    cmp ebx, ecx
+    jge .clear_done
+
+    ; Get icon pointer
+    mov rdi, [desktop_file_icons + rbx*8]
+    test rdi, rdi
+    jz .next_clear
+
+    ; Free the widget (kfree)
+    call kfree
+    mov qword [desktop_file_icons + rbx*8], 0
+
+.next_clear:
+    inc ebx
+    jmp .clear_loop
+
+.clear_done:
+    mov byte [desktop_file_icon_count], 0
+
+.no_clear:
+    ; ═══════════════════════════════════════════════════════════════════════
+    ; STEP 2: Get filesystem service
+    ; ═══════════════════════════════════════════════════════════════════════
+    mov edi, SVC_FS
+    call get_service
+    test rax, rax
+    jz .refresh_done                ; No FS service
+
+    mov r15, rax                    ; r15 = fs_vtable
+
+    ; ═══════════════════════════════════════════════════════════════════════
+    ; STEP 3: Read root directory
+    ; ═══════════════════════════════════════════════════════════════════════
+    lea rdi, [desktop_root_path]    ; path = "/"
+    lea rsi, [desktop_dirent_buf]   ; buffer
+    mov edx, DESKTOP_MAX_FILE_ICONS ; max entries
+    call [r15 + FS_READDIR]
+
+    cmp eax, -1
+    je .refresh_done                ; Error
+    test eax, eax
+    jz .refresh_done                ; No entries
+
+    mov r14d, eax                   ; r14 = entry count
+
+    ; ═══════════════════════════════════════════════════════════════════════
+    ; STEP 4: Create icon for each entry
+    ; ═══════════════════════════════════════════════════════════════════════
+    xor r12d, r12d                  ; r12 = index
+    lea r13, [desktop_dirent_buf]   ; r13 = current dirent
+
+.create_loop:
+    cmp r12d, r14d
+    jge .refresh_done
+    cmp r12d, DESKTOP_MAX_FILE_ICONS
+    jge .refresh_done
+
+    ; Calculate position in grid
+    ; x = DESKTOP_ICON_START_X + (index % ICONS_PER_ROW) * GRID_W
+    ; y = DESKTOP_ICON_START_Y + (index / ICONS_PER_ROW) * GRID_H
+    mov eax, r12d
+    xor edx, edx
+    mov ecx, DESKTOP_ICONS_PER_ROW
+    div ecx                         ; eax = row, edx = col
+
+    imul eax, DESKTOP_ICON_GRID_H
+    add eax, DESKTOP_ICON_START_Y
+    mov r8d, eax                    ; r8d = y
+
+    imul edx, DESKTOP_ICON_GRID_W
+    add edx, DESKTOP_ICON_START_X   ; edx = x
+
+    ; Determine icon type from flags
+    mov eax, [r13 + FS_DIRENT_FLAGS]
+    test eax, FS_ENTRY_DIR
+    jz .is_file
+    mov ecx, ICON_TYPE_FOLDER       ; Directory
+    jmp .have_type
+.is_file:
+    mov ecx, ICON_TYPE_FILE         ; Regular file
+.have_type:
+
+    ; Copy name to our buffer
+    mov eax, r12d
+    shl eax, 5                      ; * 32 bytes per name
+    lea rbx, [desktop_name_bufs + rax]
+
+    push rcx
+    push rdx
+    push r8
+    mov rdi, rbx                    ; dest
+    lea rsi, [r13 + FS_DIRENT_NAME] ; src
+    mov ecx, 31
+.copy_name:
+    lodsb
+    stosb
+    test al, al
+    jz .name_done
+    dec ecx
+    jnz .copy_name
+    mov byte [rdi], 0
+.name_done:
+    pop r8
+    pop rdx
+    pop rcx
+
+    ; Create icon: dicon_create(x, y, type, text)
+    mov esi, edx                    ; x
+    mov edx, r8d                    ; y (was in r8d, now in edx for param)
+    mov r8d, ecx                    ; icon_type
+    mov r9, rbx                     ; text pointer
+    call dicon_create
+
+    test rax, rax
+    jz .next_entry                  ; Failed to create
+
+    ; Store icon pointer
+    mov rbx, rax
+    mov [desktop_file_icons + r12*8], rax
+    inc byte [desktop_file_icon_count]
+
+    ; Set callback to open file/folder
+    mov rdi, rax
+    lea rsi, [desktop_cb_file_icon]
+    call dicon_set_callback
+
+    ; Store path in userdata for callback
+    mov rdi, rbx
+    lea rax, [desktop_name_bufs]
+    mov ecx, r12d
+    shl ecx, 5
+    add rax, rcx
+    mov [rbx + W_USERDATA], rax
+
+.next_entry:
+    add r13, FS_DIRENT_SIZE         ; Next dirent
+    inc r12d
+    jmp .create_loop
+
+.refresh_done:
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    ret
+
+; ════════════════════════════════════════════════════════════════════════════
+; DESKTOP_CB_FILE_ICON - Callback when file icon is double-clicked
+; ════════════════════════════════════════════════════════════════════════════
+; Input: RDI = icon widget pointer
+; ════════════════════════════════════════════════════════════════════════════
+desktop_cb_file_icon:
+    push rbx
+    mov rbx, rdi
+
+    ; Get file/folder name from userdata
+    mov rsi, [rbx + W_USERDATA]
+    test rsi, rsi
+    jz .cb_done
+
+    ; Check if it's a directory (icon_type == FOLDER)
+    cmp dword [rbx + DICON_TYPE], ICON_TYPE_FOLDER
+    jne .open_file
+
+    ; It's a folder - switch to files mode
+    ; TODO: Could set current path in files_app
+    mov byte [mode_flag], 4         ; MODE_FILES
+    jmp .cb_done
+
+.open_file:
+    ; It's a file - switch to files mode to view it
+    ; TODO: Open file in viewer
+    mov byte [mode_flag], 4         ; MODE_FILES
+
+.cb_done:
+    pop rbx
     ret
