@@ -114,11 +114,34 @@ header_draw:
     mov r8d, [rbx + H_BG_COLOR]
     call fill_rect
 
-    ; Draw title (left side)
+    ; Draw "< Back" button (left side, clickable area)
     mov r12d, [rbx + W_X]
-    add r12d, 16                    ; Left padding
+    add r12d, 8                     ; Left margin
     mov r13d, [rbx + W_Y]
-    add r13d, 6                     ; Center vertically (assuming 20px height)
+    add r13d, 4                     ; Top margin
+
+    ; Button background
+    mov edi, r12d
+    mov esi, r13d
+    mov edx, 56                     ; Button width
+    mov ecx, 16                     ; Button height
+    mov r8d, 0x00505050             ; Slightly lighter gray
+    call fill_rect
+
+    ; Button text "< Back"
+    mov edi, r12d
+    add edi, 8
+    mov esi, r13d
+    add esi, 3
+    mov rdx, header_back_text
+    mov ecx, 0x00FFFFFF
+    call video_text
+
+    ; Draw title (after back button)
+    mov r12d, [rbx + W_X]
+    add r12d, 80                    ; After back button
+    mov r13d, [rbx + W_Y]
+    add r13d, 6                     ; Center vertically
 
     mov edi, r12d
     mov esi, r13d
@@ -211,3 +234,4 @@ header_set_action:
 ; DATA
 ; ════════════════════════════════════════════════════════════════════════════
 header_default_action:  db "[ESC] Back", 0
+header_back_text:       db "< Back", 0

@@ -195,6 +195,9 @@ long_mode_entry:
     ; Initialize event system (SOLID Phase 5)
     call evt_system_init
 
+    ; Initialize mouse service (SOLID Phase 6)
+    call mouse_svc_init
+
     ; Create demo processes (2 processes with register-only operations)
     mov rdi, demo_process_1
     mov rsi, str_proc_demo1

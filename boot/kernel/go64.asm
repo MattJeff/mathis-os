@@ -889,6 +889,9 @@ gui_term_btn:       dq 0            ; Terminal button pointer
 ; EVENTS (SOLID Phase 5)
 %include "events/events.asm"
 
+; MOUSE SERVICE (SOLID Phase 6) - Centralized cursor + click handling
+%include "services/mouse_svc.asm"
+
 ; WIDGETS (SOLID Phase 5)
 %include "widgets/widget.asm"
 %include "widgets/label.asm"

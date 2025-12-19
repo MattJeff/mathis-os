@@ -15,7 +15,8 @@
 ; MAIN LOOP - Dispatches to appropriate mode handler
 ; ════════════════════════════════════════════════════════════════════════════
 main_loop:
-    ; Process keyboard events (event-driven system)
+    ; Process all pending events (keyboard + mouse)
+    call evt_process
     call process_input
 
     ; Dispatch based on mode_flag
