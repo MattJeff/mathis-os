@@ -51,8 +51,8 @@ registry_init:
     push rcx
     push rdi
 
-    ; Clear service table (RIP-relative)
-    lea rdi, [rel service_table]
+    ; Clear service table (using absolute address)
+    mov rdi, service_table
     mov rcx, SVC_MAX
     xor eax, eax
 .clear_loop:
@@ -62,8 +62,8 @@ registry_init:
     jnz .clear_loop
 
     ; Mark as initialized
-    lea rax, [rel registry_initialized]
-    mov byte [rax], 1
+    mov rdi, registry_initialized
+    mov byte [rdi], 1
 
     pop rdi
     pop rcx

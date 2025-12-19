@@ -126,7 +126,7 @@ long_mode_entry:
 
     ; Initialize variables
     mov qword [tick_count], 0
-    mov byte [mode_flag], 3          ; Start in 3D GUI mode
+    mov byte [mode_flag], 4          ; Start in FILES mode (simplified kernel)
     mov byte [mouse_buttons], 0
     mov byte [mouse_cycle], 0
     mov byte [active_window], 0xFF   ; No window active
@@ -181,7 +181,8 @@ long_mode_entry:
     call heap_init
 
     ; Initialize service registry (SOLID Phase 2)
-    ; TODO: call registry_init cause boot loop - à investiguer
+    ; TODO: Fix crash - RIP jumps to .fixed section (0x8F254)
+    ; call registry_init
     ; call alloc_svc_init
 
     ; Initialize FAT32 filesystem

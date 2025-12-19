@@ -21,8 +21,9 @@ FB_BPP          equ 0x520
 section .entry
 
 ; ════════════════════════════════════════════════════════════════════════════
-; ENTRY POINT
+; ENTRY POINT - Global symbol for linker
 ; ════════════════════════════════════════════════════════════════════════════
+global kernel_entry
 
 kernel_entry:
     mov esp, 0x2FFFF
@@ -165,6 +166,6 @@ print_string:
 %include "data_all.asm"
 
 ; ════════════════════════════════════════════════════════════════════════════
-; PADDING TO 512KB
+; END OF KERNEL
+; Padding to 512KB is handled by linker script (kernel.ld)
 ; ════════════════════════════════════════════════════════════════════════════
-times 0x80000 - ($ - $$) db 0

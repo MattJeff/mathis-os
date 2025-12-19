@@ -2,10 +2,14 @@
  * MATHIS OS Kernel Linker Script
  * ============================================================================
  * This script defines the memory layout for the kernel.
- * Each section has a fixed address - modules can grow independently.
+ * All sections grow dynamically - no fixed addresses.
+ *
+ * MEMORY MAP:
+ *   0x10000 - ...     : Code + Data (grows dynamically)
+ *   0x90000           : Max kernel size (512KB)
  * ============================================================================ */
 
-OUTPUT_FORMAT(binary)
+OUTPUT_FORMAT(elf64-x86-64)
 OUTPUT_ARCH(i386:x86-64)
 ENTRY(kernel_entry)
 
@@ -16,7 +20,7 @@ SECTIONS
 {
     /* ════════════════════════════════════════════════════════════════════════
      * ENTRY SECTION (0x10000)
-     * First code to execute - kernel entry point
+     * First code to execute - kernel entry point (32-bit)
      * ════════════════════════════════════════════════════════════════════════ */
     . = KERNEL_BASE;
 
@@ -57,7 +61,7 @@ SECTIONS
     }
 
     /* ════════════════════════════════════════════════════════════════════════
-     * PADDING - Ensure kernel is exactly 512KB
+     * PADDING - Ensure kernel fits in 512KB max
      * ════════════════════════════════════════════════════════════════════════ */
     . = KERNEL_BASE + KERNEL_SIZE;
 }

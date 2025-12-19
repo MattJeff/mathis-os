@@ -66,7 +66,7 @@ MOUSE_STATUS equ 0x64
 %include "core/entry64.asm"
 %include "core/main_loop.asm"
 
-%include "modes/desktop.asm"
+; %include "modes/desktop.asm"   ; DEPRECATED - focus on files_mode
 
 %include "core/isr.asm"
 
@@ -76,24 +76,25 @@ MOUSE_STATUS equ 0x64
 %include "scheduler.asm"
 
 ; ════════════════════════════════════════════════════════════════════════════
-; INCLUDE E1000 NETWORK DRIVER
+; DEPRECATED MODULES - Moved to deprecated/ for later reintegration
+; Focus: files_mode only for now
 ; ════════════════════════════════════════════════════════════════════════════
-%include "e1000/e1000.asm"
+; %include "e1000/e1000.asm"      ; Network driver - deprecated/e1000/
+; %include "syscalls.asm"         ; 48 syscalls - not needed for files_mode
+; %include "usb/uhci.asm"         ; USB driver - deprecated/usb/
+; %include "acpi.asm"             ; ACPI power - not critical
 
-; ════════════════════════════════════════════════════════════════════════════
-; INCLUDE SYSCALLS MODULE (48 system calls)
-; ════════════════════════════════════════════════════════════════════════════
-%include "syscalls.asm"
+; STUB: net_init (called by entry64.asm)
+net_init:
+    ret
 
-; ════════════════════════════════════════════════════════════════════════════
-; INCLUDE USB UHCI DRIVER
-; ════════════════════════════════════════════════════════════════════════════
-%include "usb/uhci.asm"
+; STUB: usb_init (called by entry64.asm)
+usb_init:
+    ret
 
-; ════════════════════════════════════════════════════════════════════════════
-; INCLUDE ACPI POWER MANAGEMENT
-; ════════════════════════════════════════════════════════════════════════════
-%include "acpi.asm"
+; STUB: acpi_init (called by entry64.asm)
+acpi_init:
+    ret
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; INCLUDE HEAP ALLOCATOR
@@ -126,7 +127,7 @@ screen_centery: dd 240              ; Center Y
 
 ; System variables
 tick_count:     dq 0
-mode_flag:      db 2                ; 0=graphics, 1=shell, 2=GUI, 3=3D GUI
+mode_flag:      db 4                ; 0=graphics, 1=shell, 2=GUI, 3=3D, 4=files (ACTIVE)
 key3d_scancode: db 0                ; Last scancode for 3D mode
 align 4
 tab_debounce:   dd 0                ; Tab key debounce counter (unused)
@@ -493,50 +494,116 @@ tss64:
 tss64_end:
 
 ; ════════════════════════════════════════════════════════════════════════════
-; 3D ENGINE INCLUDES (DEPRECATED - will be moved to deprecated/3d/)
-; Keep for now until 2D UI is fully stable
+; BACK TO 64-BIT MODE FOR REMAINING INCLUDES
 ; ════════════════════════════════════════════════════════════════════════════
-%include "gfx3d/math3d.asm"
-%include "gfx3d/camera3d.asm"
-%include "gfx3d/render3d.asm"
-%include "gfx3d/world3d.asm"
-%include "gfx3d/ui3d.asm"
-%include "gfx3d/effects3d.asm"
+[BITS 64]
 
-; UI MODULES (new modular structure)
-%include "ui/draw.asm"
-%include "ui/dialog.asm"
-%include "ui/files.asm"
-%include "ui/input.asm"
-%include "ui/window.asm"
-%include "ui/terminal.asm"
-%include "ui/desktop.asm"
-%include "ui/taskbar.asm"
+; ════════════════════════════════════════════════════════════════════════════
+; 3D ENGINE - DEPRECATED (moved to deprecated/gfx3d/)
+; ════════════════════════════════════════════════════════════════════════════
+; %include "gfx3d/math3d.asm"
+; %include "gfx3d/camera3d.asm"
+; %include "gfx3d/render3d.asm"
+; %include "gfx3d/world3d.asm"
+; %include "gfx3d/ui3d.asm"
+; %include "gfx3d/effects3d.asm"
 
-; INPUT MODULES (keyboard/mouse)
+; ════════════════════════════════════════════════════════════════════════════
+; STUBS FOR DEPRECATED 3D/SYSCALL MODULES
+; These are referenced by core/main_loop.asm and core/isr.asm
+; ════════════════════════════════════════════════════════════════════════════
+
+; Syscall constants (referenced by sys/ring3.asm)
+SYS_GETPID      equ 11
+SYS_SLEEP       equ 17
+SYS_YIELD       equ 18
+SYS_PUTPIXEL    equ 40
+
+; 3D camera variables (referenced by main_loop.asm)
+camera_x: dd 0
+camera_y: dd 0
+camera_z: dd 0
+
+; 3D functions
+ui3d_init:
+    ret
+
+ui3d_main:
+    ret
+
+; Syscall handler (referenced by core/isr.asm)
+syscall_handler:
+    xor eax, eax        ; Return 0 (syscalls disabled)
+    ret
+
+; Key handlers for deprecated modes (referenced by input/dispatcher.asm)
+handle_shell_keys:
+    ret
+
+handle_3d_keys:
+    ret
+
+handle_gui_keys:
+    ret
+
+; ════════════════════════════════════════════════════════════════════════════
+; UI MODULES - MINIMAL SET FOR FILES_MODE
+; ════════════════════════════════════════════════════════════════════════════
+%include "ui/draw.asm"              ; CORE: Drawing primitives
+; %include "ui/dialog.asm"          ; DEPRECATED
+%include "ui/files.asm"             ; CORE: File list widget
+%include "ui/input.asm"             ; CORE: Input helpers
+; %include "ui/window.asm"          ; DEPRECATED (window management)
+; %include "ui/terminal.asm"        ; DEPRECATED
+; %include "ui/desktop.asm"         ; DEPRECATED
+; %include "ui/taskbar.asm"         ; DEPRECATED
+
+; ════════════════════════════════════════════════════════════════════════════
+; INPUT MODULES - CORE (keyboard/mouse)
+; ════════════════════════════════════════════════════════════════════════════
 %include "input/state.asm"
 %include "input/scancode.asm"
 %include "input/mouse.asm"
 %include "input/keyboard.asm"
 %include "input/dispatcher.asm"
 
-; INPUT HANDLERS (event-driven)
-%include "handlers/global_keys.asm"
-%include "handlers/gui_keys.asm"
-%include "handlers/files_keys.asm"
-%include "handlers/terminal_keys.asm"
-%include "handlers/shell_keys.asm"
-%include "handlers/3d_keys.asm"
+; ════════════════════════════════════════════════════════════════════════════
+; INPUT HANDLERS - MINIMAL
+; ════════════════════════════════════════════════════════════════════════════
+%include "handlers/global_keys.asm"  ; CORE: TAB mode switch, ESC
+; %include "handlers/gui_keys.asm"   ; DEPRECATED
+%include "handlers/files_keys.asm"   ; CORE: Files mode keys
+; %include "handlers/terminal_keys.asm" ; DEPRECATED
+; %include "handlers/shell_keys.asm" ; DEPRECATED
+; %include "handlers/3d_keys.asm"    ; DEPRECATED
 
-; MODES
-%include "modes/graphics.asm"
-%include "modes/shell.asm"
-%include "modes/files/files_main.asm"
+; ════════════════════════════════════════════════════════════════════════════
+; MODES - FILES_MODE ONLY
+; ════════════════════════════════════════════════════════════════════════════
+; %include "modes/graphics.asm"      ; DEPRECATED (mode_flag=0)
+; %include "modes/shell.asm"         ; DEPRECATED (mode_flag=1)
+%include "modes/files/files_main.asm"  ; CORE: Files mode (mode_flag=4)
+
+; STUBS for deprecated modes (called by main_loop)
+graphics_mode:
+    ret
+
+shell_mode:
+    ret
+
+gui_mode:
+    ret
 
 ; SYSTEM (ISRs, setup)
 %include "sys/timer.asm"
 %include "sys/setup.asm"
 %include "sys/ring3.asm"
+
+; EXCEPTION HANDLERS (BSOD) - NOT YET INTEGRATED (causes triple fault)
+; TODO: Initialize after video is ready, or use simple halt handler
+; %include "sys/exc_data.asm"
+; %include "sys/exc_bsod.asm"
+; %include "sys/exc_handlers.asm"
 
 ; SERVICES (SOLID Phase 2)
 %include "services/registry.asm"
