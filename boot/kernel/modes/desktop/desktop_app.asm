@@ -203,31 +203,6 @@ desktop_app_init:
     mov rsi, [desktop_icon_files]
     call container_add_child
 
-    ; 3D Demo icon at (30, 190)
-    mov esi, 30
-    mov edx, 190
-    mov ecx, DESKTOP_ICON_W
-    mov r8d, DESKTOP_ICON_H
-    lea r9, [desktop_str_3d]
-    call button_create
-    test rax, rax
-    jz .fail
-    mov [desktop_icon_3d], rax
-
-    mov rdi, rax
-    lea rsi, [desktop_cb_3d]
-    call button_set_callback
-
-    mov rdi, [desktop_icon_3d]
-    mov esi, 0x00FFFFFF
-    mov edx, 0x00000000
-    mov ecx, 0x00000000
-    call button_set_colors
-
-    mov rdi, r14
-    mov rsi, [desktop_icon_3d]
-    call container_add_child
-
     ; ═══════════════════════════════════════════════════════════════════════
     ; CREATE TASKBAR
     ; ═══════════════════════════════════════════════════════════════════════
@@ -309,9 +284,9 @@ desktop_app_init:
     mov esi, 4                      ; x = 4
     mov edx, r13d
     sub edx, DESKTOP_TASKBAR_H
-    sub edx, 120                    ; y = above taskbar
+    sub edx, 98                     ; y = above taskbar
     mov ecx, 100                    ; w = 100
-    mov r8d, 118                    ; h = 118
+    mov r8d, 96                     ; h = 96 (4 items)
     call container_create
     test rax, rax
     jz .fail
@@ -368,26 +343,9 @@ desktop_app_init:
     mov rsi, [desktop_menu_files]
     call container_add_child
 
-    ; 3D Demo
-    mov esi, 4
-    mov edx, 48
-    mov ecx, 92
-    mov r8d, 20
-    lea r9, [desktop_str_3d]
-    call button_create
-    test rax, rax
-    jz .fail
-    mov [desktop_menu_3d], rax
-    mov rdi, rax
-    lea rsi, [desktop_cb_3d]
-    call button_set_callback
-    mov rdi, [desktop_start_menu]
-    mov rsi, [desktop_menu_3d]
-    call container_add_child
-
     ; About
     mov esi, 4
-    mov edx, 70
+    mov edx, 48
     mov ecx, 92
     mov r8d, 20
     lea r9, [desktop_str_about]
@@ -404,7 +362,7 @@ desktop_app_init:
 
     ; Reboot
     mov esi, 4
-    mov edx, 92
+    mov edx, 70
     mov ecx, 92
     mov r8d, 20
     lea r9, [desktop_str_reboot]
@@ -511,12 +469,6 @@ desktop_draw_icons:
     mov esi, 118
     mov edx, COL_YELLOW
     call draw_icon_folder
-
-    ; 3D icon graphic at (46, 198)
-    mov edi, 46
-    mov esi, 198
-    mov edx, COL_GREEN
-    call draw_icon_cube
 
     ; Draw dynamic file icons
     movzx ecx, byte [desktop_file_icon_count]
@@ -640,18 +592,8 @@ desktop_app_input:
     movzx edx, word [mouse_y]
     call desktop_point_in_widget
     test eax, eax
-    jz .check_3d_icon
-    call desktop_cb_files
-    jmp .handled
-
-.check_3d_icon:
-    mov rdi, [desktop_icon_3d]
-    movzx esi, word [mouse_x]
-    movzx edx, word [mouse_y]
-    call desktop_point_in_widget
-    test eax, eax
     jz .not_handled
-    call desktop_cb_3d
+    call desktop_cb_files
     jmp .handled
 
 .check_key:
@@ -719,12 +661,6 @@ desktop_cb_files:
     ; Switch to files mode
     mov byte [desktop_menu_open], 0
     mov byte [mode_flag], 4         ; MODE_FILES
-    ret
-
-desktop_cb_3d:
-    ; Switch to 3D mode
-    mov byte [desktop_menu_open], 0
-    mov byte [mode_flag], 3         ; MODE_3D
     ret
 
 desktop_cb_about:
