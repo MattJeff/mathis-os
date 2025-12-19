@@ -601,6 +601,18 @@ container_set_spacing:
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
+; CONTAINER_SET_BG_COLOR - Set background color
+; Input:  RDI = container, ESI = color (0 = transparent)
+; ════════════════════════════════════════════════════════════════════════════
+container_set_bg_color:
+    test rdi, rdi
+    jz .done
+    mov [rdi + CONT_BG_COLOR], esi
+    or dword [rdi + W_FLAGS], WF_DIRTY
+.done:
+    ret
+
+; ════════════════════════════════════════════════════════════════════════════
 ; CONTAINER_GET_CHILD_COUNT - Get number of children
 ; Input:  RDI = container
 ; Output: EAX = child count

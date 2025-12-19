@@ -126,7 +126,7 @@ long_mode_entry:
 
     ; Initialize variables
     mov qword [tick_count], 0
-    mov byte [mode_flag], 4          ; Start in FILES mode (simplified kernel)
+    mov byte [mode_flag], 2          ; Start in DESKTOP mode (GUI)
     mov byte [mouse_buttons], 0
     mov byte [mouse_cycle], 0
     mov byte [active_window], 0xFF   ; No window active

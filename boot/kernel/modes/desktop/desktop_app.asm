@@ -93,12 +93,16 @@ desktop_app_init:
     xor edx, edx                    ; y = 0
     mov ecx, r12d                   ; w = screen_width
     mov r8d, r13d                   ; h = screen_height
-    mov r9d, DESKTOP_BG_COLOR       ; bg color
     call container_create
     test rax, rax
     jz .fail
     mov [desktop_root], rax
     mov rbx, rax                    ; rbx = root
+
+    ; Set background color for root
+    mov rdi, rax
+    mov esi, DESKTOP_BG_COLOR
+    call container_set_bg_color
 
     ; ═══════════════════════════════════════════════════════════════════════
     ; CREATE DESKTOP AREA (icons area, above taskbar)
@@ -108,7 +112,6 @@ desktop_app_init:
     mov ecx, r12d                   ; w = screen_width
     mov r8d, r13d
     sub r8d, DESKTOP_TASKBAR_H      ; h = screen_height - taskbar
-    mov r9d, 0                      ; transparent bg
     call container_create
     test rax, rax
     jz .fail
@@ -209,12 +212,16 @@ desktop_app_init:
     sub edx, DESKTOP_TASKBAR_H      ; y = screen_height - taskbar
     mov ecx, r12d                   ; w = screen_width
     mov r8d, DESKTOP_TASKBAR_H      ; h = taskbar height
-    mov r9d, DESKTOP_TASKBAR_COLOR
     call container_create
     test rax, rax
     jz .fail
     mov [desktop_taskbar], rax
     mov r15, rax                    ; r15 = taskbar
+
+    ; Set taskbar background color
+    mov rdi, r15
+    mov esi, DESKTOP_TASKBAR_COLOR
+    call container_set_bg_color
 
     ; Add taskbar to root
     mov rdi, rbx
@@ -281,14 +288,18 @@ desktop_app_init:
     sub edx, 120                    ; y = above taskbar
     mov ecx, 100                    ; w = 100
     mov r8d, 118                    ; h = 118
-    mov r9d, DESKTOP_TASKBAR_HL
     call container_create
     test rax, rax
     jz .fail
     mov [desktop_start_menu], rax
 
-    ; Set layout to vertical
+    ; Set start menu background color
     mov rdi, rax
+    mov esi, DESKTOP_TASKBAR_HL
+    call container_set_bg_color
+
+    ; Set layout to vertical
+    mov rdi, [desktop_start_menu]
     mov esi, LAYOUT_VERTICAL
     call container_set_layout
 

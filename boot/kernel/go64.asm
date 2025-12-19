@@ -127,7 +127,7 @@ screen_centery: dd 240              ; Center Y
 
 ; System variables
 tick_count:     dq 0
-mode_flag:      db 4                ; 0=graphics, 1=shell, 2=GUI, 3=3D, 4=files (ACTIVE)
+mode_flag:      db 2                ; 0=graphics, 1=shell, 2=GUI/Desktop, 3=3D, 4=files
 key3d_scancode: db 0                ; Last scancode for 3D mode
 align 4
 tab_debounce:   dd 0                ; Tab key debounce counter (unused)
@@ -590,14 +590,283 @@ graphics_mode:
     ret
 
 shell_mode:
+    push rbx
+
+    ; Draw black background
+    mov rdi, [screen_fb]
+    mov eax, [screen_width]
+    imul eax, [screen_height]
+    mov ecx, eax
+    xor eax, eax                    ; Black
+.shell_clear:
+    mov dword [rdi], eax
+    add rdi, 4
+    dec ecx
+    jnz .shell_clear
+
+    ; Draw "Terminal - Press ESC to return" text
+    mov edi, 20
+    mov esi, 20
+    lea rdx, [shell_str_title]
+    mov ecx, 0x0000FF00             ; Green
+    call video_text
+
+    ; Draw prompt
+    mov edi, 20
+    mov esi, 50
+    lea rdx, [shell_str_prompt]
+    mov ecx, 0x0000FF00
+    call video_text
+
+    ; Check for ESC key
+    cmp byte [key_pressed], 0x01    ; ESC scancode
+    jne .shell_no_esc
+    mov byte [key_pressed], 0
+    mov byte [gui_needs_redraw], 1
+    mov byte [mode_flag], 2         ; Back to desktop
+
+.shell_no_esc:
+    pop rbx
+    jmp main_loop
+
+shell_str_title:    db "MATHIS OS Terminal - Press ESC to return", 0
+shell_str_prompt:   db "> _", 0
+
+; gui_mode - Desktop with Files + Terminal icons
+gui_mode:
+    push rbx
+
+    ; Check if full redraw needed (first time)
+    cmp byte [gui_needs_redraw], 1
+    je .do_full_redraw
+
+    ; Check if mouse moved
+    movzx eax, word [mouse_x]
+    cmp ax, [gui_last_mouse_x]
+    jne .mouse_moved
+    movzx eax, word [mouse_y]
+    cmp ax, [gui_last_mouse_y]
+    jne .mouse_moved
+
+    ; No change, just handle clicks
+    call gui_handle_click
+    jmp .skip_redraw
+
+.mouse_moved:
+    ; Erase old cursor (draw background color)
+    movzx edi, word [gui_last_mouse_x]
+    movzx esi, word [gui_last_mouse_y]
+    mov edx, 12
+    mov ecx, 12
+    mov r8d, 0x00205080         ; Desktop bg color
+    call fill_rect
+
+    ; Save new mouse position
+    mov ax, [mouse_x]
+    mov [gui_last_mouse_x], ax
+    mov ax, [mouse_y]
+    mov [gui_last_mouse_y], ax
+
+    ; Redraw icons if cursor was over them
+    call gui_redraw_icons_if_needed
+
+    ; Draw cursor at new position
+    call gui_draw_cursor
+
+    ; Handle clicks
+    call gui_handle_click
+    jmp .skip_redraw
+
+.do_full_redraw:
+    mov byte [gui_needs_redraw], 0
+
+    ; Draw desktop background (teal/blue)
+    mov rdi, [screen_fb]
+    mov eax, [screen_width]
+    mov ebx, [screen_height]
+    sub ebx, TASKBAR_H
+    imul eax, ebx
+    mov ecx, eax
+    mov eax, 0x00205080         ; BGRA teal
+.desktop_bg:
+    mov dword [rdi], eax
+    add rdi, 4
+    dec ecx
+    jnz .desktop_bg
+
+    ; Draw taskbar
+    mov rdi, [screen_fb]
+    mov eax, [screen_height]
+    sub eax, TASKBAR_H
+    imul eax, [screen_pitch]
+    add rdi, rax
+    mov eax, [screen_width]
+    imul eax, TASKBAR_H
+    mov ecx, eax
+    mov eax, 0x00303030         ; Dark gray
+.taskbar_bg:
+    mov dword [rdi], eax
+    add rdi, 4
+    dec ecx
+    jnz .taskbar_bg
+
+    ; Draw all icons
+    call gui_draw_all_icons
+
+    ; Handle mouse click
+    call gui_handle_click
+
+    ; Draw cursor
+    call gui_draw_cursor
+
+    ; Save initial mouse pos
+    mov ax, [mouse_x]
+    mov [gui_last_mouse_x], ax
+    mov ax, [mouse_y]
+    mov [gui_last_mouse_y], ax
+
+.skip_redraw:
+    pop rbx
+    jmp main_loop
+
+; Redraw icons if old cursor position overlapped them
+gui_redraw_icons_if_needed:
+    movzx eax, word [gui_last_mouse_x]
+    movzx ebx, word [gui_last_mouse_y]
+
+    ; Check Files icon area (35-90, 45-90)
+    cmp eax, 90
+    jg .check_terminal
+    cmp eax, 35
+    jl .check_terminal
+    cmp ebx, 90
+    jg .check_terminal
+    cmp ebx, 45
+    jl .check_terminal
+    call gui_draw_files_icon
     ret
 
-; gui_mode is now in desktop_app.asm - this stub redirects to it
-gui_mode:
-    call desktop_app_init
-    call desktop_app_draw
-    call desktop_app_input
-    jmp main_loop
+.check_terminal:
+    ; Check Terminal icon area (35-100, 105-150)
+    cmp eax, 100
+    jg .no_redraw
+    cmp eax, 35
+    jl .no_redraw
+    cmp ebx, 150
+    jg .no_redraw
+    cmp ebx, 105
+    jl .no_redraw
+    call gui_draw_terminal_icon
+
+.no_redraw:
+    ret
+
+; Draw all icons
+gui_draw_all_icons:
+    call gui_draw_files_icon
+    call gui_draw_terminal_icon
+    ret
+
+; Draw Files icon and label
+gui_draw_files_icon:
+    mov edi, 50
+    mov esi, 50
+    mov edx, 0x00FFFF00         ; Yellow
+    call draw_icon_folder
+    mov edi, 45
+    mov esi, 70
+    lea rdx, [gui_str_files]
+    mov ecx, 0x00FFFFFF
+    call video_text
+    ret
+
+; Draw Terminal icon and label
+gui_draw_terminal_icon:
+    mov edi, 50
+    mov esi, 110
+    mov edx, 0x00008080         ; Cyan
+    call draw_icon_terminal
+    mov edi, 38
+    mov esi, 130
+    lea rdx, [gui_str_terminal]
+    mov ecx, 0x00FFFFFF
+    call video_text
+    ret
+
+; Handle clicks on desktop
+gui_handle_click:
+    ; Check if left button pressed
+    test byte [mouse_buttons], 1
+    jz .no_click
+
+    ; Debounce
+    cmp byte [gui_click_handled], 1
+    je .no_click
+    mov byte [gui_click_handled], 1
+
+    ; Get mouse position
+    movzx eax, word [mouse_x]
+    movzx ebx, word [mouse_y]
+
+    ; Check Files icon (40-80, 50-85)
+    cmp eax, 40
+    jl .check_terminal
+    cmp eax, 80
+    jg .check_terminal
+    cmp ebx, 50
+    jl .check_terminal
+    cmp ebx, 85
+    jg .check_terminal
+    mov byte [gui_needs_redraw], 1  ; Force redraw on return
+    mov byte [mode_flag], 4         ; Files mode
+    jmp .done
+
+.check_terminal:
+    ; Check Terminal icon (40-80, 110-145)
+    cmp eax, 40
+    jl .no_click
+    cmp eax, 80
+    jg .no_click
+    cmp ebx, 110
+    jl .no_click
+    cmp ebx, 145
+    jg .no_click
+    mov byte [gui_needs_redraw], 1  ; Force redraw on return
+    mov byte [mode_flag], 1         ; Terminal mode
+    jmp .done
+
+.no_click:
+    test byte [mouse_buttons], 1
+    jnz .done
+    mov byte [gui_click_handled], 0
+.done:
+    ret
+
+; Draw bigger mouse cursor (10x10 white square)
+gui_draw_cursor:
+    push rbx
+    movzx edi, word [mouse_x]
+    movzx esi, word [mouse_y]
+    mov edx, 10
+    mov ecx, 10
+    mov r8d, 0x00FFFFFF         ; White
+    call fill_rect
+    pop rbx
+    ret
+
+; GUI strings
+gui_str_files:      db "Files", 0
+gui_str_terminal:   db "Terminal", 0
+gui_click_handled:  db 0
+gui_needs_redraw:   db 1            ; Force first redraw
+gui_last_mouse_x:   dw 0
+gui_last_mouse_y:   dw 0
+
+; Widget-based desktop state (Phase 4)
+gui_widgets_init:   db 0            ; 1 = widgets initialized
+gui_root_widget:    dq 0            ; Root container pointer
+gui_files_btn:      dq 0            ; Files button pointer
+gui_term_btn:       dq 0            ; Terminal button pointer
 
 ; SYSTEM (ISRs, setup)
 %include "sys/timer.asm"
