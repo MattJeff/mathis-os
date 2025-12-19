@@ -41,31 +41,8 @@ keyboard_isr64:
     mov [key_pressed], al
     mov byte [key_ready], 1             ; Signal nouvelle touche
     mov [key3d_scancode], al            ; Also store for 3D mode
-
-    ; Post key down event to queue (SOLID Phase 5)
-    push rdx
-    push rsi
-    push rdi
-    movzx edi, al                       ; scancode in DIL
-    xor esi, esi                        ; ASCII (will be translated later)
-    ; Build modifiers
-    xor edx, edx
-    cmp byte [shift_state], 0
-    je .no_shift_mod
-    or dl, KMOD_SHIFT
-.no_shift_mod:
-    cmp byte [ctrl_state], 0
-    je .no_ctrl_mod
-    or dl, KMOD_CTRL
-.no_ctrl_mod:
-    cmp byte [alt_state], 0
-    je .no_alt_mod
-    or dl, KMOD_ALT
-.no_alt_mod:
-    call evt_post_key_down
-    pop rdi
-    pop rsi
-    pop rdx
+    ; NOTE: Event posting disabled - causes crashes in ISR context
+    ; Key events are handled via key_pressed/key_ready polling
     jmp .done
 
 .shift_on:
@@ -84,16 +61,7 @@ keyboard_isr64:
 .handle_release:
     and al, 0x7F                        ; Remove release bit
     mov bl, al                          ; Save scancode in BL
-
-    ; Post key up event to queue (SOLID Phase 5)
-    push rdx
-    push rsi
-    push rdi
-    movzx edi, bl                       ; scancode in DIL
-    call evt_post_key_up
-    pop rdi
-    pop rsi
-    pop rdx
+    ; NOTE: Event posting disabled - causes crashes in ISR context
 
     ; Clear key_pressed if this key was released
     cmp bl, [key_pressed]

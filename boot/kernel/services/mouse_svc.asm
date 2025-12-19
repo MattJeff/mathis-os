@@ -35,23 +35,8 @@ ms_click_handler:   dq 0                ; Current mode's click handler
 ; ════════════════════════════════════════════════════════════════════════════
 mouse_svc_init:
     push rax
-    push rdi
-    push rsi
 
-    ; Register for mouse events
-    mov edi, EVT_MOUSE_MOVE
-    lea rsi, [ms_on_mouse_move]
-    call evt_register_handler
-
-    mov edi, EVT_MOUSE_DOWN
-    lea rsi, [ms_on_mouse_down]
-    call evt_register_handler
-
-    mov edi, EVT_MOUSE_UP
-    lea rsi, [ms_on_mouse_up]
-    call evt_register_handler
-
-    ; Initialize state
+    ; Initialize state from current mouse position
     mov ax, [mouse_x]
     mov [ms_last_x], ax
     mov ax, [mouse_y]
@@ -59,8 +44,6 @@ mouse_svc_init:
 
     mov byte [ms_initialized], 1
 
-    pop rsi
-    pop rdi
     pop rax
     ret
 
@@ -130,48 +113,35 @@ mouse_svc_needs_redraw:
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
-; EVENT HANDLERS (called by dispatcher)
+; MOUSE_SVC_POLL_CLICK - Check for click and dispatch to handler (call from main loop)
+; Output: EAX = 1 if click was processed
 ; ════════════════════════════════════════════════════════════════════════════
+mouse_svc_poll_click:
+    ; Check if click flag is set
+    cmp byte [mouse_clicked], 0
+    je .no_click
 
-; Mouse move event - mark screen dirty for cursor redraw
-ms_on_mouse_move:
-    ; Just mark that we need to redraw cursor
-    ; The main loop will handle the actual drawing
-    ret
+    ; Clear flag
+    mov byte [mouse_clicked], 0
 
-; Mouse down event - dispatch to current handler
-ms_on_mouse_down:
-    push rbx
-    push rcx
-    push rdx
-
-    ; Get click position from event
-    call event_get_mouse_pos          ; AX = x, DX = y
-    movzx ebx, ax                     ; ebx = x
-    movzx ecx, dx                     ; ecx = y
-
-    ; Get button
-    call event_get_mouse_button       ; AL = button
-
-    ; Call current mode's handler if set
-    mov rsi, [ms_click_handler]
-    test rsi, rsi
-    jz .no_handler
+    ; Get handler
+    mov rax, [ms_click_handler]
+    test rax, rax
+    jz .no_click
 
     ; Call handler(x, y, button)
-    mov edi, ebx                      ; x
-    mov esi, ecx                      ; y (reuse esi)
-    movzx edx, al                     ; button
-    call rsi
+    push rax
+    movzx edi, word [mouse_x]
+    movzx esi, word [mouse_y]
+    mov edx, 1                      ; Left button
+    pop rax
+    call rax
 
-.no_handler:
-    pop rdx
-    pop rcx
-    pop rbx
+    mov eax, 1
     ret
 
-ms_on_mouse_up:
-    ; Could be used for drag-end, etc.
+.no_click:
+    xor eax, eax
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════

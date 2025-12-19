@@ -33,3 +33,6 @@ mouse_byte2:        db 0            ; Byte 2 du packet (delta Y)
 ; Click debounce
 last_mouse_btn:     db 0            ; Etat precedent bouton gauche
 click_cooldown:     dd 0            ; Cooldown entre clics (~150ms)
+
+; Click flag for main loop polling
+mouse_clicked:      db 0            ; 1 if click occurred, cleared by handler

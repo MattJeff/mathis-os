@@ -20,6 +20,11 @@ files_mode:
     mov byte [files_mouse_registered], 1
 .mouse_ok:
 
+    ; Poll for mouse clicks (processed in main loop, not ISR)
+    call mouse_svc_poll_click
+    test eax, eax
+    jnz .force_redraw              ; Click processed, redraw
+
     ; Check if mouse moved (needs redraw for cursor)
     call mouse_svc_needs_redraw
     test eax, eax
