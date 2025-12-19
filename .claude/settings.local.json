@@ -69,7 +69,8 @@
       "Bash(dd:*)",
       "Bash(x86_64-elf-ld:*)",
       "Bash(x86_64-elf-objcopy:*)",
-      "Bash(1 x86_64-elf-objdump -h /tmp/kernel.elf)"
+      "Bash(1 x86_64-elf-objdump -h /tmp/kernel.elf)",
+      "Bash(git -C /Users/mathishiguinen/Desktop/Higuinen/mathis-os add -A)"
     ],
     "deny": [],
     "ask": []

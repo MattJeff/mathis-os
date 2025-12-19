@@ -555,7 +555,7 @@ handle_gui_keys:
 %include "ui/input.asm"             ; CORE: Input helpers
 ; %include "ui/window.asm"          ; DEPRECATED (window management)
 ; %include "ui/terminal.asm"        ; DEPRECATED
-; %include "ui/desktop.asm"         ; DEPRECATED
+%include "ui/desktop.asm"             ; Icons & mouse cursor (used by desktop_app)
 ; %include "ui/taskbar.asm"         ; DEPRECATED
 
 ; ════════════════════════════════════════════════════════════════════════════
@@ -583,6 +583,7 @@ handle_gui_keys:
 ; %include "modes/graphics.asm"      ; DEPRECATED (mode_flag=0)
 ; %include "modes/shell.asm"         ; DEPRECATED (mode_flag=1)
 %include "modes/files/files_main.asm"  ; CORE: Files mode (mode_flag=4)
+%include "modes/desktop/desktop_app.asm" ; Desktop using widget system (mode_flag=2)
 
 ; STUBS for deprecated modes (called by main_loop)
 graphics_mode:
@@ -591,8 +592,12 @@ graphics_mode:
 shell_mode:
     ret
 
+; gui_mode is now in desktop_app.asm - this stub redirects to it
 gui_mode:
-    ret
+    call desktop_app_init
+    call desktop_app_draw
+    call desktop_app_input
+    jmp main_loop
 
 ; SYSTEM (ISRs, setup)
 %include "sys/timer.asm"
