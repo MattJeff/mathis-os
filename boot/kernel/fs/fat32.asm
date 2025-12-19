@@ -707,16 +707,18 @@ fat32_read:
 ; ════════════════════════════════════════════════════════════════════════════
 fat32_convert_name:
     push rax
+    push rbx
     push rcx
     push rdi
     push rsi
 
+    mov rbx, rdi                        ; RBX = save original dest
+
     ; Fill with spaces
-    push rdi
     mov al, ' '
     mov ecx, 11
     rep stosb
-    pop rdi
+    mov rdi, rbx                        ; Restore RDI
 
     ; Copy name (up to 8 chars before dot)
     mov ecx, 8
@@ -748,9 +750,8 @@ fat32_convert_name:
     jne .skip_to_dot
 
 .copy_ext:
-    ; Position at extension field
-    pop rdi                             ; Restore original dest
-    push rdi
+    ; Position at extension field (offset 8 from start)
+    mov rdi, rbx
     add rdi, 8
 
     mov ecx, 3
@@ -774,6 +775,7 @@ fat32_convert_name:
     pop rsi
     pop rdi
     pop rcx
+    pop rbx
     pop rax
     ret
 
