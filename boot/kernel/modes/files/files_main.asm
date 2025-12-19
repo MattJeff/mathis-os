@@ -25,12 +25,12 @@ files_mode:
     test eax, eax
     jnz .force_redraw              ; Click processed, redraw
 
-    ; Check if mouse moved (needs redraw for cursor)
+    ; Check if mouse moved (needs cursor update only, not full redraw)
     call mouse_svc_needs_redraw
     test eax, eax
-    jnz .force_redraw
+    jnz .cursor_only
 
-    ; Only redraw if dirty flag is set
+    ; Only full redraw if dirty flag is set
     cmp byte [files_dirty], 0
     je .skip_draw
 
@@ -46,10 +46,42 @@ files_mode:
     push r8
     push r9
 
-    ; Draw using widget system
+    ; Draw using widget system (full redraw)
     call files_app_draw
 
-    ; Draw cursor on top (centralized)
+    ; Draw cursor on top
+    call mouse_svc_draw_cursor
+
+    pop r9
+    pop r8
+    pop rsi
+    pop rdi
+    pop rdx
+    pop rcx
+    pop rbx
+    pop rax
+    jmp .skip_draw
+
+.cursor_only:
+    ; Only update cursor position (fast path)
+    push rax
+    push rbx
+    push rcx
+    push rdx
+    push rdi
+    push rsi
+    push r8
+    push r9
+
+    ; Erase old cursor by redrawing background at old position
+    movzx edi, word [ms_last_x]
+    movzx esi, word [ms_last_y]
+    mov edx, 12                     ; Cursor width + margin
+    mov ecx, 12                     ; Cursor height + margin
+    mov r8d, 0x00202020             ; Files mode background color
+    call fill_rect
+
+    ; Draw cursor at new position
     call mouse_svc_draw_cursor
 
     pop r9
