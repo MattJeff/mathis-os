@@ -146,6 +146,7 @@ crud_write:
     ; --- UPDATE DIRECTORY ENTRY ---
     mov eax, [rbx + FS_FD_FILE_SIZE]
     mov ecx, [rbx + FS_FD_CLUSTER]
+    mov edx, [rbx + FS_FD_DIR_CLUSTER]  ; Parent directory
     call crud_update_dir_entry
 
     mov eax, r15d                   ; return bytes written
@@ -345,6 +346,7 @@ crud_validate_cluster_safe:
 ; ============================================================================
 ; Input:  EAX = new file size
 ;         ECX = first cluster
+;         EDX = parent directory cluster
 ; ============================================================================
 crud_update_dir_entry:
     push rax
@@ -355,12 +357,14 @@ crud_update_dir_entry:
     push rsi
     push r12
     push r13
+    push r14
 
     mov r12d, eax                   ; size
-    mov r13d, ecx                   ; cluster
+    mov r13d, ecx                   ; file cluster
+    mov r14d, edx                   ; parent dir cluster
 
-    ; Read root directory
-    mov eax, [fat32_root_cluster]
+    ; Read parent directory
+    mov eax, r14d
     mov rdi, fat32_dir_buffer
     call fat32_read_cluster
 
@@ -388,12 +392,13 @@ crud_update_dir_entry:
     ; Update size
     mov [rbx + FAT32_DIR_SIZE], r12d
 
-    ; Write directory back
-    mov eax, [fat32_root_cluster]
+    ; Write parent directory back
+    mov eax, r14d
     mov rsi, fat32_dir_buffer
     call fat32_write_cluster
 
 .update_done:
+    pop r14
     pop r13
     pop r12
     pop rsi

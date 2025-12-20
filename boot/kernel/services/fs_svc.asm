@@ -104,8 +104,8 @@ FS_STAT_STRUCT_SIZE equ 32
 ; ════════════════════════════════════════════════════════════════════════════
 FS_MAX_OPEN_FILES   equ 16
 
-; File descriptor entry (32 bytes)
-FS_FD_SIZE          equ 32
+; File descriptor entry (40 bytes)
+FS_FD_SIZE          equ 40
 FS_FD_FLAGS         equ 0       ; Open flags (4 bytes)
 FS_FD_POS           equ 4       ; Current position (8 bytes)
 FS_FD_FILE_SIZE     equ 12      ; File size (4 bytes)
@@ -113,6 +113,7 @@ FS_FD_CLUSTER       equ 16      ; Start cluster (4 bytes)
 FS_FD_CUR_CLUSTER   equ 20      ; Current cluster (4 bytes)
 FS_FD_CUR_OFFSET    equ 24      ; Offset in current cluster (4 bytes)
 FS_FD_IN_USE        equ 28      ; 1 if in use (4 bytes)
+FS_FD_DIR_CLUSTER   equ 32      ; Parent directory cluster (4 bytes)
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; FS SERVICE V-TABLE (points to FAT32 implementation)
@@ -299,6 +300,7 @@ fs_open:
     mov [rbx + FS_FD_CUR_CLUSTER], r14d
     mov dword [rbx + FS_FD_CUR_OFFSET], 0
     mov dword [rbx + FS_FD_IN_USE], 1
+    mov [rbx + FS_FD_DIR_CLUSTER], r15d  ; Parent directory cluster
 
     mov eax, ecx                    ; Return fd number
     jmp .open_done

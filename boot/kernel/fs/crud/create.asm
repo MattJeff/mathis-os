@@ -91,6 +91,7 @@ crud_create_file:
     mov esi, r13d
     xor edx, edx                    ; size = 0 (new file)
     mov ecx, r14d                   ; cluster
+    mov r8d, r15d                   ; parent dir cluster
     call crud_alloc_fd
     jmp .create_done
 
@@ -113,6 +114,7 @@ crud_create_file:
     mov esi, r13d
     mov edx, ebx                    ; size
     mov ecx, r14d                   ; cluster
+    mov r8d, r15d                   ; parent dir cluster
     call crud_alloc_fd
     jmp .create_done
 
@@ -360,6 +362,7 @@ crud_validate_mounted:
 ;         ESI = flags
 ;         EDX = file size
 ;         ECX = first cluster
+;         R8D = parent directory cluster
 ; Output: EAX = fd number or -1
 ; ============================================================================
 crud_alloc_fd:
@@ -367,10 +370,12 @@ crud_alloc_fd:
     push r12
     push r13
     push r14
+    push r15
 
     mov r12d, esi                   ; flags
     mov r13d, edx                   ; size
     mov r14d, ecx                   ; cluster
+    mov r15d, r8d                   ; parent dir cluster
 
     ; Find free fd slot
     lea rbx, [fs_fd_table]
@@ -396,6 +401,7 @@ crud_alloc_fd:
     mov [rbx + FS_FD_CUR_CLUSTER], r14d
     mov dword [rbx + FS_FD_CUR_OFFSET], 0
     mov dword [rbx + FS_FD_IN_USE], 1
+    mov [rbx + FS_FD_DIR_CLUSTER], r15d
 
     mov eax, ecx                    ; Return fd number
     jmp .alloc_done
@@ -404,6 +410,7 @@ crud_alloc_fd:
     mov eax, -1
 
 .alloc_done:
+    pop r15
     pop r14
     pop r13
     pop r12
