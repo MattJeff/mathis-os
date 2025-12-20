@@ -40,5 +40,6 @@
 %include "ui/wm/apps/files/files_input_sidebar.asm"
 %include "ui/wm/apps/files/files_input_toolbar.asm"
 %include "ui/wm/apps/files/files_input_content.asm"
+%include "ui/wm/apps/files/files_open.asm"
 %include "ui/wm/apps/files/files_input_key.asm"
 %include "ui/wm/apps/files/files_input.asm"

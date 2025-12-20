@@ -62,7 +62,7 @@ wmf_open_selected:
 
     mov eax, [rbx + VFS_E_FLAGS]
     test eax, VFS_FLAG_DIR
-    jz .done
+    jz .open_file
 
     ; Push current location to history
     mov edi, [vfs_current_loc]
@@ -109,6 +109,11 @@ wmf_open_selected:
     mov dword [wmf_selected], 0
     mov dword [wmf_scroll_pos], 0
     mov byte [wm_dirty], 1
+    jmp .done
+
+.open_file:
+    ; Open file in editor (rbx = entry pointer)
+    call wmf_open_file
 
 .done:
     pop r12
