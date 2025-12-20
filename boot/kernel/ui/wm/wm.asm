@@ -16,7 +16,9 @@
 %include "ui/wm/wm_create.asm"
 %include "ui/wm/wm_draw.asm"
 %include "ui/wm/wm_input.asm"
+%include "ui/wm/wm_taskbar.asm"
 %include "ui/wm/apps/wm_files.asm"
+%include "ui/wm/apps/wm_editor.asm"
 
 ; ============================================================================
 ; WM_INIT - Initialize window manager
@@ -34,6 +36,7 @@ wm_init:
     mov dword [wm_window_count], 0
     mov dword [wm_focused_idx], -1
     mov dword [wm_drag_idx], -1
+    mov dword [wm_resize_idx], -1
     mov byte [wm_dirty], 1
     mov byte [wm_initialized], 1
 

@@ -8,7 +8,7 @@
 [BITS 64]
 
 ; ============================================================================
-; WMF_CONFIRM_NEW - Create new folder
+; WMF_CONFIRM_NEW - Create new file or folder
 ; ============================================================================
 wmf_confirm_new:
     push rsi
@@ -43,13 +43,30 @@ wmf_confirm_new:
     test al, al
     jnz .copy2
 
+    ; Create folder or file based on selection
+    cmp dword [wmf_dialog_select], 0
+    jne .create_file
+
     ; Create folder
     lea rdi, [wmf_new_path]
     call fs_mkdir
+    jmp .refresh
 
-    ; Refresh
+.create_file:
+    ; Create empty file using crud_create_file
+    lea rdi, [wmf_new_path]
+    mov esi, 0x04               ; FS_O_CREATE
+    call crud_create_file
+    cmp eax, -1
+    je .refresh
+    mov edi, eax
+    call fs_close
+
+.refresh:
+    ; Refresh VFS + desktop icons
     call vfs_reload
     mov byte [wm_dirty], 1
+    mov byte [dicon_dirty], 1       ; Trigger desktop icon refresh
 
 .done:
     mov dword [wmf_dialog_mode], WMF_DLG_NONE

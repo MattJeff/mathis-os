@@ -9,9 +9,10 @@ WMF_DLG_NEW     equ 1
 WMF_DLG_DELETE  equ 2
 WMF_DLG_RENAME  equ 3
 
-; Open new folder dialog
+; Open new file/folder dialog
 wmf_dialog_open:
     mov dword [wmf_dialog_mode], WMF_DLG_NEW
+    mov dword [wmf_dialog_select], 0    ; Default to folder
     mov dword [wmf_dialog_cursor], 0
     lea rdi, [wmf_dialog_input]
     mov ecx, 32

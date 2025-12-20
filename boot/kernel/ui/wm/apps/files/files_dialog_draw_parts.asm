@@ -78,18 +78,21 @@ wmf_dlg_draw_delname:
 ; Draw hint based on mode
 wmf_dlg_draw_hint:
     lea rdx, [wmf_dlg_hint_new]
+    mov eax, 110                ; NEW dialog hint y offset
     cmp r14d, WMF_DLG_DELETE
     jne .h1
     lea rdx, [wmf_dlg_hint_del]
+    mov eax, 60
     jmp .draw
 .h1:
     cmp r14d, WMF_DLG_RENAME
     jne .draw
     lea rdx, [wmf_dlg_hint_ren]
+    mov eax, 60
 .draw:
     mov edi, r12d
     add edi, 10
     mov esi, r13d
-    add esi, 60
+    add esi, eax
     mov ecx, WMF_COL_TEXT_DIM
     jmp video_text

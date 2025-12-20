@@ -57,10 +57,11 @@ wmf_confirm_delete:
     lea rdi, [wmf_new_path]
     call fs_delete
 
-    ; Refresh
+    ; Refresh VFS + desktop icons
     call vfs_reload
     mov dword [wmf_selected], 0
     mov byte [wm_dirty], 1
+    mov byte [dicon_dirty], 1       ; Trigger desktop icon refresh
     mov dword [wmf_dialog_mode], WMF_DLG_NONE
 
     pop rbx

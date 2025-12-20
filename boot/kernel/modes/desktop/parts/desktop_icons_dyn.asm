@@ -203,62 +203,66 @@ dicon_draw_all:
     ret
 
 ; ============================================================================
-; DICON_DRAW_ONE - Draw single icon
-; Input: EDI = x, ESI = y, EDX = type, R8 = name
+; DICON_DRAW_ONE - Draw single icon with label
+; Input: EDI = x, ESI = y, EDX = type, R8 = name pointer
 ; ============================================================================
 dicon_draw_one:
-    push rdi
-    push rsi
-    push rdx
-    push r8
+    push rbx
+    push r12
+    push r13
+    push r14
+
+    mov r12d, edi               ; r12 = x
+    mov r13d, esi               ; r13 = y
+    mov r14d, edx               ; r14 = type (0=file, 1=folder)
+    mov rbx, r8                 ; rbx = name pointer
 
     ; Icon background
-    push rdx
+    mov edi, r12d
+    mov esi, r13d
     mov edx, DESKTOP_ICON_SIZE
     mov ecx, DESKTOP_ICON_SIZE
     mov r8d, 0x00303030
     call fill_rect
-    pop rdx
 
-    ; Icon color based on type
-    mov r8d, 0x00FFFFFF         ; File = white
-    test edx, edx
-    jz .draw_icon
-    mov r8d, 0x00FFCC00         ; Folder = yellow
-
-.draw_icon:
-    pop rdx                     ; Restore type
-    push rdx
-    test edx, edx
+    ; Draw icon based on type
+    test r14d, r14d
     jz .draw_file_icon
-    ; Draw folder
-    mov edx, r8d
+
+    ; Draw folder icon
+    mov edi, r12d
+    add edi, 16
+    mov esi, r13d
+    add esi, 8
+    mov edx, 0x00FFCC00         ; Yellow
     call draw_icon_folder
     jmp .draw_label
 
 .draw_file_icon:
     ; Simple file rectangle
-    add edi, 12
+    mov edi, r12d
+    add edi, 20
+    mov esi, r13d
     add esi, 8
     mov edx, 24
-    mov ecx, 28
+    mov ecx, 32
     mov r8d, 0x00FFFFFF
     call fill_rect
 
 .draw_label:
-    pop rdx
-    pop r8                      ; Name pointer
-    pop rsi
-    pop rdi
-
-    ; Draw label below icon
-    push r8
+    ; Draw name below icon
+    mov edi, r12d
+    mov esi, r13d
     add esi, DESKTOP_ICON_SIZE
     add esi, 4
-    mov rdx, r8
-    mov ecx, 0x00FFFFFF
+    mov rdx, rbx                ; Name pointer
+    mov ecx, 0x00FFFFFF         ; White text
     call video_text
-    pop r8
+
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
     ret
 
 ; ============================================================================

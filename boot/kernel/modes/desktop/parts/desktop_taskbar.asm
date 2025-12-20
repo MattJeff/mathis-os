@@ -49,6 +49,11 @@ desktop_draw_taskbar:
     mov r8d, 0x00FFFFFF             ; White
     call draw_text
 
+    ; Draw minimized windows in taskbar
+    mov esi, [screen_height]
+    sub esi, DESKTOP_TASKBAR_H
+    call wm_draw_taskbar_items
+
     ; Draw clock (right side)
     mov rdi, [screen_fb]
     mov eax, [screen_height]

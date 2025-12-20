@@ -22,6 +22,10 @@ wmf_dialog_key:
     je .confirm
     cmp edi, 0x0E               ; Backspace
     je .backspace
+    cmp edi, 0x48               ; Up arrow
+    je .select_up
+    cmp edi, 0x50               ; Down arrow
+    je .select_down
 
     ; Try to add character
     call wmf_scancode_to_char
@@ -46,6 +50,16 @@ wmf_dialog_key:
     mov [wmf_dialog_cursor], ecx
     lea rdi, [wmf_dialog_input]
     mov byte [rdi + rcx], 0
+    mov byte [wm_dirty], 1
+    jmp .handled
+
+.select_up:
+    mov dword [wmf_dialog_select], 0    ; Select folder
+    mov byte [wm_dirty], 1
+    jmp .handled
+
+.select_down:
+    mov dword [wmf_dialog_select], 1    ; Select file
     mov byte [wm_dirty], 1
     jmp .handled
 

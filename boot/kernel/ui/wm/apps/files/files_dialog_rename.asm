@@ -78,9 +78,10 @@ wmf_confirm_rename:
     lea rsi, [wmf_rename_path]
     call fs_rename
 
-    ; Refresh
+    ; Refresh VFS + desktop icons
     call vfs_reload
     mov byte [wm_dirty], 1
+    mov byte [dicon_dirty], 1       ; Trigger desktop icon refresh
 
 .done:
     mov dword [wmf_dialog_mode], WMF_DLG_NONE

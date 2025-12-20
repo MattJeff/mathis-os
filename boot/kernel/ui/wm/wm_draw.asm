@@ -117,12 +117,24 @@ wm_draw_window:
     mov r8d, WM_COL_TITLE_BG
     call fill_rect
 
-    ; Draw title text
+    ; Draw macOS-style control buttons (close/minimize/maximize)
+    ; EBX = focused flag for button colors
+    xor eax, eax
+    test dword [rbx + WM_ENT_FLAGS], WM_WIN_FOCUSED
+    jz .ctrl_unfocused
+    mov eax, 1
+.ctrl_unfocused:
+    push rbx                    ; Save window ptr
+    mov ebx, eax                ; focused flag
+    call wm_draw_controls
+    pop rbx                     ; Restore window ptr
+
+    ; Draw title text (offset for buttons: 3 buttons + spacing)
     mov rdi, [rbx + WM_ENT_TITLE]
     test rdi, rdi
     jz .no_title
     mov edi, r12d
-    add edi, 8
+    add edi, 60                 ; After 3 buttons (10 + 12*3 + 8*2 = ~60)
     mov esi, r13d
     add esi, 6
     mov rdx, [rbx + WM_ENT_TITLE]
@@ -130,31 +142,13 @@ wm_draw_window:
     call video_text
 .no_title:
 
-    ; Draw close button
-    mov edi, r12d
-    add edi, r14d
-    sub edi, 20
-    mov esi, r13d
-    add esi, 4
-    mov edx, 16
-    mov ecx, 16
-    mov r8d, WM_COL_CLOSE
-    call fill_rect
-
-    ; Draw X
-    mov edi, r12d
-    add edi, r14d
-    sub edi, 16
-    mov esi, r13d
-    add esi, 8
-    lea rdx, [wm_str_x]
-    mov ecx, 0x00FFFFFF
-    call video_text
+    ; Draw resize handle in bottom-right corner
+    call wm_draw_resize_handle
 
     ; Draw content based on window type
     mov eax, [rbx + WM_ENT_TYPE]
     cmp eax, WM_TYPE_FILES
-    jne .check_widget
+    jne .check_editor
 
     ; Files window content
     mov edi, r12d
@@ -167,6 +161,23 @@ wm_draw_window:
     sub ecx, WM_TITLE_H
     sub ecx, 2                  ; Content height (minus title and border)
     call wmf_draw_content
+    jmp .done
+
+.check_editor:
+    cmp eax, WM_TYPE_EDITOR
+    jne .check_widget
+
+    ; Editor window content
+    mov edi, r12d
+    add edi, 2
+    mov esi, r13d
+    add esi, WM_TITLE_H
+    mov edx, r14d
+    sub edx, 4
+    mov ecx, r15d
+    sub ecx, WM_TITLE_H
+    sub ecx, 2
+    call wme_draw_content
     jmp .done
 
 .check_widget:
@@ -184,4 +195,5 @@ wm_draw_window:
     pop rbx
     ret
 
-wm_str_x:   db "X", 0
+; Include window controls module
+%include "ui/wm/wm_controls.asm"
