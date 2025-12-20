@@ -571,6 +571,8 @@ handle_gui_keys:
 %include "input/mouse.asm"
 %include "input/keyboard.asm"
 %include "input/dispatcher.asm"
+%include "input/cursor.asm"            ; Unified cursor rendering
+%include "input/input_manager.asm"     ; Centralized input management
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; INPUT HANDLERS - MINIMAL
@@ -588,7 +590,8 @@ handle_gui_keys:
 ; %include "modes/graphics.asm"      ; DEPRECATED (mode_flag=0)
 ; %include "modes/shell.asm"         ; DEPRECATED (mode_flag=1)
 %include "modes/files/files_main.asm"  ; CORE: Files mode (mode_flag=4)
-%include "modes/desktop/desktop_app.asm" ; Desktop using widget system (mode_flag=2)
+%include "modes/desktop/desktop_simple.asm" ; Simple desktop (mode_flag=2)
+; %include "modes/desktop/desktop_app.asm" ; OLD: Complex widget system (disabled)
 
 ; STUBS for deprecated modes (called by main_loop)
 graphics_mode:

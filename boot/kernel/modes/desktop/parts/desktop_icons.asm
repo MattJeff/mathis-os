@@ -1,0 +1,104 @@
+; ════════════════════════════════════════════════════════════════════════════
+; DESKTOP_ICONS.ASM - Draw desktop icons
+; ════════════════════════════════════════════════════════════════════════════
+
+[BITS 64]
+
+; ════════════════════════════════════════════════════════════════════════════
+; DESKTOP_DRAW_ICONS - Draw Terminal and Files icons
+; ════════════════════════════════════════════════════════════════════════════
+desktop_draw_icons:
+    push rax
+    push rcx
+    push rdx
+    push rdi
+    push rsi
+    push r8
+
+    ; ═══════════════════════════════════════════════════════════════════════
+    ; Terminal icon at (30, 30)
+    ; ═══════════════════════════════════════════════════════════════════════
+    ; Icon background (dark rectangle)
+    mov edi, 30
+    mov esi, 30
+    mov edx, DESKTOP_ICON_SIZE
+    mov ecx, DESKTOP_ICON_SIZE
+    mov r8d, 0x00202020             ; Dark gray
+    call fill_rect
+
+    ; Icon border
+    mov edi, 30
+    mov esi, 30
+    mov edx, DESKTOP_ICON_SIZE
+    mov ecx, DESKTOP_ICON_SIZE
+    mov r8d, 0x00808080             ; Gray border
+    call draw_rect
+
+    ; Terminal symbol (white rectangle inside)
+    mov edi, 38
+    mov esi, 38
+    mov edx, 32
+    mov ecx, 24
+    mov r8d, 0x00000000             ; Black
+    call fill_rect
+    mov edi, 40
+    mov esi, 40
+    mov edx, 28
+    mov ecx, 20
+    mov r8d, 0x00FFFFFF             ; White inside
+    call fill_rect
+
+    ; Label "Terminal"
+    mov rdi, [screen_fb]
+    mov eax, 30 + DESKTOP_ICON_SIZE + 4   ; y below icon
+    imul eax, [screen_pitch]
+    add rdi, rax
+    add rdi, 20 * 4                 ; x = 20
+    lea rsi, [desktop_str_terminal]
+    mov r8d, 0x00FFFFFF
+    call draw_text
+
+    ; ═══════════════════════════════════════════════════════════════════════
+    ; Files icon at (30, 120)
+    ; ═══════════════════════════════════════════════════════════════════════
+    ; Icon background
+    mov edi, 30
+    mov esi, 120
+    mov edx, DESKTOP_ICON_SIZE
+    mov ecx, DESKTOP_ICON_SIZE
+    mov r8d, 0x00806020             ; Brown/orange
+    call fill_rect
+
+    ; Icon border
+    mov edi, 30
+    mov esi, 120
+    mov edx, DESKTOP_ICON_SIZE
+    mov ecx, DESKTOP_ICON_SIZE
+    mov r8d, 0x00C09030             ; Lighter border
+    call draw_rect
+
+    ; Folder tab (top part)
+    mov edi, 32
+    mov esi, 124
+    mov edx, 20
+    mov ecx, 8
+    mov r8d, 0x00C09030
+    call fill_rect
+
+    ; Label "Files"
+    mov rdi, [screen_fb]
+    mov eax, 120 + DESKTOP_ICON_SIZE + 4
+    imul eax, [screen_pitch]
+    add rdi, rax
+    add rdi, 30 * 4
+    lea rsi, [desktop_str_files]
+    mov r8d, 0x00FFFFFF
+    call draw_text
+
+    pop r8
+    pop rsi
+    pop rdi
+    pop rdx
+    pop rcx
+    pop rax
+    ret

@@ -417,9 +417,20 @@ desktop_app_init:
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
-; DESKTOP_APP_DRAW - Draw the desktop
+; DESKTOP_APP_DRAW - Draw the desktop (with cursor - legacy)
 ; ════════════════════════════════════════════════════════════════════════════
 desktop_app_draw:
+    call desktop_app_draw_no_cursor
+    call input_manager_draw_cursor
+    ret
+
+; ════════════════════════════════════════════════════════════════════════════
+; DESKTOP_APP_DRAW_FRAME - Draw desktop without cursor (for main_loop)
+; ════════════════════════════════════════════════════════════════════════════
+; Called by main_loop, cursor is drawn separately after this returns
+; ════════════════════════════════════════════════════════════════════════════
+desktop_app_draw_frame:
+desktop_app_draw_no_cursor:
     push rbx
 
     ; Check if FS events triggered a refresh
@@ -444,9 +455,7 @@ desktop_app_draw:
     ; Draw custom icons (graphical part)
     call desktop_draw_icons
 
-    ; Draw mouse cursor (always on top)
-    call draw_mouse_cursor
-
+    ; DO NOT draw cursor here - main_loop draws it after all modes
     pop rbx
     ret
 
@@ -460,14 +469,34 @@ desktop_draw_icons:
     ; Terminal icon graphic at (46, 38)
     mov edi, 46
     mov esi, 38
-    mov edx, COL_CYAN
+    mov edx, 0x00FFFF00             ; Cyan (BGRA)
     call draw_icon_terminal
+
+    ; Terminal text label at (30, 58) - below icon
+    mov rdi, [screen_fb]
+    mov eax, 58                     ; y position (below icon)
+    imul eax, [screen_pitch]
+    add rdi, rax
+    add rdi, 30 * 4                 ; x = 30 (in 32-bit pixels)
+    lea rsi, [desktop_str_terminal]
+    mov r8d, 0x00FFFFFF             ; White text
+    call draw_text
 
     ; Files icon graphic at (46, 118)
     mov edi, 46
     mov esi, 118
-    mov edx, COL_YELLOW
+    mov edx, 0x0000FFFF             ; Yellow (BGRA)
     call draw_icon_folder
+
+    ; Files text label at (30, 138) - below icon
+    mov rdi, [screen_fb]
+    mov eax, 138                    ; y position (below icon)
+    imul eax, [screen_pitch]
+    add rdi, rax
+    add rdi, 30 * 4                 ; x = 30 (in 32-bit pixels)
+    lea rsi, [desktop_str_files]
+    mov r8d, 0x00FFFFFF             ; White text
+    call draw_text
 
     ; Draw dynamic file icons
     movzx ecx, byte [desktop_file_icon_count]

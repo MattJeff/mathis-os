@@ -15,45 +15,123 @@
 ; MAIN LOOP - Dispatches to appropriate mode handler
 ; ════════════════════════════════════════════════════════════════════════════
 main_loop:
-    ; Process all pending events (keyboard + mouse)
+    ; Legacy event processing (keyboard/mouse hardware)
     call evt_process
     call process_input
 
-    ; Dispatch based on mode_flag
+    ; Update input manager (dispatches to mode handlers)
+    call input_manager_update
+
+    ; Dispatch to mode (call, not jmp - so we return here for cursor)
     cmp byte [mode_flag], 4
-    je files_mode
+    je .mode_files
     cmp byte [mode_flag], 3
-    je gui3d_mode
+    je .mode_3d
     cmp byte [mode_flag], 2
-    je desktop_mode_wrapper
+    je .mode_desktop
     cmp byte [mode_flag], 1
-    je shell_mode
-    jmp graphics_mode
+    je .mode_shell
+    jmp .mode_graphics
 
-; ════════════════════════════════════════════════════════════════════════════
-; DESKTOP_MODE_WRAPPER - Widget-based desktop (replaces gui_mode)
-; ════════════════════════════════════════════════════════════════════════════
-desktop_mode_wrapper:
-    ; Initialize desktop if needed
-    cmp byte [desktop_initialized], 0
-    jne .desktop_draw
+.mode_files:
+    call files_mode_frame
+    jmp .draw_cursor
 
-    call desktop_app_init
-    test eax, eax
-    jz .desktop_fallback           ; If init fails, use legacy gui_mode
+.mode_3d:
+    jmp gui3d_mode              ; 3D has its own cursor
 
-.desktop_draw:
-    ; Draw desktop
-    call desktop_app_draw
+.mode_desktop:
+    ; Initialize simple desktop
+    call desktop_simple_init
+    ; Check for mouse click
+    cmp byte [mouse_clicked], 1
+    jne .desktop_no_click
+    mov byte [mouse_clicked], 0
+    call desktop_simple_input
+.desktop_no_click:
+    ; Draw simple desktop
+    call desktop_simple_draw
+    jmp .draw_cursor
 
-    ; Handle input
-    call desktop_app_input
+.mode_shell:
+    jmp shell_mode              ; Shell is text-only, no cursor
+
+.mode_graphics:
+    jmp graphics_mode           ; Legacy mode
+
+.draw_cursor:
+    ; Draw cursor on top of everything (for modes that return here)
+    call cursor_draw
+
+    ; Small delay
+    mov ecx, 50000
+.delay:
+    pause
+    dec ecx
+    jnz .delay
 
     jmp main_loop
 
-.desktop_fallback:
-    ; Fallback to legacy gui_mode if widget system fails
-    jmp gui_mode
+; ════════════════════════════════════════════════════════════════════════════
+; DESKTOP_DRAW_FRAME - Draw one frame of desktop (returns to caller)
+; ════════════════════════════════════════════════════════════════════════════
+desktop_draw_frame:
+    push rax
+    push rdx
+    push rcx
+    push rdi
+    push rsi
+    push r8
+
+    ; Draw blue background
+    mov edi, 0
+    mov esi, 0
+    mov edx, [screen_width]
+    mov ecx, [screen_height]
+    mov r8d, 0x00305080             ; Teal blue (RGB)
+    call fill_rect
+
+    pop r8
+    pop rsi
+    pop rdi
+    pop rcx
+    pop rdx
+    pop rax
+    ret
+
+; Legacy entry point (for compatibility)
+desktop_mode_simple:
+    call desktop_draw_frame
+    call cursor_draw
+    jmp main_loop
+
+; Desktop input registration flag
+desktop_input_registered: db 0
+; Desktop redraw flag (1 = needs redraw)
+desktop_needs_redraw: db 1
+
+; ────────────────────────────────────────────────────────────────────────────
+; DESKTOP_ON_KEY - Key handler for desktop (called by input_manager)
+; Input: EDI = scancode
+; ────────────────────────────────────────────────────────────────────────────
+desktop_on_key:
+    ; Handle TAB for mode switching
+    cmp edi, 0x0F                   ; TAB scancode
+    jne .not_tab
+    mov byte [mode_flag], 4         ; Switch to files mode
+    mov byte [desktop_input_registered], 0  ; Re-register on return
+    ret
+.not_tab:
+    ret
+
+; ────────────────────────────────────────────────────────────────────────────
+; DESKTOP_ON_CLICK - Click handler for desktop (called by input_manager)
+; Input: EDI = x, ESI = y, EDX = button
+; ────────────────────────────────────────────────────────────────────────────
+desktop_on_click:
+    ; Use simple desktop click handler
+    call desktop_handle_click
+    ret
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; 3D GUI MODE - Revolutionary 3D Navigation Interface

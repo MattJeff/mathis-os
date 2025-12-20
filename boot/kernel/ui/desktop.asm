@@ -97,58 +97,83 @@ draw_start_menu:
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
-; DRAW MOUSE CURSOR
+; DRAW MOUSE CURSOR (32-bit BGRA)
 ; ════════════════════════════════════════════════════════════════════════════
+CURSOR_WHITE    equ 0x00FFFFFF
+CURSOR_BLACK    equ 0x00000000
+
 draw_mouse_cursor:
     push rax
     push rbx
     push rcx
+    push rdx
     push rdi
-    push r9
 
-    mov r9d, [screen_pitch]              ; Save pitch in r9
+    ; Get pitch (zero-extend to 64-bit)
+    xor ecx, ecx
+    mov ecx, [screen_pitch]              ; pitch in bytes (32-bit, zero-extended)
 
+    ; Calculate framebuffer position: y * pitch + x * 4
     movzx eax, word [mouse_y]
-    imul eax, r9d
+    imul eax, ecx
     movzx ebx, word [mouse_x]
+    shl ebx, 2                           ; x * 4 (32-bit pixels)
     add eax, ebx
+
+    ; rdi = framebuffer + offset
     mov rdi, [screen_fb]
-    add rdi, rax
+    mov edx, eax                         ; zero-extend eax to rdx
+    add rdi, rdx
 
-    ; Simple arrow cursor (8 pixels tall)
-    mov byte [rdi], COL_CURSOR
-    add rdi, r9
-    mov byte [rdi], COL_CURSOR
-    mov byte [rdi + 1], COL_CURSOR
-    add rdi, r9
-    mov byte [rdi], COL_CURSOR
-    mov byte [rdi + 1], COL_BORDER
-    mov byte [rdi + 2], COL_CURSOR
-    add rdi, r9
-    mov byte [rdi], COL_CURSOR
-    mov byte [rdi + 1], COL_BORDER
-    mov byte [rdi + 2], COL_BORDER
-    mov byte [rdi + 3], COL_CURSOR
-    add rdi, r9
-    mov byte [rdi], COL_CURSOR
-    mov byte [rdi + 1], COL_CURSOR
-    mov byte [rdi + 2], COL_CURSOR
-    mov byte [rdi + 3], COL_CURSOR
-    mov byte [rdi + 4], COL_CURSOR
-    add rdi, r9
-    mov byte [rdi], COL_CURSOR
-    mov byte [rdi + 1], COL_CURSOR
-    mov byte [rdi + 2], COL_BORDER
-    mov byte [rdi + 3], COL_CURSOR
-    add rdi, r9
-    mov byte [rdi], COL_CURSOR
-    add rdi, r9
-    add rdi, 2
-    mov byte [rdi], COL_CURSOR
-    mov byte [rdi + 1], COL_CURSOR
+    ; Row 0: X
+    mov dword [rdi], CURSOR_WHITE
+    add rdi, rcx
 
-    pop r9
+    ; Row 1: XX
+    mov dword [rdi], CURSOR_WHITE
+    mov dword [rdi + 4], CURSOR_WHITE
+    add rdi, rcx
+
+    ; Row 2: X.X
+    mov dword [rdi], CURSOR_WHITE
+    mov dword [rdi + 4], CURSOR_BLACK
+    mov dword [rdi + 8], CURSOR_WHITE
+    add rdi, rcx
+
+    ; Row 3: X..X
+    mov dword [rdi], CURSOR_WHITE
+    mov dword [rdi + 4], CURSOR_BLACK
+    mov dword [rdi + 8], CURSOR_BLACK
+    mov dword [rdi + 12], CURSOR_WHITE
+    add rdi, rcx
+
+    ; Row 4: X...X
+    mov dword [rdi], CURSOR_WHITE
+    mov dword [rdi + 4], CURSOR_BLACK
+    mov dword [rdi + 8], CURSOR_BLACK
+    mov dword [rdi + 12], CURSOR_BLACK
+    mov dword [rdi + 16], CURSOR_WHITE
+    add rdi, rcx
+
+    ; Row 5: X..X
+    mov dword [rdi], CURSOR_WHITE
+    mov dword [rdi + 4], CURSOR_BLACK
+    mov dword [rdi + 8], CURSOR_BLACK
+    mov dword [rdi + 12], CURSOR_WHITE
+    add rdi, rcx
+
+    ; Row 6: X.X
+    mov dword [rdi], CURSOR_WHITE
+    mov dword [rdi + 4], CURSOR_BLACK
+    mov dword [rdi + 8], CURSOR_WHITE
+    add rdi, rcx
+
+    ; Row 7: XX
+    mov dword [rdi], CURSOR_WHITE
+    mov dword [rdi + 4], CURSOR_WHITE
+
     pop rdi
+    pop rdx
     pop rcx
     pop rbx
     pop rax

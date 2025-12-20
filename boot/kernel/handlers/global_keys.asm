@@ -17,17 +17,10 @@ handle_global_keys:
     push rbx
 
     ; ─────────────────────────────────────────────────────────────────────────
-    ; ESC (0x01) = Reboot (but NOT if files mode has dialog/editor active)
+    ; ESC (0x01) = DISABLED for now (was causing crashes)
     ; ─────────────────────────────────────────────────────────────────────────
     cmp al, 0x01
-    jne .skip_esc_check
-    ; Check if in files mode with dialog or editor active
-    cmp byte [mode_flag], 4
-    jne .do_reboot                  ; Not in files mode, allow reboot
-    cmp dword [fa_state], FA_STATE_LIST
-    jne .not_handled_global         ; Dialog or editor active, let files handle ESC
-    jmp .do_reboot
-.skip_esc_check:
+    je .not_handled_global          ; Just ignore ESC
 
     ; ─────────────────────────────────────────────────────────────────────────
     ; Tab (0x0F) = Cycle modes (0 → 1 → 2 → 3 → 4 → 0)
@@ -70,16 +63,20 @@ handle_global_keys:
     ; Never returns
 
 ; ════════════════════════════════════════════════════════════════════════════
-; TAB - Cycle display modes
+; TAB - Toggle between desktop (2) and files (4) only
 ; ════════════════════════════════════════════════════════════════════════════
 .do_tab:
-    inc byte [mode_flag]
-    cmp byte [mode_flag], 5
-    jl .tab_ok
-    mov byte [mode_flag], 0
-.tab_ok:
-    ; Refresh files mode si on y entre
-    mov byte [files_dirty], 1
+    cmp byte [mode_flag], 2
+    je .switch_to_files
+    ; Default: go to desktop
+    mov byte [mode_flag], 2
+    jmp .tab_done
+.switch_to_files:
+    mov byte [mode_flag], 4
+.tab_done:
+    ; Set redraw flags
+    mov byte [desktop_needs_redraw], 1
+    mov byte [files_needs_redraw], 1
     ; Clear key state to prevent double-processing
     mov byte [key_pressed], 0
     mov byte [key3d_scancode], 0

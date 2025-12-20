@@ -62,37 +62,40 @@ mouse_isr64:
     mov [mouse_buttons], al
 
     ; Update X position
-    movsx bx, byte [mouse_byte1]
-    add [mouse_x], bx
-
-    ; Clamp X to screen bounds
-    cmp word [mouse_x], 0
-    jge .x_min_ok
-    mov word [mouse_x], 0
+    ; mouse_byte1 is SIGNED delta, mouse_x is UNSIGNED position
+    movsx eax, byte [mouse_byte1]       ; Signed delta (-128 to +127)
+    movzx ebx, word [mouse_x]           ; Unsigned current pos (0 to 65535)
+    add ebx, eax                        ; New position (can go negative)
+    ; Clamp X: 0 to screen_width-16
+    test ebx, ebx
+    jns .x_min_ok                       ; Jump if not negative (SF=0)
+    xor ebx, ebx                        ; Clamp to 0
 .x_min_ok:
-    mov ax, word [screen_width]
-    sub ax, 8
-    cmp word [mouse_x], ax
+    mov eax, [screen_width]
+    sub eax, 16
+    cmp ebx, eax
     jle .x_max_ok
-    mov word [mouse_x], ax
+    mov ebx, eax
 .x_max_ok:
+    mov [mouse_x], bx
 
     ; Update Y position (inverted - PS/2 Y is opposite of screen Y)
-    movsx bx, byte [mouse_byte2]
-    neg bx
-    add [mouse_y], bx
-
-    ; Clamp Y to screen bounds
-    cmp word [mouse_y], 0
-    jge .y_min_ok
-    mov word [mouse_y], 0
+    movsx eax, byte [mouse_byte2]       ; Signed delta
+    neg eax                             ; Invert Y (PS/2 is upside down)
+    movzx ebx, word [mouse_y]           ; Unsigned current pos
+    add ebx, eax                        ; New position
+    ; Clamp Y: 0 to screen_height-16
+    test ebx, ebx
+    jns .y_min_ok                       ; Jump if not negative
+    xor ebx, ebx                        ; Clamp to 0
 .y_min_ok:
-    mov ax, word [screen_height]
-    sub ax, 10
-    cmp word [mouse_y], ax
+    mov eax, [screen_height]
+    sub eax, 16
+    cmp ebx, eax
     jle .y_max_ok
-    mov word [mouse_y], ax
+    mov ebx, eax
 .y_max_ok:
+    mov [mouse_y], bx
 
     ; NOTE: Event posting disabled - causes crashes in ISR context
     ; Mouse position is already stored in mouse_x/y variables

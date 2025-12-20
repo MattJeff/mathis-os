@@ -186,6 +186,9 @@ long_mode_entry:
     call video_svc_init
     call input_svc_init
 
+    ; Initialize centralized input manager (SOLID Phase 6)
+    call input_manager_init
+
     ; Initialize FAT32 filesystem
     call fat32_init
 
