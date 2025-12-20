@@ -33,6 +33,8 @@ crud_delete:
     push rsi
     push r12
     push r13
+    push r14
+    push r15
 
     mov r12, rdi                    ; r12 = path
 
@@ -40,13 +42,25 @@ crud_delete:
     cmp byte [fat32_mounted], 1
     jne .delete_error
 
-    ; --- CONVERT PATH ---
-    mov rsi, r12
+    ; --- SPLIT PATH INTO PARENT + FILENAME ---
+    mov rdi, r12
+    call path_split                 ; rax = parent, rdx = filename
+    mov r14, rdx                    ; r14 = filename
+
+    ; --- RESOLVE PARENT DIRECTORY ---
+    mov rdi, rax                    ; parent path
+    call path_resolve
+    cmp eax, -1
+    je .delete_error
+    mov r15d, eax                   ; r15 = parent cluster
+
+    ; --- CONVERT FILENAME ---
+    mov rsi, r14
     lea rdi, [crud_delete_temp_name]
     call fat32_convert_name
 
-    ; --- FIND FILE ---
-    mov eax, [fat32_root_cluster]
+    ; --- FIND FILE IN PARENT ---
+    mov eax, r15d
     lea rsi, [crud_delete_temp_name]
     call fat32_find_file
 
@@ -76,8 +90,8 @@ crud_delete:
     ; --- MARK ENTRY AS DELETED ---
     mov byte [r13], 0xE5
 
-    ; --- WRITE DIRECTORY BACK ---
-    mov eax, [fat32_root_cluster]
+    ; --- WRITE PARENT DIRECTORY BACK ---
+    mov eax, r15d
     mov rsi, fat32_dir_buffer
     call fat32_write_cluster
     jc .delete_error
@@ -89,6 +103,8 @@ crud_delete:
     xor eax, eax
 
 .delete_done:
+    pop r15
+    pop r14
     pop r13
     pop r12
     pop rsi
@@ -118,6 +134,7 @@ crud_rename:
     push r12
     push r13
     push r14
+    push r15
 
     mov r12, rdi                    ; r12 = old path
     mov r13, rsi                    ; r13 = new path
@@ -126,24 +143,42 @@ crud_rename:
     cmp byte [fat32_mounted], 1
     jne .rename_error
 
-    ; --- CHECK NEW NAME DOESN'T EXIST ---
-    mov rsi, r13
+    ; --- SPLIT OLD PATH ---
+    mov rdi, r12
+    call path_split                 ; rax = parent, rdx = old filename
+    mov r14, rdx                    ; r14 = old filename
+
+    ; --- RESOLVE PARENT DIRECTORY ---
+    mov rdi, rax
+    call path_resolve
+    cmp eax, -1
+    je .rename_error
+    mov r15d, eax                   ; r15 = parent cluster
+
+    ; --- SPLIT NEW PATH (only need filename) ---
+    mov rdi, r13
+    call path_split                 ; rdx = new filename
+
+    ; --- CONVERT NEW NAME ---
+    mov rsi, rdx
     lea rdi, [crud_rename_new_name]
     call fat32_convert_name
 
-    mov eax, [fat32_root_cluster]
+    ; --- CHECK NEW NAME DOESN'T EXIST ---
+    mov eax, r15d
     lea rsi, [crud_rename_new_name]
     call fat32_find_file
 
     test rax, rax
     jnz .rename_error               ; Target exists!
 
-    ; --- FIND OLD FILE ---
-    mov rsi, r12
+    ; --- CONVERT OLD NAME ---
+    mov rsi, r14
     lea rdi, [crud_delete_temp_name]
     call fat32_convert_name
 
-    mov eax, [fat32_root_cluster]
+    ; --- FIND OLD FILE ---
+    mov eax, r15d
     lea rsi, [crud_delete_temp_name]
     call fat32_find_file
 
@@ -159,7 +194,7 @@ crud_rename:
     rep movsb
 
     ; --- WRITE DIRECTORY BACK ---
-    mov eax, [fat32_root_cluster]
+    mov eax, r15d
     mov rsi, fat32_dir_buffer
     call fat32_write_cluster
     jc .rename_error
@@ -171,6 +206,7 @@ crud_rename:
     xor eax, eax
 
 .rename_done:
+    pop r15
     pop r14
     pop r13
     pop r12

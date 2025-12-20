@@ -39,6 +39,7 @@ crud_create_file:
     push r12
     push r13
     push r14
+    push r15
 
     mov r12, rdi                    ; r12 = path
     mov r13d, esi                   ; r13 = flags
@@ -48,13 +49,25 @@ crud_create_file:
     test eax, eax
     jz .create_error
 
-    ; --- CONVERT PATH TO 8.3 ---
-    mov rsi, r12
+    ; --- SPLIT PATH INTO PARENT + FILENAME ---
+    mov rdi, r12
+    call path_split                 ; rax = parent, rdx = filename
+    mov r14, rdx                    ; r14 = filename
+
+    ; --- RESOLVE PARENT DIRECTORY ---
+    mov rdi, rax                    ; parent path
+    call path_resolve
+    cmp eax, -1
+    je .create_error
+    mov r15d, eax                   ; r15 = parent cluster
+
+    ; --- CONVERT FILENAME TO 8.3 ---
+    mov rsi, r14
     lea rdi, [crud_temp_name]
     call fat32_convert_name
 
     ; --- CHECK IF FILE EXISTS ---
-    mov eax, [fat32_root_cluster]
+    mov eax, r15d                   ; parent cluster
     lea rsi, [crud_temp_name]
     call fat32_find_file
 
@@ -65,7 +78,8 @@ crud_create_file:
     test r13d, FS_O_CREATE
     jz .create_error                ; No CREATE flag = error
 
-    ; Create new file
+    ; Create new file in parent directory
+    mov edi, r15d                   ; parent cluster
     call crud_do_create_file
     test eax, eax
     jz .create_error
@@ -106,6 +120,7 @@ crud_create_file:
     mov eax, -1
 
 .create_done:
+    pop r15
     pop r14
     pop r13
     pop r12
@@ -117,7 +132,7 @@ crud_create_file:
 ; ============================================================================
 ; CRUD_CREATE_DIR - Create a new directory
 ; ============================================================================
-; Input:  RDI = path (null-terminated)
+; Input:  RDI = path (null-terminated, e.g., "/desktop/newfolder")
 ; Output: EAX = 1 on success, 0 on error
 ; ============================================================================
 crud_create_dir:
@@ -125,30 +140,44 @@ crud_create_dir:
     push rcx
     push rdx
     push r12
+    push r13
+    push r14
 
-    mov r12, rdi                    ; r12 = path
+    mov r12, rdi                    ; r12 = full path
 
     ; --- VALIDATION ---
     call crud_validate_mounted
     test eax, eax
     jz .mkdir_error
 
-    ; --- CONVERT PATH TO 8.3 ---
-    mov rsi, r12
+    ; --- SPLIT PATH INTO PARENT + FILENAME ---
+    mov rdi, r12
+    call path_split                 ; rax = parent, rdx = filename
+    mov r13, rdx                    ; r13 = filename
+
+    ; --- RESOLVE PARENT DIRECTORY ---
+    mov rdi, rax                    ; parent path
+    call path_resolve
+    cmp eax, -1
+    je .mkdir_error
+    mov r14d, eax                   ; r14 = parent cluster
+
+    ; --- CONVERT FILENAME TO 8.3 ---
+    mov rsi, r13
     lea rdi, [crud_temp_name]
     call fat32_convert_name
 
     ; --- CHECK IF ALREADY EXISTS ---
-    mov eax, [fat32_root_cluster]
+    mov eax, r14d
     lea rsi, [crud_temp_name]
     call fat32_find_file
 
     test rax, rax
     jnz .mkdir_error                ; Already exists
 
-    ; --- CREATE DIRECTORY ---
+    ; --- CREATE DIRECTORY IN PARENT ---
     lea rsi, [crud_temp_name]
-    mov eax, [fat32_root_cluster]
+    mov eax, r14d                   ; Parent cluster
     call fat32_create_dir
 
     test eax, eax
@@ -161,6 +190,8 @@ crud_create_dir:
     mov eax, CRUD_CREATE_ERR
 
 .mkdir_done:
+    pop r14
+    pop r13
     pop r12
     pop rdx
     pop rcx
@@ -170,7 +201,8 @@ crud_create_dir:
 ; ============================================================================
 ; INTERNAL: crud_do_create_file - Low-level file creation
 ; ============================================================================
-; Input:  crud_temp_name = 8.3 filename
+; Input:  EDI = parent directory cluster
+;         crud_temp_name = 8.3 filename
 ; Output: EAX = first cluster or 0 on error
 ; ============================================================================
 crud_do_create_file:
@@ -179,6 +211,9 @@ crud_do_create_file:
     push rdx
     push rdi
     push rsi
+    push r12
+
+    mov r12d, edi                   ; r12 = parent cluster
 
     ; Allocate cluster for file
     call fat32_alloc_cluster
@@ -187,8 +222,8 @@ crud_do_create_file:
 
     mov ebx, eax                    ; ebx = new cluster
 
-    ; Read directory
-    mov eax, [fat32_root_cluster]
+    ; Read parent directory
+    mov eax, r12d
     mov rdi, fat32_dir_buffer
     call fat32_read_cluster
 
@@ -249,8 +284,8 @@ crud_do_create_file:
     ; Set size = 0
     mov dword [rdi + FAT32_DIR_SIZE], 0
 
-    ; Write directory back
-    mov eax, [fat32_root_cluster]
+    ; Write parent directory back
+    mov eax, r12d
     mov rsi, fat32_dir_buffer
     call fat32_write_cluster
     jc .do_create_error
@@ -262,6 +297,7 @@ crud_do_create_file:
     xor eax, eax
 
 .do_create_done:
+    pop r12
     pop rsi
     pop rdi
     pop rdx

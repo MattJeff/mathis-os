@@ -13,6 +13,7 @@ section .text
 
 %include "fs/path/path_parse.asm"
 %include "fs/path/path_resolve.asm"
+%include "fs/path/path_split.asm"
 
 ; Data after code
 %include "fs/path/path_data.asm"
