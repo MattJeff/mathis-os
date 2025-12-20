@@ -4,6 +4,12 @@
 
 [BITS 64]
 
+; Content area position (set by wmc_draw_content)
+calc_content_x:     dd 0
+calc_content_y:     dd 0
+calc_content_w:     dd 0
+calc_btn_char:      db 0, 0
+
 ; ============================================================================
 ; WMC_DRAW_CONTENT - Draw calculator content
 ; Input: EDI=x, ESI=y, EDX=w, ECX=h
@@ -11,20 +17,13 @@
 wmc_draw_content:
     push rbx
     push r12
-    push r13
-    push r14
-    push r15
 
-    mov r12d, edi                   ; x
-    mov r13d, esi                   ; y
-    mov r14d, edx                   ; w
-    mov r15d, ecx                   ; h
+    ; Store content area position in globals
+    mov [calc_content_x], edi
+    mov [calc_content_y], esi
+    mov [calc_content_w], edx
 
     ; Draw background
-    mov edi, r12d
-    mov esi, r13d
-    mov edx, r14d
-    mov ecx, r15d
     mov r8d, CALC_BG
     call fill_rect
 
@@ -34,9 +33,6 @@ wmc_draw_content:
     ; Draw buttons
     call wmc_draw_buttons
 
-    pop r15
-    pop r14
-    pop r13
     pop r12
     pop rbx
     ret
@@ -45,35 +41,31 @@ wmc_draw_content:
 ; WMC_DRAW_DISPLAY - Draw calculator display
 ; ============================================================================
 wmc_draw_display:
-    push r12
-    push r13
+    push rbx
 
     ; Display background
-    mov edi, r12d
+    mov edi, [calc_content_x]
     add edi, CALC_MARGIN
-    mov esi, r13d
+    mov esi, [calc_content_y]
     add esi, CALC_MARGIN
-    mov edx, r14d
-    sub edx, CALC_MARGIN
-    sub edx, CALC_MARGIN
+    mov edx, [calc_content_w]
+    sub edx, CALC_MARGIN * 2
     mov ecx, CALC_DISPLAY_H
     mov r8d, CALC_DISPLAY_BG
     call fill_rect
 
-    ; Display text (right-aligned)
-    mov edi, r12d
-    add edi, r14d
-    sub edi, CALC_MARGIN
-    sub edi, 10                     ; Right padding
-    mov esi, r13d
+    ; Display text (left-aligned with padding)
+    mov edi, [calc_content_x]
+    add edi, CALC_MARGIN
+    add edi, 10                     ; Left padding
+    mov esi, [calc_content_y]
     add esi, CALC_MARGIN
     add esi, 18                     ; Center vertically
     lea rdx, [calc_display]
     mov ecx, CALC_DISPLAY_FG
     call video_text
 
-    pop r13
-    pop r12
+    pop rbx
     ret
 
 ; ============================================================================
@@ -81,8 +73,6 @@ wmc_draw_display:
 ; ============================================================================
 wmc_draw_buttons:
     push rbx
-    push r12
-    push r13
 
     ; Button layout (4x5 grid):
     ; C  +/-  %   /
@@ -90,11 +80,6 @@ wmc_draw_buttons:
     ; 4   5   6   -
     ; 1   2   3   +
     ; 0       .   =
-
-    mov r12d, r13d
-    add r12d, CALC_DISPLAY_H
-    add r12d, CALC_MARGIN
-    add r12d, CALC_MARGIN           ; r12 = button start Y
 
     ; Row 0: C, +/-, %, /
     mov edi, 0
@@ -104,7 +89,7 @@ wmc_draw_buttons:
     call wmc_draw_btn
     mov edi, 1
     mov esi, 0
-    mov edx, '~'                    ; +/-
+    mov edx, '~'
     mov ecx, CALC_BTN_FUNC
     call wmc_draw_btn
     mov edi, 2
@@ -201,65 +186,59 @@ wmc_draw_buttons:
     mov ecx, CALC_BTN_OP
     call wmc_draw_btn
 
-    pop r13
-    pop r12
     pop rbx
     ret
 
 ; ============================================================================
 ; WMC_DRAW_BTN - Draw single button
 ; Input: EDI=col, ESI=row, EDX=char, ECX=color
-; Uses: r12d=base_x from parent, r12d(modified)=button_y
 ; ============================================================================
 wmc_draw_btn:
     push r8
     push r9
     push r10
     push r11
+    push r12
+    push r13
 
-    mov r8d, edi                    ; col
-    mov r9d, esi                    ; row
     mov r10d, edx                   ; char
     mov r11d, ecx                   ; color
 
-    ; Calculate X
-    mov eax, r8d
-    imul eax, CALC_BTN_SIZE
-    mov ecx, r8d
-    imul ecx, CALC_BTN_GAP
-    add eax, ecx
-    add eax, [rsp+40]               ; r12d from stack (base x)
+    ; Calculate X = base_x + margin + col * (btn_size + gap)
+    mov eax, edi
+    imul eax, CALC_BTN_SIZE + CALC_BTN_GAP
+    add eax, [calc_content_x]
     add eax, CALC_MARGIN
-    mov edi, eax
+    mov r12d, eax                   ; save X in r12
 
-    ; Calculate Y
-    mov eax, r9d
-    imul eax, CALC_BTN_SIZE
-    mov ecx, r9d
-    imul ecx, CALC_BTN_GAP
-    add eax, ecx
-    add eax, r12d                   ; button start Y
-    mov esi, eax
+    ; Calculate Y = base_y + margin*2 + display_h + row * (btn_size + gap)
+    mov eax, esi
+    imul eax, CALC_BTN_SIZE + CALC_BTN_GAP
+    add eax, [calc_content_y]
+    add eax, CALC_DISPLAY_H + CALC_MARGIN * 2
+    mov r13d, eax                   ; save Y in r13
 
     ; Draw button background
+    mov edi, r12d
+    mov esi, r13d
     mov edx, CALC_BTN_SIZE
     mov ecx, CALC_BTN_SIZE
     mov r8d, r11d
     call fill_rect
 
-    ; Draw character
-    push rdi
-    push rsi
-    add edi, 18                     ; Center X
-    add esi, 16                     ; Center Y
+    ; Draw character centered
+    mov edi, r12d
+    add edi, 18
+    mov esi, r13d
+    add esi, 16
     mov [calc_btn_char], r10b
     mov byte [calc_btn_char+1], 0
     lea rdx, [calc_btn_char]
     mov ecx, CALC_BTN_TEXT
     call video_text
-    pop rsi
-    pop rdi
 
+    pop r13
+    pop r12
     pop r11
     pop r10
     pop r9
@@ -268,62 +247,56 @@ wmc_draw_btn:
 
 ; ============================================================================
 ; WMC_DRAW_BTN_WIDE - Draw wide button (2 columns)
+; Input: EDI=col, ESI=row, EDX=char, ECX=color
 ; ============================================================================
 wmc_draw_btn_wide:
     push r8
     push r9
     push r10
     push r11
+    push r12
+    push r13
 
-    mov r8d, edi
-    mov r9d, esi
-    mov r10d, edx
-    mov r11d, ecx
+    mov r10d, edx                   ; char
+    mov r11d, ecx                   ; color
 
     ; Calculate X
-    mov eax, r8d
-    imul eax, CALC_BTN_SIZE
-    mov ecx, r8d
-    imul ecx, CALC_BTN_GAP
-    add eax, ecx
-    add eax, [rsp+40]
+    mov eax, edi
+    imul eax, CALC_BTN_SIZE + CALC_BTN_GAP
+    add eax, [calc_content_x]
     add eax, CALC_MARGIN
-    mov edi, eax
+    mov r12d, eax                   ; save X in r12
 
     ; Calculate Y
-    mov eax, r9d
-    imul eax, CALC_BTN_SIZE
-    mov ecx, r9d
-    imul ecx, CALC_BTN_GAP
-    add eax, ecx
-    add eax, r12d
-    mov esi, eax
+    mov eax, esi
+    imul eax, CALC_BTN_SIZE + CALC_BTN_GAP
+    add eax, [calc_content_y]
+    add eax, CALC_DISPLAY_H + CALC_MARGIN * 2
+    mov r13d, eax                   ; save Y in r13
 
     ; Draw wide button (2 * size + gap)
-    mov edx, CALC_BTN_SIZE
-    add edx, CALC_BTN_SIZE
-    add edx, CALC_BTN_GAP
+    mov edi, r12d
+    mov esi, r13d
+    mov edx, CALC_BTN_SIZE * 2 + CALC_BTN_GAP
     mov ecx, CALC_BTN_SIZE
     mov r8d, r11d
     call fill_rect
 
-    ; Draw character
-    push rdi
-    push rsi
-    add edi, 42                     ; Center in wide button
+    ; Draw character centered in wide button
+    mov edi, r12d
+    add edi, 42
+    mov esi, r13d
     add esi, 16
     mov [calc_btn_char], r10b
     mov byte [calc_btn_char+1], 0
     lea rdx, [calc_btn_char]
     mov ecx, CALC_BTN_TEXT
     call video_text
-    pop rsi
-    pop rdi
 
+    pop r13
+    pop r12
     pop r11
     pop r10
     pop r9
     pop r8
     ret
-
-calc_btn_char: db 0, 0
