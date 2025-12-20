@@ -169,6 +169,10 @@ wme_on_key:
 
     mov r12d, edi
 
+    ; Let ESC pass through to window manager for close
+    cmp r12d, 0x01                  ; ESC scancode
+    je .not_handled
+
     mov rbx, [wme_editor_ptr]
     test rbx, rbx
     jz .not_handled
@@ -188,6 +192,7 @@ wme_on_key:
     mov esi, r12d
     call text_editor_on_key
     mov byte [wm_dirty], 1          ; Trigger redraw after typing
+    mov eax, 1
     jmp .done
 
 .not_handled:
