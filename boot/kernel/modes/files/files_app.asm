@@ -8,6 +8,7 @@
 ;   - parts/files_render.asm  : Drawing functions
 ;   - parts/files_input.asm   : Keyboard handling
 ;   - parts/files_editor.asm  : Editor functions
+;   - parts/files_path.asm    : Path building for current directory
 ;   - parts/files_dialogs.asm : Dialog callbacks
 ;   - parts/files_crud.asm    : Save/refresh operations
 ;   - parts/files_cleanup.asm : Cleanup functions
@@ -21,6 +22,7 @@
 %include "modes/files/parts/files_init.asm"
 %include "modes/files/parts/files_render.asm"
 %include "modes/files/parts/files_editor.asm"
+%include "modes/files/parts/files_path.asm"
 %include "modes/files/parts/files_dialogs.asm"
 %include "modes/files/parts/files_crud.asm"
 %include "modes/files/parts/files_input.asm"

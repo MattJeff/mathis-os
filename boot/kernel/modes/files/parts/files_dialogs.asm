@@ -26,7 +26,11 @@ fa_on_new_confirm:
     call dialog_new_get_name
     test rax, rax
     jz .new_done
-    mov r12, rax                    ; r12 = new filename
+
+    ; Build full path: vfs_current_path + "/" + filename
+    mov rdi, rax
+    call fa_build_path
+    mov r12, rax                    ; r12 = full path
 
     ; Check if creating folder or file
     test r13d, r13d
@@ -75,7 +79,11 @@ fa_on_delete_confirm:
     call file_list_get_selected
     imul eax, 32
     lea rbx, [fa_entries + rax]
-    mov r12, [rbx + FE_NAME]        ; r12 = filename to delete
+    mov rdi, [rbx + FE_NAME]        ; filename to delete
+
+    ; Build full path
+    call fa_build_path
+    mov r12, rax                    ; r12 = full path
 
     ; Delete using fs_delete
     mov rdi, r12
@@ -106,7 +114,11 @@ fa_on_rename_confirm:
     call file_list_get_selected
     imul eax, 32
     lea rbx, [fa_entries + rax]
-    mov r12, [rbx + FE_NAME]        ; r12 = old filename
+    mov rdi, [rbx + FE_NAME]        ; old filename
+
+    ; Build full old path
+    call fa_build_path
+    mov r12, rax                    ; r12 = full old path
 
     ; Get new filename from dialog input
     mov rdi, [fa_dialog]
@@ -116,7 +128,11 @@ fa_on_rename_confirm:
     call dialog_get_input
     test rax, rax
     jz .rename_done
-    mov r13, rax                    ; r13 = new filename
+
+    ; Build full new path
+    mov rdi, rax
+    call fa_build_path2
+    mov r13, rax                    ; r13 = full new path
 
     ; Rename using CRUD
     mov rdi, r12                    ; old path
