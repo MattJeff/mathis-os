@@ -30,8 +30,7 @@ vfs_reload:
     call fs_readdir
     cmp eax, -1
     je .use_mock                    ; Fallback to mock on error
-    test eax, eax
-    jz .use_mock                    ; No entries = use mock
+    ; Note: 0 entries is valid (empty folder), don't use mock
 
     ; Convert FS_DIRENT to VFS_ENTRY
     mov r14d, eax                   ; r14 = entry count
