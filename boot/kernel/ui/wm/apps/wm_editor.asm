@@ -179,6 +179,7 @@ wme_on_key:
     cmp byte [ctrl_state], 1
     jne .forward
     call wme_save_file
+    mov byte [wm_dirty], 1          ; Trigger redraw after save
     mov eax, 1
     jmp .done
 
@@ -186,6 +187,7 @@ wme_on_key:
     mov rdi, rbx
     mov esi, r12d
     call text_editor_on_key
+    mov byte [wm_dirty], 1          ; Trigger redraw after typing
     jmp .done
 
 .not_handled:
