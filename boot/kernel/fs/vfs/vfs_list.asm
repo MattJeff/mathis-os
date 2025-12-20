@@ -18,21 +18,57 @@ vfs_reload:
     push r14
     push r15
 
-    ; Try real filesystem first
-    mov edi, SVC_FS
-    call get_service
-    test rax, rax
-    jz .use_mock
+    ; Check if FAT32 is mounted
+    ; fs_readdir now supports subdirectories via path_resolve
+    cmp byte [fat32_mounted], 1
+    jne .use_mock
 
-    mov r15, rax                    ; r15 = fs_vtable
-
-    ; Read directory
+    ; Read directory using fs_readdir
     lea rdi, [vfs_current_path]
-    lea rsi, [vfs_entries]
+    lea rsi, [vfs_dirent_buf]       ; Temp buffer for FS_DIRENT entries
     mov edx, VFS_MAX_ENTRIES
-    ; Convert to fs_readdir format (needs dirent buffer)
-    ; For now, use mock data
-    jmp .use_mock
+    call fs_readdir
+    cmp eax, -1
+    je .use_mock                    ; Fallback to mock on error
+    test eax, eax
+    jz .use_mock                    ; No entries = use mock
+
+    ; Convert FS_DIRENT to VFS_ENTRY
+    mov r14d, eax                   ; r14 = entry count
+    mov [vfs_entry_count], r14d
+    xor r12d, r12d                  ; r12 = index
+
+.convert_loop:
+    cmp r12d, r14d
+    jge .done
+
+    ; Source: vfs_dirent_buf + i * FS_DIRENT_SIZE
+    mov eax, r12d
+    imul eax, 64                    ; FS_DIRENT_SIZE = 64
+    lea rsi, [vfs_dirent_buf + rax]
+
+    ; Dest: vfs_entries + i * VFS_ENTRY_SIZE
+    mov eax, r12d
+    imul eax, VFS_ENTRY_SIZE
+    lea rdi, [vfs_entries + rax]
+
+    ; Copy name (32 bytes)
+    push rdi
+    mov ecx, 32
+    rep movsb
+    pop rdi
+
+    ; Copy size (at offset 32 in both)
+    mov eax, [rsi]                  ; rsi now points to offset 32
+    mov [rdi + VFS_E_SIZE], eax
+
+    ; Copy flags (at offset 36 in VFS, offset 36 in dirent)
+    mov eax, [rsi + 4]              ; Flags at dirent+36
+    ; Convert FS_ENTRY_DIR to VFS_FLAG_DIR (both are 0x01, so direct copy)
+    mov [rdi + VFS_E_FLAGS], eax
+
+    inc r12d
+    jmp .convert_loop
 
 .use_mock:
     ; Create mock entries based on location

@@ -21,6 +21,11 @@ vfs_initialized:    db 0                ; Init flag
 vfs_entries:        times (VFS_ENTRY_SIZE * VFS_MAX_ENTRIES) db 0
 
 ; ════════════════════════════════════════════════════════════════════════════
+; TEMP BUFFER for fs_readdir (FS_DIRENT_SIZE = 64)
+; ════════════════════════════════════════════════════════════════════════════
+vfs_dirent_buf:     times (64 * VFS_MAX_ENTRIES) db 0
+
+; ════════════════════════════════════════════════════════════════════════════
 ; PREDEFINED PATHS
 ; ════════════════════════════════════════════════════════════════════════════
 vfs_path_root:      db "/", 0

@@ -31,20 +31,40 @@ vfs_goto:
     mov byte [rdi], 0
 .copy_done:
 
-    ; Detect location type (compare with folder names from mock data)
-    lea rdi, [.str_desktop]
+    ; Detect location type
+    ; Compare with both formats: "desktop/" (from click) and "/desktop" (from sidebar)
+
+    ; Check desktop/ or /desktop
+    lea rdi, [.str_desktop1]
+    mov rsi, rbx
+    call vfs_str_equal
+    test eax, eax
+    jnz .is_desktop
+    lea rdi, [.str_desktop2]
     mov rsi, rbx
     call vfs_str_equal
     test eax, eax
     jnz .is_desktop
 
-    lea rdi, [.str_downloads]
+    ; Check downloads/ or /downloads
+    lea rdi, [.str_downloads1]
+    mov rsi, rbx
+    call vfs_str_equal
+    test eax, eax
+    jnz .is_downloads
+    lea rdi, [.str_downloads2]
     mov rsi, rbx
     call vfs_str_equal
     test eax, eax
     jnz .is_downloads
 
-    lea rdi, [.str_documents]
+    ; Check documents/ or /documents
+    lea rdi, [.str_documents1]
+    mov rsi, rbx
+    call vfs_str_equal
+    test eax, eax
+    jnz .is_documents
+    lea rdi, [.str_documents2]
     mov rsi, rbx
     call vfs_str_equal
     test eax, eax
@@ -54,9 +74,12 @@ vfs_goto:
     mov dword [vfs_current_loc], VFS_LOC_ROOT
     jmp .reload
 
-.str_desktop:   db "desktop/", 0
-.str_downloads: db "downloads/", 0
-.str_documents: db "documents/", 0
+.str_desktop1:   db "desktop/", 0
+.str_desktop2:   db "/desktop", 0
+.str_downloads1: db "downloads/", 0
+.str_downloads2: db "/downloads", 0
+.str_documents1: db "documents/", 0
+.str_documents2: db "/documents", 0
 
 .is_desktop:
     mov dword [vfs_current_loc], VFS_LOC_DESKTOP

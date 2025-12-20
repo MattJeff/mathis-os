@@ -558,13 +558,13 @@ fs_readdir:
     mov r14d, edx                   ; r14 = max entries
     xor r15d, r15d                  ; r15 = entry count
 
-    ; For now, only support root directory
-    ; TODO: Path parsing for subdirectories
+    ; Resolve path to cluster
+    mov rdi, r12
+    call path_resolve
+    cmp eax, -1
+    je .readdir_error
 
-    ; Get root directory cluster
-    mov eax, [fat32_root_cluster]
-
-    ; Read directory entries
+    ; Read directory entries from resolved cluster
     mov rdi, fat32_sector_buffer
     call fat32_read_cluster
     jc .readdir_error                   ; CF set = error
