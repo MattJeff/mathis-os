@@ -8,7 +8,7 @@
 
 ; Calculator dimensions
 CALC_WIN_W          equ 240
-CALC_WIN_H          equ 320
+CALC_WIN_H          equ 360
 CALC_BTN_SIZE       equ 48
 CALC_BTN_GAP        equ 4
 CALC_DISPLAY_H      equ 50
