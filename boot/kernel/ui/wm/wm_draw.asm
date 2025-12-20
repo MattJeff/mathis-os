@@ -167,7 +167,7 @@ wm_draw_window:
 
 .check_editor:
     cmp eax, WM_TYPE_EDITOR
-    jne .check_widget
+    jne .check_calc
 
     ; Editor window content
     mov edi, r12d
@@ -180,6 +180,23 @@ wm_draw_window:
     sub ecx, WM_TITLE_H
     sub ecx, 2
     call wme_draw_content
+    jmp .done
+
+.check_calc:
+    cmp eax, WM_TYPE_CALC
+    jne .check_widget
+
+    ; Calculator window content
+    mov edi, r12d
+    add edi, 2
+    mov esi, r13d
+    add esi, WM_TITLE_H
+    mov edx, r14d
+    sub edx, 4
+    mov ecx, r15d
+    sub ecx, WM_TITLE_H
+    sub ecx, 2
+    call wmc_draw_content
     jmp .done
 
 .check_widget:

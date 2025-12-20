@@ -19,6 +19,7 @@
 %include "ui/wm/wm_taskbar.asm"
 %include "ui/wm/apps/wm_files.asm"
 %include "ui/wm/apps/wm_editor.asm"
+%include "ui/wm/apps/wm_calc.asm"
 
 ; ============================================================================
 ; WM_INIT - Initialize window manager

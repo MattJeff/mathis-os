@@ -33,15 +33,30 @@ desktop_handle_click:
 .check_files:
     ; Check Files icon (30, 120, 48x48)
     cmp eax, 30
+    jl .check_calc
+    cmp eax, 78
+    jg .check_calc
+    cmp ebx, 120
+    jl .check_calc
+    cmp ebx, 168                    ; 120 + 48
+    jg .check_calc
+    ; Clicked Files - open Files window
+    call desktop_open_files
+    mov byte [desktop_needs_redraw], 1
+    jmp .done
+
+.check_calc:
+    ; Check Calculator icon (30, 210, 48x48)
+    cmp eax, 30
     jl .check_start
     cmp eax, 78
     jg .check_start
-    cmp ebx, 120
+    cmp ebx, 210
     jl .check_start
-    cmp ebx, 168                    ; 120 + 48
+    cmp ebx, 258                    ; 210 + 48
     jg .check_start
-    ; Clicked Files - open Files window
-    call desktop_open_files
+    ; Clicked Calculator - open calculator
+    call wmc_open
     mov byte [desktop_needs_redraw], 1
     jmp .done
 

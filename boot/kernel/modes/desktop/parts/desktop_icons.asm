@@ -95,6 +95,63 @@ desktop_draw_icons:
     mov r8d, 0x00FFFFFF
     call draw_text
 
+    ; ═══════════════════════════════════════════════════════════════════════
+    ; Calculator icon at (30, 210)
+    ; ═══════════════════════════════════════════════════════════════════════
+    ; Icon background (gray)
+    mov edi, 30
+    mov esi, 210
+    mov edx, DESKTOP_ICON_SIZE
+    mov ecx, DESKTOP_ICON_SIZE
+    mov r8d, 0x00404040
+    call fill_rect
+
+    ; Icon border
+    mov edi, 30
+    mov esi, 210
+    mov edx, DESKTOP_ICON_SIZE
+    mov ecx, DESKTOP_ICON_SIZE
+    mov r8d, 0x00606060
+    call draw_rect
+
+    ; Display area (green)
+    mov edi, 36
+    mov esi, 216
+    mov edx, 36
+    mov ecx, 12
+    mov r8d, 0x0030A030
+    call fill_rect
+
+    ; Button grid (orange buttons)
+    mov edi, 36
+    mov esi, 232
+    mov edx, 8
+    mov ecx, 8
+    mov r8d, 0x00FF9500
+    call fill_rect
+    mov edi, 48
+    mov esi, 232
+    mov edx, 8
+    mov ecx, 8
+    mov r8d, 0x00505050
+    call fill_rect
+    mov edi, 60
+    mov esi, 232
+    mov edx, 8
+    mov ecx, 8
+    mov r8d, 0x00505050
+    call fill_rect
+
+    ; Label "Calc"
+    mov rdi, [screen_fb]
+    mov eax, 210 + DESKTOP_ICON_SIZE + 4
+    imul eax, [screen_pitch]
+    add rdi, rax
+    add rdi, 34 * 4
+    lea rsi, [desktop_str_calc]
+    mov r8d, 0x00FFFFFF
+    call draw_text
+
     pop r8
     pop rsi
     pop rdi
@@ -102,3 +159,5 @@ desktop_draw_icons:
     pop rcx
     pop rax
     ret
+
+desktop_str_calc: db "Calc", 0

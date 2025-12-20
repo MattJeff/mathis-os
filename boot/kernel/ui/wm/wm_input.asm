@@ -183,7 +183,7 @@ wm_on_click:
 
 .check_editor_click:
     cmp eax, WM_TYPE_EDITOR
-    jne .try_widget
+    jne .check_calc_click
 
     ; Editor window content click
     mov edi, r12d
@@ -193,6 +193,20 @@ wm_on_click:
     sub esi, [rbx + WM_ENT_Y]
     sub esi, WM_TITLE_H
     call wme_on_click
+    jmp .handled
+
+.check_calc_click:
+    cmp eax, WM_TYPE_CALC
+    jne .try_widget
+
+    ; Calculator window content click
+    mov edi, r12d
+    sub edi, [rbx + WM_ENT_X]
+    sub edi, 2
+    mov esi, r13d
+    sub esi, [rbx + WM_ENT_Y]
+    sub esi, WM_TITLE_H
+    call wmc_on_click
     jmp .handled
 
 .try_widget:
@@ -350,11 +364,20 @@ wm_on_key:
 
 .check_editor_key:
     cmp eax, WM_TYPE_EDITOR
-    jne .try_widget
+    jne .check_calc_key
 
     ; Forward to editor
     mov edi, r12d
     call wme_on_key
+    jmp .done
+
+.check_calc_key:
+    cmp eax, WM_TYPE_CALC
+    jne .try_widget
+
+    ; Forward to calculator
+    mov edi, r12d
+    call wmc_on_key
     jmp .done
 
 .try_widget:
