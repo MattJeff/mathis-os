@@ -565,12 +565,12 @@ fs_readdir:
     je .readdir_error
 
     ; Read directory entries from resolved cluster
-    mov rdi, fat32_sector_buffer
+    mov rdi, fat32_dir_buffer           ; Use 4KB buffer (not 512B sector buffer!)
     call fat32_read_cluster
     jc .readdir_error                   ; CF set = error
 
     ; Parse directory entries
-    mov rbx, fat32_sector_buffer
+    mov rbx, fat32_dir_buffer
     mov ecx, [fat32_sectors_per_cluster]
     imul ecx, 16                    ; 16 entries per sector (512/32)
 
