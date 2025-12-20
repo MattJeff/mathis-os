@@ -221,48 +221,102 @@ wme_on_click:
 ; ============================================================================
 ; WME_SAVE_FILE - Save editor content to file
 ; ============================================================================
+; Output: EAX = 1 on success, 0 on failure
+; ============================================================================
+WME_SAVE_FLAGS  equ 0x0D            ; WRONLY | CREATE | TRUNC
+
 wme_save_file:
     push rbx
     push r12
     push r13
+    push r14
 
     mov rbx, [wme_editor_ptr]
     test rbx, rbx
-    jz .done
+    jz .save_fail
 
     ; Get text from editor
     mov rdi, rbx
     call text_editor_get_text
     test rax, rax
-    jz .done
+    jz .save_fail
     mov r12, rax                    ; text pointer
     mov r13d, edx                   ; length
 
-    ; Open file for writing (create/truncate)
+    ; Open file for writing
     lea rdi, [wme_filepath]
-    mov esi, 0x0C                   ; O_CREATE | O_TRUNC
+    mov esi, WME_SAVE_FLAGS
     call crud_create_file
     cmp eax, -1
-    je .done
-    push rax                        ; Save fd
+    je .save_fail
+    mov r14d, eax                   ; r14 = fd
 
     ; Write content
-    mov edi, eax
+    mov edi, r14d
     mov rsi, r12
     mov edx, r13d
     call fs_write
+    cmp eax, -1
+    je .close_fail
 
     ; Close file
-    pop rdi
+    mov edi, r14d
     call fs_close
 
-    ; Clear modified flag in editor
-    mov rdi, rbx
-    mov dword [rdi + 48], 0         ; TE_MODIFIED offset
+    ; Clear modified flag
+    mov dword [rbx + TE_MODIFIED], 0
 
-.done:
+    ; Show save indicator
+    call wme_show_save_indicator
+
+    mov eax, 1
+    jmp .save_done
+
+.close_fail:
+    mov edi, r14d
+    call fs_close
+
+.save_fail:
+    xor eax, eax
+
+.save_done:
+    pop r14
     pop r13
     pop r12
     pop rbx
     ret
+
+; ============================================================================
+; WME_SHOW_SAVE_INDICATOR - Flash "Saved!" message
+; ============================================================================
+wme_show_save_indicator:
+    push rdi
+    push rsi
+    push rdx
+    push rcx
+
+    ; Draw "Saved!" at top-left of editor window
+    mov edi, [wme_win_idx]
+    call wm_get_window
+    test rax, rax
+    jz .ind_done
+
+    mov edi, [rax + WM_ENT_X]
+    add edi, 200
+    mov esi, [rax + WM_ENT_Y]
+    add esi, 6
+    lea rdx, [wme_saved_str]
+    mov ecx, 0x0027C93F             ; Green color
+    call video_text
+
+    mov byte [wm_dirty], 1
+
+.ind_done:
+    pop rcx
+    pop rdx
+    pop rsi
+    pop rdi
+    ret
+
+wme_saved_str: db "Saved!", 0
 
