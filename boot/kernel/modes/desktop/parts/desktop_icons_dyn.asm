@@ -30,6 +30,28 @@ DICON_ENT_NAME      equ 16
 dicon_entries:      times (DICON_ENT_SIZE * DICON_MAX) db 0
 dicon_count:        dd 0
 dicon_dirty:        db 1
+dicon_last_mode:    db 0xFF     ; Track mode changes
+
+; ============================================================================
+; DICON_CHECK_REFRESH - Auto-refresh when entering desktop or when dirty
+; ============================================================================
+dicon_check_refresh:
+    push rax
+    ; Check mode change
+    mov al, [mode_flag]
+    cmp al, [dicon_last_mode]
+    je .check_dirty
+    mov [dicon_last_mode], al
+    cmp al, 2                   ; MODE_DESKTOP
+    jne .done
+    mov byte [dicon_dirty], 1   ; Force refresh on mode entry
+.check_dirty:
+    cmp byte [dicon_dirty], 0
+    je .done
+    call dicon_refresh
+.done:
+    pop rax
+    ret
 
 ; ============================================================================
 ; DICON_REFRESH - Refresh icons from VFS (desktop location)

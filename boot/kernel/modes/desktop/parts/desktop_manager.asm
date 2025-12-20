@@ -45,8 +45,9 @@ desktop_simple_draw:
     ; 2. Static icons (Terminal, Files)
     call desktop_draw_icons
 
-    ; 3. Dynamic icons from VFS (disabled for now - needs VFS to be ready)
-    ; call dicon_draw_all
+    ; 3. Dynamic icons from VFS
+    call dicon_check_refresh
+    call dicon_draw_all
 
     ; 4. Taskbar
     call desktop_draw_taskbar

@@ -13,6 +13,13 @@
 ; Output: EAX = 1 if handled
 ; ============================================================================
 wmf_on_key:
+    ; Check if dialog is active first
+    push rdi
+    call wmf_dialog_key
+    pop rdi
+    test eax, eax
+    jnz .ret_handled
+
     cmp edi, 0x11               ; W
     je .up
     cmp edi, 0x48               ; Up arrow
@@ -27,6 +34,14 @@ wmf_on_key:
     je .back
     cmp edi, 0x31               ; N
     je .new
+    cmp edi, 0x53               ; Delete key
+    je .delete
+    cmp edi, 0x3C               ; F2
+    je .rename
+    cmp edi, 0x13               ; R (for rename)
+    je .rename
+    cmp edi, 0x20               ; D (for delete)
+    je .delete
 
     xor eax, eax
     ret
@@ -59,7 +74,16 @@ wmf_on_key:
     call wmf_create_folder
     jmp .handled
 
+.delete:
+    call wmf_dialog_open_delete
+    jmp .handled
+
+.rename:
+    call wmf_dialog_open_rename
+    jmp .handled
+
 .handled:
     mov byte [wm_dirty], 1
+.ret_handled:
     mov eax, 1
     ret

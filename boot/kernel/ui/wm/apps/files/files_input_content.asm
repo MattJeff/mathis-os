@@ -48,6 +48,9 @@ wmf_handle_content_click:
 ; ============================================================================
 wmf_open_selected:
     push rbx
+    push rcx
+    push rsi
+    push rdi
     push r12
 
     call vfs_get_entries
@@ -65,7 +68,42 @@ wmf_open_selected:
     mov edi, [vfs_current_loc]
     call wmf_history_push
 
-    lea rdi, [rbx + VFS_E_NAME]
+    ; Build full path: current_path + "/" + folder_name
+    lea rdi, [wmf_nav_path]
+    call vfs_get_path
+    mov rsi, rax
+.copy_cur:
+    lodsb
+    test al, al
+    jz .cur_done
+    stosb
+    jmp .copy_cur
+.cur_done:
+    ; Add slash if needed (not if path ends with / or is empty)
+    lea rax, [wmf_nav_path]
+    cmp rdi, rax
+    je .add_slash
+    cmp byte [rdi - 1], '/'
+    je .no_slash
+.add_slash:
+    mov byte [rdi], '/'
+    inc rdi
+.no_slash:
+    ; Copy folder name (strip trailing /)
+    lea rsi, [rbx + VFS_E_NAME]
+.copy_name:
+    lodsb
+    cmp al, '/'
+    je .name_done
+    test al, al
+    jz .name_done
+    stosb
+    jmp .copy_name
+.name_done:
+    mov byte [rdi], 0
+
+    ; Navigate to full path
+    lea rdi, [wmf_nav_path]
     call vfs_goto
 
     mov dword [wmf_selected], 0
@@ -74,5 +112,11 @@ wmf_open_selected:
 
 .done:
     pop r12
+    pop rdi
+    pop rsi
+    pop rcx
     pop rbx
     ret
+
+; Buffer for navigation path
+wmf_nav_path: times 128 db 0

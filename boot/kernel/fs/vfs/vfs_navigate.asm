@@ -138,17 +138,32 @@ vfs_goto_loc:
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
-; VFS_STR_EQUAL - Compare two strings
+; VFS_STR_EQUAL - Compare two strings (case-insensitive)
 ; Input: RDI = str1, RSI = str2
 ; Output: EAX = 1 if equal, 0 if not
 ; ════════════════════════════════════════════════════════════════════════════
 vfs_str_equal:
     push rdi
     push rsi
+    push rbx
 .cmp:
     mov al, [rdi]
-    mov ah, [rsi]
-    cmp al, ah
+    mov bl, [rsi]
+    ; Convert AL to lowercase
+    cmp al, 'A'
+    jb .al_done
+    cmp al, 'Z'
+    ja .al_done
+    add al, 32
+.al_done:
+    ; Convert BL to lowercase
+    cmp bl, 'A'
+    jb .bl_done
+    cmp bl, 'Z'
+    ja .bl_done
+    add bl, 32
+.bl_done:
+    cmp al, bl
     jne .not_equal
     test al, al
     jz .equal
@@ -161,6 +176,7 @@ vfs_str_equal:
 .not_equal:
     xor eax, eax
 .done:
+    pop rbx
     pop rsi
     pop rdi
     ret

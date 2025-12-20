@@ -75,7 +75,13 @@
       "Bash(git -C /Users/mathishiguinen/Desktop/Higuinen/mathis-os add boot/kernel/fs/vfs/ boot/kernel/modes/files/parts/ boot/kernel/widgets/sidebar/ boot/kernel/go64.asm boot/mathis.img)",
       "Bash(git -C /Users/mathishiguinen/Desktop/Higuinen/mathis-os log --oneline -5)",
       "Bash(git -C /Users/mathishiguinen/Desktop/Higuinen/mathis-os diff --cached --stat)",
-      "Bash(timeout 12 qemu-system-x86_64:*)"
+      "Bash(timeout 12 qemu-system-x86_64:*)",
+      "Bash(git -C /Users/mathishiguinen/Desktop/Higuinen/mathis-os add boot/kernel/ui/wm/apps/files/files_dialog.asm boot/kernel/ui/wm/apps/files/files_dialog_key.asm boot/kernel/ui/wm/apps/files/files_dialog_draw.asm boot/kernel/ui/wm/apps/wm_files.asm boot/mathis.img)",
+      "Bash(mdir:*)",
+      "Bash(git -C /Users/mathishiguinen/Desktop/Higuinen/mathis-os add build.sh boot/mathis.img)",
+      "Bash(git -C /Users/mathishiguinen/Desktop/Higuinen/mathis-os add build.sh boot/kernel/fs/vfs/vfs_state.asm boot/kernel/fs/vfs/vfs_navigate.asm boot/kernel/fs/vfs/vfs_list.asm boot/mathis.img)",
+      "Bash(git -C /Users/mathishiguinen/Desktop/Higuinen/mathis-os add boot/kernel/fs/vfs/vfs_list.asm boot/mathis.img)",
+      "Bash(git -C /Users/mathishiguinen/Desktop/Higuinen/mathis-os add boot/kernel/services/fs_svc.asm boot/mathis.img)"
     ],
     "deny": [],
     "ask": []

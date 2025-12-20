@@ -64,8 +64,15 @@ wmf_draw_content:
 
     call wmf_draw_files
 
+    ; Draw dialog overlay if active
+    cmp dword [wmf_dialog_mode], WMF_DLG_NONE
+    je .no_dialog
+    call wmf_draw_dialog
+.no_dialog:
+
     pop r15
     pop r14
     pop r13
     pop r12
     ret
+

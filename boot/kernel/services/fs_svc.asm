@@ -596,6 +596,10 @@ fs_readdir:
     test al, FAT32_ATTR_VOLUME_ID
     jnz .next_entry
 
+    ; Skip . and .. entries (first char is '.')
+    cmp byte [rbx], '.'
+    je .next_entry
+
     ; Valid entry - copy to output buffer
     push rcx
     push rbx

@@ -34,3 +34,8 @@ wmf_temp_loc:       dd 0
 
 ; Path buffer for new folder
 wmf_new_path:       times 128 db 0
+
+; Dialog state
+wmf_dialog_mode:    dd 0            ; 0=none, 1=new folder, 2=new file
+wmf_dialog_input:   times 32 db 0   ; Input buffer for filename
+wmf_dialog_cursor:  dd 0            ; Cursor position in input

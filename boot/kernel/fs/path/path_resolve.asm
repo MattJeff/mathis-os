@@ -16,6 +16,7 @@ path_resolve:
     push rsi
     push r12
     push r13
+    push r14
 
     ; Parse path into segments
     call path_parse                 ; EAX = segment count
@@ -45,6 +46,7 @@ path_resolve:
     mov eax, r13d                   ; eax = current dir cluster
     call fat32_find_file            ; rax = entry, ecx = file cluster
 
+    mov r14d, ecx                   ; Save cluster BEFORE pop (fix: ecx was being overwritten)
     pop rcx                         ; Restore loop counter
     test rax, rax
     jz .not_found
@@ -55,7 +57,7 @@ path_resolve:
     jz .not_found                   ; Not a directory, can't traverse
 
     ; Move to subdirectory cluster
-    mov r13d, ecx                   ; ecx contains cluster from fat32_find_file
+    mov r13d, r14d                  ; Use saved cluster (not ecx which is segment index)
 
     inc ecx
     jmp .traverse_loop
@@ -68,6 +70,7 @@ path_resolve:
     mov eax, -1
 
 .exit:
+    pop r14
     pop r13
     pop r12
     pop rsi

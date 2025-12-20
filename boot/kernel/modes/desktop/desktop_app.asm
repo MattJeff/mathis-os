@@ -77,7 +77,7 @@ DESKTOP_ICONS_PER_ROW   equ 4       ; Icons per row
 
 ; FS readdir buffer
 desktop_dirent_buf:     times (64 * DESKTOP_MAX_FILE_ICONS) db 0
-desktop_root_path:      db "/", 0
+desktop_root_path:      db "/DESKTOP", 0
 desktop_name_bufs:      times (32 * DESKTOP_MAX_FILE_ICONS) db 0  ; Name string storage
 
 ; Strings
@@ -765,8 +765,20 @@ desktop_on_fs_event:
 ; DESKTOP_CHECK_REFRESH - Check if refresh needed and perform it
 ; ════════════════════════════════════════════════════════════════════════════
 ; Call this from desktop_app_draw to handle pending refreshes
+; Also refreshes when re-entering desktop mode from another mode
 ; ════════════════════════════════════════════════════════════════════════════
 desktop_check_refresh:
+    ; Check if we just entered desktop mode
+    mov al, [mode_flag]
+    cmp al, [desktop_last_mode]
+    je .check_flag
+    mov [desktop_last_mode], al
+    cmp al, 2                       ; MODE_DESKTOP
+    jne .done
+    ; Just entered desktop - force refresh
+    mov byte [desktop_needs_refresh], 1
+
+.check_flag:
     cmp byte [desktop_needs_refresh], 0
     je .done
 
@@ -784,6 +796,8 @@ desktop_check_refresh:
 
 .done:
     ret
+
+desktop_last_mode: db 0xFF          ; Track last mode to detect mode change
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; DESKTOP_REFRESH_ICONS - Refresh file icons from filesystem
