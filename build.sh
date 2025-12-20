@@ -229,6 +229,30 @@ struct.pack_into('<H', entries, 96+20, 0)  # High cluster
 struct.pack_into('<H', entries, 96+26, 5)  # Low cluster (cluster 5)
 struct.pack_into('<I', entries, 96+28, 128)  # Size
 
+# Entry 5: DESKTOP folder
+entries[128:136] = b'DESKTOP '
+entries[136:139] = b'   '
+entries[128+11] = 0x10  # Directory attribute
+struct.pack_into('<H', entries, 128+20, 0)  # High cluster
+struct.pack_into('<H', entries, 128+26, 6)  # Low cluster (cluster 6)
+struct.pack_into('<I', entries, 128+28, 0)  # Size 0 for dir
+
+# Entry 6: DOWNLOADS folder
+entries[160:168] = b'DOWNLOAD'
+entries[168:171] = b'S  '
+entries[160+11] = 0x10  # Directory attribute
+struct.pack_into('<H', entries, 160+20, 0)  # High cluster
+struct.pack_into('<H', entries, 160+26, 7)  # Low cluster (cluster 7)
+struct.pack_into('<I', entries, 160+28, 0)  # Size 0 for dir
+
+# Entry 7: DOCUMENTS folder
+entries[192:200] = b'DOCUMENT'
+entries[200:203] = b'S  '
+entries[192+11] = 0x10  # Directory attribute
+struct.pack_into('<H', entries, 192+20, 0)  # High cluster
+struct.pack_into('<H', entries, 192+26, 8)  # Low cluster (cluster 8)
+struct.pack_into('<I', entries, 192+28, 0)  # Size 0 for dir
+
 with open('mathis.img', 'r+b') as f:
     # Root directory at cluster 2 = LBA 2048 + 32 + 286 = 2366
     # Actually: data_start = reserved + FAT1 + FAT2 = 32 + 143 + 143 = 318
@@ -254,6 +278,15 @@ with open('mathis.img', 'r+b') as f:
 
     # Cluster 5: HELLO.ASM (end of chain)
     struct.pack_into('<I', fat, 20, 0x0FFFFFFF)
+
+    # Cluster 6: DESKTOP dir (end of chain)
+    struct.pack_into('<I', fat, 24, 0x0FFFFFFF)
+
+    # Cluster 7: DOWNLOADS dir (end of chain)
+    struct.pack_into('<I', fat, 28, 0x0FFFFFFF)
+
+    # Cluster 8: DOCUMENTS dir (end of chain)
+    struct.pack_into('<I', fat, 32, 0x0FFFFFFF)
 
     # Write back FAT1
     f.seek((2048 + 32) * 512)
@@ -298,6 +331,45 @@ with open('mathis.img', 'r+b') as f:
     # Cluster 5 = LBA 2048 + 318 + (5-2)*8 = 2048 + 318 + 24 = 2390
     f.seek((2048 + 318 + 24) * 512)
     f.write(content)
+"
+
+# Initialize DESKTOP, DOWNLOADS, DOCUMENTS directories with . and ..
+python3 -c "
+import struct
+
+def create_dir_entries(cluster_num, parent_cluster):
+    '''Create . and .. entries for a directory'''
+    entries = bytearray(4096)  # 8 sectors per cluster
+
+    # . entry (self)
+    entries[0:8] = b'.       '
+    entries[8:11] = b'   '
+    entries[11] = 0x10  # Directory
+    struct.pack_into('<H', entries, 20, 0)  # High cluster
+    struct.pack_into('<H', entries, 26, cluster_num)  # Low cluster
+
+    # .. entry (parent)
+    entries[32:40] = b'..      '
+    entries[40:43] = b'   '
+    entries[32+11] = 0x10  # Directory
+    struct.pack_into('<H', entries, 32+20, 0)  # High cluster
+    struct.pack_into('<H', entries, 32+26, parent_cluster)  # Low cluster
+
+    return entries
+
+with open('mathis.img', 'r+b') as f:
+    # Root is cluster 2
+    # DESKTOP = cluster 6 = LBA 2048 + 318 + (6-2)*8 = 2048 + 318 + 32 = 2398
+    f.seek((2048 + 318 + 32) * 512)
+    f.write(create_dir_entries(6, 2))
+
+    # DOWNLOADS = cluster 7 = LBA 2048 + 318 + (7-2)*8 = 2048 + 318 + 40 = 2406
+    f.seek((2048 + 318 + 40) * 512)
+    f.write(create_dir_entries(7, 2))
+
+    # DOCUMENTS = cluster 8 = LBA 2048 + 318 + (8-2)*8 = 2048 + 318 + 48 = 2414
+    f.seek((2048 + 318 + 48) * 512)
+    f.write(create_dir_entries(8, 2))
 "
 
 echo "  FAT32 filesystem created at LBA 2048"
