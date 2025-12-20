@@ -170,3 +170,88 @@ wm_draw_resize_handle:
     pop rax
     ret
 
+; ============================================================================
+; WM_DRAW_SAVE_ICON - Draw save icon on right side of title bar
+; Input: R12D = win_x, R13D = win_y, R14D = win_w, RBX = window entry
+; ============================================================================
+WM_SAVE_BTN_W       equ 40
+WM_SAVE_BTN_H       equ 16
+WM_SAVE_BTN_MARGIN  equ 8
+
+wm_draw_save_icon:
+    push rax
+    push rcx
+    push rdx
+    push rdi
+    push rsi
+    push r8
+
+    ; Calculate button position (right side of title bar)
+    mov edi, r12d
+    add edi, r14d
+    sub edi, WM_SAVE_BTN_W
+    sub edi, WM_SAVE_BTN_MARGIN
+    mov esi, r13d
+    add esi, 4
+
+    ; Draw button background
+    mov edx, WM_SAVE_BTN_W
+    mov ecx, WM_SAVE_BTN_H
+    mov r8d, 0x00505050             ; Dark gray button
+    call fill_rect
+
+    ; Draw "Save" text
+    add edi, 8
+    add esi, 3
+    lea rdx, [wm_save_str]
+    mov ecx, 0x00FFFFFF             ; White text
+    call video_text
+
+    pop r8
+    pop rsi
+    pop rdi
+    pop rdx
+    pop rcx
+    pop rax
+    ret
+
+wm_save_str: db "Save", 0
+
+; ============================================================================
+; WM_HIT_TEST_SAVE - Test if click hits save button
+; Input: EDI = click_x, ESI = click_y, R12D = win_x, R13D = win_y, R14D = win_w
+; Output: EAX = 1 if hit, 0 otherwise
+; ============================================================================
+wm_hit_test_save:
+    push rbx
+
+    ; Calculate button position
+    mov ebx, r12d
+    add ebx, r14d
+    sub ebx, WM_SAVE_BTN_W
+    sub ebx, WM_SAVE_BTN_MARGIN
+
+    ; Check X range
+    cmp edi, ebx
+    jl .miss
+    add ebx, WM_SAVE_BTN_W
+    cmp edi, ebx
+    jge .miss
+
+    ; Check Y range
+    mov eax, r13d
+    add eax, 4
+    cmp esi, eax
+    jl .miss
+    add eax, WM_SAVE_BTN_H
+    cmp esi, eax
+    jge .miss
+
+    mov eax, 1
+    jmp .done
+.miss:
+    xor eax, eax
+.done:
+    pop rbx
+    ret
+

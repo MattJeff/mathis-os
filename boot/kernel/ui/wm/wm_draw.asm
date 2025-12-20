@@ -142,6 +142,12 @@ wm_draw_window:
     call video_text
 .no_title:
 
+    ; Draw save icon for editor windows (right side of title bar)
+    cmp dword [rbx + WM_ENT_TYPE], WM_TYPE_EDITOR
+    jne .no_save_icon
+    call wm_draw_save_icon
+.no_save_icon:
+
     ; Draw resize handle in bottom-right corner
     call wm_draw_resize_handle
 

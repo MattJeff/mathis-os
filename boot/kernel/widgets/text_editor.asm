@@ -639,12 +639,103 @@ text_editor_on_key:
 .backspace:
     cmp dword [rbx + TE_CURSOR_POS], 0
     je .handled
-    ; TODO: Implement delete
+
+    mov rdi, [rbx + TE_BUFFER]
+    test rdi, rdi
+    jz .handled
+
+    ; Check if deleting a newline (char before cursor)
+    mov edx, [rbx + TE_CURSOR_POS]
+    dec edx
+    cmp byte [rdi + rdx], 10
+    jne .bs_normal
+
+    ; Deleting newline: go to end of previous line
+    dec dword [rbx + TE_CURSOR_LINE]
+    ; Calculate column by finding previous newline
+    mov ecx, edx
+    dec ecx
+.find_prev_nl:
+    cmp ecx, 0
+    jl .at_start
+    cmp byte [rdi + rcx], 10
+    je .found_prev_nl
+    dec ecx
+    jmp .find_prev_nl
+.at_start:
+    mov [rbx + TE_CURSOR_COL], edx  ; Column = chars from start
+    jmp .bs_do_shift
+.found_prev_nl:
+    mov eax, edx
+    sub eax, ecx
+    dec eax                         ; Column = distance from prev newline - 1
+    mov [rbx + TE_CURSOR_COL], eax
+    jmp .bs_do_shift
+
+.bs_normal:
+    cmp dword [rbx + TE_CURSOR_COL], 0
+    je .bs_do_shift
+    dec dword [rbx + TE_CURSOR_COL]
+
+.bs_do_shift:
+    ; Shift text left by 1 from cursor-1
+    mov edx, [rbx + TE_CURSOR_POS]
+    dec edx
+    mov rsi, [rbx + TE_BUFFER]
+    add rsi, rdx
+    inc rsi                         ; Source = cursor
+    mov rdi, rsi
+    dec rdi                         ; Dest = cursor - 1
+    mov ecx, [rbx + TE_TEXT_LEN]
+    sub ecx, edx
+    dec ecx                         ; Bytes to move
+    jle .bs_done
+    cld
+    rep movsb
+
+.bs_done:
+    dec dword [rbx + TE_TEXT_LEN]
+    dec dword [rbx + TE_CURSOR_POS]
     mov dword [rbx + TE_MODIFIED], 1
     jmp .mark_dirty
 
 .insert_newline:
-    ; TODO: Insert newline at cursor
+    ; Insert newline (0x0A) at cursor position
+    mov rdi, [rbx + TE_BUFFER]
+    test rdi, rdi
+    jz .handled
+
+    ; Check buffer space
+    mov ecx, [rbx + TE_TEXT_LEN]
+    cmp ecx, [rbx + TE_BUFFER_SIZE]
+    jge .handled
+
+    ; Get cursor position
+    mov edx, [rbx + TE_CURSOR_POS]
+
+    ; Shift text after cursor right by 1
+    mov rsi, rdi
+    add rsi, rcx                    ; End of text
+    mov rdi, rsi
+    inc rdi                         ; Destination = end + 1
+    mov ecx, [rbx + TE_TEXT_LEN]
+    sub ecx, edx                    ; Bytes to move
+    jle .no_shift_nl
+    std
+    rep movsb
+.no_shift_nl:
+    cld
+
+    ; Insert newline
+    mov rdi, [rbx + TE_BUFFER]
+    add rdi, rdx
+    mov byte [rdi], 10              ; Newline character
+
+    ; Update length and cursor
+    inc dword [rbx + TE_TEXT_LEN]
+    inc dword [rbx + TE_CURSOR_POS]
+    inc dword [rbx + TE_CURSOR_LINE]
+    mov dword [rbx + TE_CURSOR_COL], 0
     mov dword [rbx + TE_MODIFIED], 1
     jmp .mark_dirty
 

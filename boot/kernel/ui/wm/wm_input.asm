@@ -66,13 +66,37 @@ wm_on_click:
     mov esi, r13d
     push r12
     push r13
+    push r14
     mov r12d, [rbx + WM_ENT_X]
     mov r13d, [rbx + WM_ENT_Y]
+    mov r14d, [rbx + WM_ENT_W]
     call wm_hit_test_controls
+    cmp eax, -1
+    jne .got_ctrl_btn
+
+    ; Check save button for editor windows
+    cmp dword [rbx + WM_ENT_TYPE], WM_TYPE_EDITOR
+    jne .no_save_btn
+    call wm_hit_test_save
+    test eax, eax
+    jnz .do_save_btn
+.no_save_btn:
+    pop r14
     pop r13
     pop r12
-    cmp eax, -1
-    je .start_drag                  ; Not on any button
+    jmp .start_drag                 ; Not on any button
+
+.do_save_btn:
+    pop r14
+    pop r13
+    pop r12
+    call wme_save_file
+    jmp .handled
+
+.got_ctrl_btn:
+    pop r14
+    pop r13
+    pop r12
 
     ; Button clicked (but not during grace period)
     cmp byte [wm_close_grace], 0
