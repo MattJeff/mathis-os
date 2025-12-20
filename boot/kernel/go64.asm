@@ -885,6 +885,7 @@ gui_term_btn:       dq 0            ; Terminal button pointer
 %include "sys/timer.asm"
 %include "sys/setup.asm"
 %include "sys/ring3.asm"
+%include "drivers/rtc.asm"
 
 ; EXCEPTION HANDLERS (BSOD) - NOT YET INTEGRATED (causes triple fault)
 ; TODO: Initialize after video is ready, or use simple halt handler

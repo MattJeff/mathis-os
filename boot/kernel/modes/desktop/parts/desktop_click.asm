@@ -48,15 +48,30 @@ desktop_handle_click:
 .check_calc:
     ; Check Calculator icon (30, 210, 48x48)
     cmp eax, 30
+    jl .check_clock
+    cmp eax, 78
+    jg .check_clock
+    cmp ebx, 210
+    jl .check_clock
+    cmp ebx, 258                    ; 210 + 48
+    jg .check_clock
+    ; Clicked Calculator - open calculator
+    call wmc_open
+    mov byte [desktop_needs_redraw], 1
+    jmp .done
+
+.check_clock:
+    ; Check Clock icon (30, 300, 48x48)
+    cmp eax, 30
     jl .check_start
     cmp eax, 78
     jg .check_start
-    cmp ebx, 210
+    cmp ebx, 300
     jl .check_start
-    cmp ebx, 258                    ; 210 + 48
+    cmp ebx, 348                    ; 300 + 48
     jg .check_start
-    ; Clicked Calculator - open calculator
-    call wmc_open
+    ; Clicked Clock - open clock
+    call wmclk_open
     mov byte [desktop_needs_redraw], 1
     jmp .done
 

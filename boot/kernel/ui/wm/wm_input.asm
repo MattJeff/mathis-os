@@ -197,7 +197,7 @@ wm_on_click:
 
 .check_calc_click:
     cmp eax, WM_TYPE_CALC
-    jne .try_widget
+    jne .check_clock_click
 
     ; Calculator window content click
     mov edi, r12d
@@ -207,6 +207,20 @@ wm_on_click:
     sub esi, [rbx + WM_ENT_Y]
     sub esi, WM_TITLE_H
     call wmc_on_click
+    jmp .handled
+
+.check_clock_click:
+    cmp eax, WM_TYPE_CLOCK
+    jne .try_widget
+
+    ; Clock window content click
+    mov edi, r12d
+    sub edi, [rbx + WM_ENT_X]
+    sub edi, 2
+    mov esi, r13d
+    sub esi, [rbx + WM_ENT_Y]
+    sub esi, WM_TITLE_H
+    call wmclk_on_click
     jmp .handled
 
 .try_widget:
@@ -373,11 +387,20 @@ wm_on_key:
 
 .check_calc_key:
     cmp eax, WM_TYPE_CALC
-    jne .try_widget
+    jne .check_clock_key
 
     ; Forward to calculator
     mov edi, r12d
     call wmc_on_key
+    jmp .done
+
+.check_clock_key:
+    cmp eax, WM_TYPE_CLOCK
+    jne .try_widget
+
+    ; Forward to clock
+    mov edi, r12d
+    call wmclk_on_key
     jmp .done
 
 .try_widget:

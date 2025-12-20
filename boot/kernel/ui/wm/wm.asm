@@ -20,6 +20,7 @@
 %include "ui/wm/apps/wm_files.asm"
 %include "ui/wm/apps/wm_editor.asm"
 %include "ui/wm/apps/wm_calc.asm"
+%include "ui/wm/apps/wm_clock.asm"
 
 ; ============================================================================
 ; WM_INIT - Initialize window manager

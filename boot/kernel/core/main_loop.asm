@@ -45,6 +45,8 @@ main_loop:
     call desktop_simple_init
     ; Always handle input (desktop_simple_input has its own click detection)
     call desktop_simple_input
+    ; Update clock (auto-refresh if second changed)
+    call wmclk_update
     ; Clear mouse_clicked flag if set
     mov byte [mouse_clicked], 0
     ; Decrement close grace (must run every frame, not just on redraw)

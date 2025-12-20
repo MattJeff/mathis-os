@@ -19,6 +19,7 @@ WM_TYPE_TERMINAL    equ 2
 WM_TYPE_SETTINGS    equ 3
 WM_TYPE_EDITOR      equ 4
 WM_TYPE_CALC        equ 5
+WM_TYPE_CLOCK       equ 6
 
 ; Default window sizes (Finder-style, large)
 WM_DEF_W            equ 700

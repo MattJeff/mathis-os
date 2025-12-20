@@ -152,6 +152,57 @@ desktop_draw_icons:
     mov r8d, 0x00FFFFFF
     call draw_text
 
+    ; ═══════════════════════════════════════════════════════════════════════
+    ; Clock icon at (30, 300)
+    ; ═══════════════════════════════════════════════════════════════════════
+    ; Icon background (dark blue)
+    mov edi, 30
+    mov esi, 300
+    mov edx, DESKTOP_ICON_SIZE
+    mov ecx, DESKTOP_ICON_SIZE
+    mov r8d, 0x00203050
+    call fill_rect
+
+    ; Icon border
+    mov edi, 30
+    mov esi, 300
+    mov edx, DESKTOP_ICON_SIZE
+    mov ecx, DESKTOP_ICON_SIZE
+    mov r8d, 0x00405080
+    call draw_rect
+
+    ; Clock face (circle approximation)
+    mov edi, 38
+    mov esi, 308
+    mov edx, 32
+    mov ecx, 32
+    mov r8d, 0x00FFFFFF
+    call fill_rect
+
+    ; Clock hands (simple lines)
+    mov edi, 52
+    mov esi, 324
+    mov edx, 2
+    mov ecx, 12
+    mov r8d, 0x00000000
+    call fill_rect
+    mov edi, 54
+    mov esi, 318
+    mov edx, 8
+    mov ecx, 2
+    mov r8d, 0x00000000
+    call fill_rect
+
+    ; Label "Clock"
+    mov rdi, [screen_fb]
+    mov eax, 300 + DESKTOP_ICON_SIZE + 4
+    imul eax, [screen_pitch]
+    add rdi, rax
+    add rdi, 30 * 4
+    lea rsi, [desktop_icon_clock]
+    mov r8d, 0x00FFFFFF
+    call draw_text
+
     pop r8
     pop rsi
     pop rdi
@@ -161,3 +212,4 @@ desktop_draw_icons:
     ret
 
 desktop_str_calc: db "Calc", 0
+desktop_icon_clock: db "Clock", 0

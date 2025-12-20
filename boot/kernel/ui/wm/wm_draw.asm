@@ -184,7 +184,7 @@ wm_draw_window:
 
 .check_calc:
     cmp eax, WM_TYPE_CALC
-    jne .check_widget
+    jne .check_clock
 
     ; Calculator window content
     mov edi, r12d
@@ -197,6 +197,23 @@ wm_draw_window:
     sub ecx, WM_TITLE_H
     sub ecx, 2
     call wmc_draw_content
+    jmp .done
+
+.check_clock:
+    cmp eax, WM_TYPE_CLOCK
+    jne .check_widget
+
+    ; Clock window content
+    mov edi, r12d
+    add edi, 2
+    mov esi, r13d
+    add esi, WM_TITLE_H
+    mov edx, r14d
+    sub edx, 4
+    mov ecx, r15d
+    sub ecx, WM_TITLE_H
+    sub ecx, 2
+    call wmclk_draw_content
     jmp .done
 
 .check_widget:
