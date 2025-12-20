@@ -32,6 +32,9 @@ files_app_draw:
     mov rdi, [fa_header]
     call widget_draw
 
+    ; Draw sidebar
+    call sidebar_draw
+
     mov rdi, [fa_pathbar]
     call widget_draw
 
@@ -58,6 +61,7 @@ files_app_draw:
     ; Draw list view first (dimmed background)
     mov rdi, [fa_header]
     call widget_draw
+    call sidebar_draw
     mov rdi, [fa_pathbar]
     call widget_draw
     mov rdi, [fa_file_list]

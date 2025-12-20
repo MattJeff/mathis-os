@@ -923,3 +923,7 @@ gui_term_btn:       dq 0            ; Terminal button pointer
 %include "widgets/dialogs/dialog_new.asm"
 %include "widgets/dialogs/dialog_delete.asm"
 %include "widgets/dialogs/dialog_rename.asm"
+%include "widgets/sidebar/sidebar.asm"
+
+; FS EVENTS (SOLID Phase 7)
+%include "fs/events/fs_events.asm"

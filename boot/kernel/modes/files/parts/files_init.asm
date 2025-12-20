@@ -33,20 +33,34 @@ files_app_init:
     call header_create
     mov [fa_header], rax
 
-    ; Create pathbar (below header)
-    xor esi, esi                    ; x = 0
+    ; Create pathbar (below header, after sidebar)
+    mov esi, SIDEBAR_WIDTH          ; x = sidebar width
     mov edx, 24                     ; y = 24
-    mov ecx, r12d                   ; w = screen_width
+    mov ecx, r12d
+    sub ecx, SIDEBAR_WIDTH          ; w = screen_width - sidebar
     mov r8d, 20                     ; h = 20
     mov r9, fa_current_path         ; path
     call pathbar_create
     mov [fa_pathbar], rax
 
-    ; Create file list (main area)
-    mov esi, 20                     ; x = 20 (margin)
+    ; Initialize sidebar (left side)
+    xor edi, edi                    ; x = 0
+    mov esi, 24                     ; y = 24 (below header)
+    mov edx, r13d
+    sub edx, 70                     ; h = screen_height - header - statusbar
+    call sidebar_init
+
+    ; Set sidebar callback
+    mov rdi, fa_on_location_change
+    call sidebar_set_callback
+
+    ; Create file list (main area, right of sidebar)
+    mov esi, SIDEBAR_WIDTH
+    add esi, 10                     ; x = sidebar + margin
     mov edx, 54                     ; y = 24 + 20 + 10
     mov ecx, r12d
-    sub ecx, 40                     ; w = screen_width - 40 (margins)
+    sub ecx, SIDEBAR_WIDTH
+    sub ecx, 20                     ; w = screen_width - sidebar - margins
     mov r8d, r13d
     sub r8d, 110                    ; h = screen_height - header - pathbar - statusbar
     call file_list_create
