@@ -54,7 +54,7 @@ dicon_check_refresh:
     ret
 
 ; ============================================================================
-; DICON_REFRESH - Refresh icons from VFS (desktop location)
+; DICON_REFRESH - Refresh icons from /DESKTOP directly via fs_readdir
 ; ============================================================================
 dicon_refresh:
     push rax
@@ -66,22 +66,29 @@ dicon_refresh:
     push r12
     push r13
 
-    ; Navigate VFS to desktop
-    mov edi, VFS_LOC_DESKTOP
-    call vfs_goto_loc
+    ; Read /DESKTOP directly (bypass VFS which may use mock data)
+    lea rdi, [dicon_desktop_path]
+    lea rsi, [dicon_dirent_buf]
+    mov edx, DICON_MAX
+    call fs_readdir
 
-    ; Get entries
-    call vfs_get_entries        ; RAX = entries, EDX = count
+    ; Check result
+    cmp eax, -1
+    je .no_entries
+    test eax, eax
+    jz .no_entries
 
-    mov rbx, rax                ; Source entries
-    mov r12d, edx               ; Count
-    cmp r12d, DICON_MAX
-    jle .count_ok
-    mov r12d, DICON_MAX
-.count_ok:
+    mov r12d, eax               ; Count
+    lea rbx, [dicon_dirent_buf] ; Source entries (FS_DIRENT format)
     mov [dicon_count], r12d
+    jmp .have_entries
 
-    ; Convert VFS entries to desktop icons
+.no_entries:
+    mov dword [dicon_count], 0
+    jmp .done
+
+.have_entries:
+    ; Convert FS_DIRENT entries to desktop icons
     xor r13d, r13d              ; Index
 
 .loop:
@@ -93,9 +100,9 @@ dicon_refresh:
     imul eax, DICON_ENT_SIZE
     lea rdi, [dicon_entries + rax]
 
-    ; Source VFS entry
+    ; Source FS_DIRENT entry (64 bytes each)
     mov eax, r13d
-    imul eax, VFS_ENTRY_SIZE
+    imul eax, 64                ; FS_DIRENT_SIZE
     lea rsi, [rbx + rax]
 
     ; Calculate grid position
@@ -114,9 +121,9 @@ dicon_refresh:
     add eax, DICON_START_Y
     mov [rdi + DICON_ENT_Y], eax
 
-    ; Copy type (folder or file)
-    mov eax, [rsi + VFS_E_FLAGS]
-    test eax, VFS_FLAG_DIR
+    ; Copy type (folder or file) - FS_DIRENT_FLAGS at offset 36
+    mov eax, [rsi + 36]         ; FS_DIRENT_FLAGS
+    test eax, 1                 ; FS_ENTRY_DIR
     jz .is_file
     mov dword [rdi + DICON_ENT_TYPE], 1     ; Folder
     jmp .set_name
@@ -124,8 +131,8 @@ dicon_refresh:
     mov dword [rdi + DICON_ENT_TYPE], 0     ; File
 
 .set_name:
-    ; Name pointer (point to VFS entry name)
-    lea rax, [rsi + VFS_E_NAME]
+    ; Name pointer (point to FS_DIRENT name at offset 0)
+    lea rax, [rsi]              ; FS_DIRENT_NAME at offset 0
     mov [rdi + DICON_ENT_NAME], rax
     mov dword [rdi + DICON_ENT_FLAGS], 1    ; Visible
 
@@ -144,6 +151,10 @@ dicon_refresh:
     pop rbx
     pop rax
     ret
+
+; Data for dicon_refresh
+dicon_desktop_path: db "/DESKTOP", 0
+dicon_dirent_buf:   times (64 * DICON_MAX) db 0
 
 ; ============================================================================
 ; DICON_DRAW_ALL - Draw all dynamic icons
