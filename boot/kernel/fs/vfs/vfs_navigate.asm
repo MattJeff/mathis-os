@@ -31,20 +31,20 @@ vfs_goto:
     mov byte [rdi], 0
 .copy_done:
 
-    ; Detect location type
-    lea rdi, [vfs_path_desktop]
+    ; Detect location type (compare with folder names from mock data)
+    lea rdi, [.str_desktop]
     mov rsi, rbx
     call vfs_str_equal
     test eax, eax
     jnz .is_desktop
 
-    lea rdi, [vfs_path_downloads]
+    lea rdi, [.str_downloads]
     mov rsi, rbx
     call vfs_str_equal
     test eax, eax
     jnz .is_downloads
 
-    lea rdi, [vfs_path_documents]
+    lea rdi, [.str_documents]
     mov rsi, rbx
     call vfs_str_equal
     test eax, eax
@@ -53,6 +53,10 @@ vfs_goto:
     ; Default: root
     mov dword [vfs_current_loc], VFS_LOC_ROOT
     jmp .reload
+
+.str_desktop:   db "desktop/", 0
+.str_downloads: db "downloads/", 0
+.str_documents: db "documents/", 0
 
 .is_desktop:
     mov dword [vfs_current_loc], VFS_LOC_DESKTOP

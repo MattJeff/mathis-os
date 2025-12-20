@@ -178,6 +178,7 @@ wmf_on_click:
 ; ============================================================================
 wmf_open_selected:
     push rbx
+    push r12
 
     call vfs_get_entries
     mov rbx, rax
@@ -191,15 +192,15 @@ wmf_open_selected:
     test eax, VFS_FLAG_DIR
     jz .done
 
-    ; Navigate into directory
+    ; Navigate into directory (don't notify - window manages its own state)
     lea rdi, [rbx + VFS_E_NAME]
     call vfs_goto
-    call vfs_notify_change
 
     mov dword [wmf_selected], 0
     mov dword [wmf_scroll_pos], 0
 
 .done:
+    pop r12
     pop rbx
     ret
 
@@ -248,8 +249,8 @@ wmf_on_key:
 .back:
     mov edi, VFS_LOC_ROOT
     call vfs_goto_loc
-    call vfs_notify_change
     mov dword [wmf_selected], 0
+    mov dword [wmf_scroll_pos], 0
 
 .handled:
     mov eax, 1

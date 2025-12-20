@@ -138,15 +138,17 @@ wm_draw_window:
     cmp eax, WM_TYPE_FILES
     jne .check_widget
 
-    ; DEBUG: Simple green rect instead of wmf_draw_content
+    ; Files window content
     mov edi, r12d
-    add edi, 2
+    add edi, 2                  ; Border padding
     mov esi, r13d
-    add esi, WM_TITLE_H
-    mov edx, 50
-    mov ecx, 30
-    mov r8d, 0x00008000         ; Green
-    call fill_rect
+    add esi, WM_TITLE_H         ; Below title bar
+    mov edx, r14d
+    sub edx, 4                  ; Content width (minus borders)
+    mov ecx, r15d
+    sub ecx, WM_TITLE_H
+    sub ecx, 2                  ; Content height (minus title and border)
+    call wmf_draw_content
     jmp .done
 
 .check_widget:

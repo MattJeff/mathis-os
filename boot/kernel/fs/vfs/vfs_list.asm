@@ -107,7 +107,8 @@ vfs_reload:
 
 .done:
     mov byte [vfs_dirty], 0
-    call vfs_notify_change
+    ; Note: Don't call vfs_notify_change here - caller is responsible
+    ; This prevents recursive loops when listeners call vfs_goto
 
     pop r15
     pop r14

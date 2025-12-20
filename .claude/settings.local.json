@@ -71,7 +71,11 @@
       "Bash(x86_64-elf-objcopy:*)",
       "Bash(1 x86_64-elf-objdump -h /tmp/kernel.elf)",
       "Bash(git -C /Users/mathishiguinen/Desktop/Higuinen/mathis-os add -A)",
-      "Bash(timeout 6 qemu-system-x86_64:*)"
+      "Bash(timeout 6 qemu-system-x86_64:*)",
+      "Bash(git -C /Users/mathishiguinen/Desktop/Higuinen/mathis-os add boot/kernel/fs/vfs/ boot/kernel/modes/files/parts/ boot/kernel/widgets/sidebar/ boot/kernel/go64.asm boot/mathis.img)",
+      "Bash(git -C /Users/mathishiguinen/Desktop/Higuinen/mathis-os log --oneline -5)",
+      "Bash(git -C /Users/mathishiguinen/Desktop/Higuinen/mathis-os diff --cached --stat)",
+      "Bash(timeout 12 qemu-system-x86_64:*)"
     ],
     "deny": [],
     "ask": []

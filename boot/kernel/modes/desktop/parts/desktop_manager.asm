@@ -60,6 +60,21 @@ desktop_simple_draw:
 ; DESKTOP_SIMPLE_INPUT - Handle input (windows first, then desktop)
 ; ════════════════════════════════════════════════════════════════════════════
 desktop_simple_input:
+    ; Handle keyboard first (if window is focused)
+    ; Use im_key_ready which is set by input_manager_update
+    cmp byte [im_key_ready], 0
+    je .no_key
+
+    ; Forward key to window manager
+    movzx edi, byte [im_key_scancode]
+    call wm_on_key
+    test eax, eax
+    jz .no_key
+
+    ; Key was handled, clear ready flag
+    mov byte [im_key_ready], 0
+
+.no_key:
     ; Handle mouse drag if active
     cmp dword [wm_drag_idx], -1
     je .no_drag
