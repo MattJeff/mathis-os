@@ -228,8 +228,8 @@ fs_close_all:
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
-; FS_OPEN - Open a file
-; Input:  RDI = path (null-terminated)
+; FS_OPEN - Open a file (supports subdirectories)
+; Input:  RDI = path (null-terminated, e.g. "/PROJECTS/README.TXT")
 ;         ESI = flags (FS_O_*)
 ; Output: EAX = file descriptor (0-15) or -1 on error
 ; ════════════════════════════════════════════════════════════════════════════
@@ -239,13 +239,43 @@ fs_open:
     push rdx
     push r12
     push r13
+    push r14
+    push r15
 
-    mov r12, rdi                    ; Save path
-    mov r13d, esi                   ; Save flags
+    mov r12, rdi                    ; r12 = path
+    mov r13d, esi                   ; r13 = flags
 
     ; Check if mounted
     cmp byte [fat32_mounted], 1
     jne .open_error
+
+    ; Split path into parent + filename
+    mov rdi, r12
+    call path_split                 ; rax = parent, rdx = filename
+    mov r14, rdx                    ; r14 = filename
+
+    ; Resolve parent directory
+    mov rdi, rax
+    call path_resolve
+    cmp eax, -1
+    je .open_error
+    mov r15d, eax                   ; r15 = parent cluster
+
+    ; Convert filename to 8.3
+    mov rsi, r14
+    lea rdi, [fs_temp_name]
+    call fat32_convert_name
+
+    ; Find file in parent directory
+    mov eax, r15d
+    lea rsi, [fs_temp_name]
+    call fat32_find_file
+    test rax, rax
+    jz .open_not_found
+
+    ; rax = dir entry, ecx = file cluster
+    mov edx, [rax + FAT32_DIR_SIZE] ; edx = file size
+    mov r14d, ecx                   ; r14 = cluster
 
     ; Find free file descriptor
     lea rbx, [fs_fd_table]
@@ -254,67 +284,41 @@ fs_open:
 .find_fd:
     cmp ecx, FS_MAX_OPEN_FILES
     jge .open_error
-
     cmp dword [rbx + FS_FD_IN_USE], 0
     je .found_fd
-
     add rbx, FS_FD_SIZE
     inc ecx
     jmp .find_fd
 
 .found_fd:
-    ; ecx = file descriptor number
-    ; rbx = pointer to fd entry
-    push rcx
-
-    ; Convert path to FAT32 8.3 format
-    mov rsi, r12
-    lea rdi, [fs_temp_name]
-    call fat32_convert_name
-
-    ; Find file in root directory
-    ; fat32_find_file: EAX = dir cluster, RSI = filename
-    ; Returns: RAX = entry ptr, ECX = file cluster
-    mov eax, [fat32_root_cluster]
-    lea rsi, [fs_temp_name]
-    call fat32_find_file
-    test rax, rax
-    jz .open_not_found
-
-    ; rax = dir entry pointer, ecx = cluster
-    ; Get file size from entry
-    mov edx, [rax + FAT32_DIR_SIZE]
-
-    pop rax                         ; Restore fd number (was in ecx, now in rax)
-    push rax
-
     ; Fill in file descriptor
-    mov dword [rbx + FS_FD_FLAGS], r13d
+    mov [rbx + FS_FD_FLAGS], r13d
     mov qword [rbx + FS_FD_POS], 0
     mov [rbx + FS_FD_FILE_SIZE], edx
-    mov [rbx + FS_FD_CLUSTER], ecx      ; Start cluster from find_file
-    mov [rbx + FS_FD_CUR_CLUSTER], ecx
+    mov [rbx + FS_FD_CLUSTER], r14d
+    mov [rbx + FS_FD_CUR_CLUSTER], r14d
     mov dword [rbx + FS_FD_CUR_OFFSET], 0
     mov dword [rbx + FS_FD_IN_USE], 1
 
-    pop rax                         ; Return fd number
+    mov eax, ecx                    ; Return fd number
     jmp .open_done
 
 .open_not_found:
     ; Check if CREATE flag is set
     test r13d, FS_O_CREATE
-    jz .open_error_pop
+    jz .open_error
+    ; Delegate to crud_create_file
+    mov rdi, r12
+    mov esi, r13d
+    call crud_create_file
+    jmp .open_done
 
-    ; TODO: Create file
-    ; For now, fail
-    jmp .open_error_pop
-
-.open_error_pop:
-    pop rcx
 .open_error:
     mov eax, -1
 
 .open_done:
+    pop r15
+    pop r14
     pop r13
     pop r12
     pop rdx
