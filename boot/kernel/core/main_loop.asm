@@ -47,6 +47,11 @@ main_loop:
     call desktop_simple_input
     ; Clear mouse_clicked flag if set
     mov byte [mouse_clicked], 0
+    ; Decrement close grace (must run every frame, not just on redraw)
+    cmp byte [wm_close_grace], 0
+    je .no_grace_dec
+    dec byte [wm_close_grace]
+.no_grace_dec:
     ; Only redraw if dirty (check both desktop and wm flags)
     cmp byte [desktop_needs_redraw], 1
     je .do_desktop_draw
