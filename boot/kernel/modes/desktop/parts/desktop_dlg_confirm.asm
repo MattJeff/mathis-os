@@ -50,6 +50,7 @@ desktop_dlg_confirm:
 
 .refresh:
     mov byte [dicon_dirty], 1
+    mov byte [desktop_needs_redraw], 1
     mov byte [desktop_dlg_mode], DESKTOP_DLG_NONE
     ret
 
