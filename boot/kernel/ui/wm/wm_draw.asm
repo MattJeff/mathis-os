@@ -13,9 +13,13 @@ WM_COL_CLOSE        equ 0x00C04040
 WM_COL_FOCUSED      equ 0x00007ACC
 
 ; ============================================================================
-; WM_DRAW_ALL - Draw all visible windows
+; WM_DRAW_ALL - Draw all visible windows (only if dirty)
 ; ============================================================================
 wm_draw_all:
+    ; Skip if not dirty
+    cmp byte [wm_dirty], 0
+    je .skip
+
     push rbx
     push r12
     push r13
@@ -48,9 +52,13 @@ wm_draw_all:
     jmp .loop
 
 .done:
+    ; Clear dirty flag
+    mov byte [wm_dirty], 0
+
     pop r13
     pop r12
     pop rbx
+.skip:
     ret
 
 ; ============================================================================

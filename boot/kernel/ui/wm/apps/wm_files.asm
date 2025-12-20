@@ -481,6 +481,7 @@ wmf_on_click:
     call vfs_goto_loc
     mov dword [wmf_selected], 0
     mov dword [wmf_scroll_pos], 0
+    mov byte [wm_dirty], 1      ; Force redraw
     jmp .handled
 
 .check_toolbar:
@@ -519,10 +520,11 @@ wmf_on_click:
     jmp .click_new
 
 .click_back:
-    ; Go back to root
+    ; Go back to root (TODO: implement history)
     mov edi, VFS_LOC_ROOT
     call vfs_goto_loc
     mov dword [wmf_selected], 0
+    mov byte [wm_dirty], 1
     jmp .handled
 
 .click_fwd:
@@ -559,10 +561,12 @@ wmf_on_click:
 
 .single_click:
     mov [wmf_selected], eax
+    mov byte [wm_dirty], 1
     jmp .handled
 
 .handled:
     mov eax, 1
+    mov byte [wm_dirty], 1
     jmp .done
 
 .not_handled:
@@ -596,6 +600,7 @@ wmf_open_selected:
 
     mov dword [wmf_selected], 0
     mov dword [wmf_scroll_pos], 0
+    mov byte [wm_dirty], 1
 
 .done:
     pop rbx
@@ -639,6 +644,9 @@ wmf_show_new_dialog:
 
     ; Refresh
     call vfs_reload
+    mov byte [wm_dirty], 1
+
+    ; TODO: Also notify desktop if we're in /desktop
     ret
 
 .default_name: db "NEWFOLDER", 0
@@ -692,6 +700,7 @@ wmf_on_key:
     call vfs_goto_loc
     mov dword [wmf_selected], 0
     mov dword [wmf_scroll_pos], 0
+    mov byte [wm_dirty], 1
     jmp .handled
 
 .new:
@@ -700,6 +709,7 @@ wmf_on_key:
 
 .handled:
     mov eax, 1
+    mov byte [wm_dirty], 1
     ret
 
 ; ============================================================================
