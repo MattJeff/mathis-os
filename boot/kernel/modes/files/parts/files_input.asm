@@ -180,58 +180,6 @@ files_app_on_key:
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
-; FA_ON_LOCATION_CHANGE - Sidebar location changed callback
-; Input: EDI = location index, RSI = path pointer
+; FA_ON_LOCATION_CHANGE - DEPRECATED (replaced by VFS notify system)
+; Now uses fa_on_vfs_change in files_init.asm
 ; ════════════════════════════════════════════════════════════════════════════
-fa_on_location_change:
-    push rax
-    push rbx
-    push rcx
-    push rdx
-    push rsi
-    push rdi
-
-    ; Save new path
-    mov rbx, rsi
-
-    ; Update current path display
-    lea rdi, [fa_current_path]
-    mov rsi, rbx
-    mov ecx, 30
-.copy_path:
-    lodsb
-    stosb
-    test al, al
-    jz .path_copied
-    dec ecx
-    jnz .copy_path
-    mov byte [rdi], 0
-.path_copied:
-
-    ; Update pathbar widget
-    mov rdi, [fa_pathbar]
-    test rdi, rdi
-    jz .skip_pathbar
-    lea rsi, [fa_current_path]
-    call pathbar_set_path
-.skip_pathbar:
-
-    ; Reload directory with new path
-    ; TODO: pass path to fa_load_directory
-    call fa_load_directory
-
-    ; Update file list widget
-    mov rdi, [fa_file_list]
-    mov rsi, fa_entries
-    mov edx, [fa_entry_count]
-    call file_list_set_entries
-
-    mov byte [files_dirty], 1
-
-    pop rdi
-    pop rsi
-    pop rdx
-    pop rcx
-    pop rbx
-    pop rax
-    ret

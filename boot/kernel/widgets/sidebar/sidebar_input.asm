@@ -1,80 +1,13 @@
 ; ════════════════════════════════════════════════════════════════════════════
-; SIDEBAR_INPUT.ASM - Sidebar mouse/keyboard input handling
+; SIDEBAR_INPUT.ASM - Sidebar input handling
 ; ════════════════════════════════════════════════════════════════════════════
 
 [BITS 64]
 
 ; ════════════════════════════════════════════════════════════════════════════
-; SIDEBAR_ON_MOUSE_MOVE - Update hover state
-; Input: EDI = mouse_x, ESI = mouse_y
-; ════════════════════════════════════════════════════════════════════════════
-sidebar_on_mouse_move:
-    push rax
-    push rbx
-    push rcx
-    push rdx
-
-    ; Check visibility
-    cmp byte [sidebar_visible], 0
-    je .no_hover
-
-    ; Check if mouse is in sidebar bounds
-    mov eax, [sidebar_x]
-    cmp edi, eax
-    jl .no_hover
-
-    add eax, [sidebar_w]
-    cmp edi, eax
-    jge .no_hover
-
-    mov eax, [sidebar_y]
-    cmp esi, eax
-    jl .no_hover
-
-    add eax, [sidebar_h]
-    cmp esi, eax
-    jge .no_hover
-
-    ; Calculate which item is hovered
-    mov eax, esi
-    sub eax, [sidebar_y]
-    sub eax, SIDEBAR_PADDING
-
-    ; Divide by item height
-    xor edx, edx
-    mov ecx, SIDEBAR_ITEM_H
-    div ecx                         ; EAX = item index
-
-    ; Validate index
-    cmp eax, [sidebar_loc_count]
-    jge .no_hover
-
-    ; Check if it's a header (not hoverable)
-    mov ebx, eax
-    mov r12d, eax
-    call sidebar_get_loc_addr
-    movzx ecx, byte [rax + SB_LOC_TYPE_OFF]
-    cmp ecx, SB_LOC_HEADER
-    je .no_hover
-
-    ; Set hover
-    mov [sidebar_hover], ebx
-    jmp .done
-
-.no_hover:
-    mov dword [sidebar_hover], -1
-
-.done:
-    pop rdx
-    pop rcx
-    pop rbx
-    pop rax
-    ret
-
-; ════════════════════════════════════════════════════════════════════════════
 ; SIDEBAR_ON_CLICK - Handle mouse click
-; Input: EDI = mouse_x, ESI = mouse_y
-; Output: EAX = 1 if handled, 0 otherwise
+; Input: EDI = x, ESI = y
+; Output: EAX = 1 if handled
 ; ════════════════════════════════════════════════════════════════════════════
 sidebar_on_click:
     push rbx
@@ -82,15 +15,13 @@ sidebar_on_click:
     push rdx
     push r12
 
-    ; Check visibility
     cmp byte [sidebar_visible], 0
     je .not_handled
 
-    ; Check if mouse is in sidebar bounds
+    ; Check bounds
     mov eax, [sidebar_x]
     cmp edi, eax
     jl .not_handled
-
     add eax, [sidebar_w]
     cmp edi, eax
     jge .not_handled
@@ -98,43 +29,43 @@ sidebar_on_click:
     mov eax, [sidebar_y]
     cmp esi, eax
     jl .not_handled
-
     add eax, [sidebar_h]
     cmp esi, eax
     jge .not_handled
 
-    ; Calculate which item was clicked
+    ; Calculate item index
     mov eax, esi
     sub eax, [sidebar_y]
-    sub eax, SIDEBAR_PADDING
-
+    sub eax, 8                      ; Top padding
     xor edx, edx
     mov ecx, SIDEBAR_ITEM_H
-    div ecx                         ; EAX = item index
+    div ecx
 
-    ; Validate index
-    cmp eax, [sidebar_loc_count]
+    ; Validate
+    cmp eax, [sidebar_item_count]
     jge .not_handled
 
-    ; Check if it's a header (not clickable)
-    mov ebx, eax
     mov r12d, eax
-    call sidebar_get_loc_addr
-    movzx ecx, byte [rax + SB_LOC_TYPE_OFF]
-    cmp ecx, SB_LOC_HEADER
+
+    ; Get item
+    call sidebar_get_item
+
+    ; Check if header
+    movzx ecx, byte [rax + SB_ITEM_TYPE]
+    cmp ecx, SB_ITEM_HEADER
     je .not_handled
 
     ; Set selection
-    mov [sidebar_selected], ebx
+    mov [sidebar_selected], r12d
+
+    ; Navigate via VFS
+    movzx edi, byte [rax + SB_ITEM_LOC]
+    call vfs_goto_loc
 
     ; Call callback if set
     mov rcx, [sidebar_on_select]
     test rcx, rcx
     jz .handled
-
-    ; Prepare callback: rdi = index, rsi = path ptr
-    mov edi, ebx
-    lea rsi, [rax + SB_LOC_PATH_OFF]
     call rcx
 
 .handled:
@@ -152,91 +83,79 @@ sidebar_on_click:
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
-; SIDEBAR_ON_KEY - Handle keyboard input
+; SIDEBAR_ON_KEY - Handle keyboard
 ; Input: EDI = scancode
-; Output: EAX = 1 if handled, 0 otherwise
+; Output: EAX = 1 if handled
 ; ════════════════════════════════════════════════════════════════════════════
 sidebar_on_key:
     push rbx
     push rcx
     push r12
 
-    ; Check visibility
     cmp byte [sidebar_visible], 0
     je .not_handled
 
-    ; W or Up arrow (0x11 / 0x48) - move selection up
+    ; W/Up = move up
     cmp edi, 0x11
-    je .move_up
+    je .up
     cmp edi, 0x48
-    je .move_up
+    je .up
 
-    ; S or Down arrow (0x1F / 0x50) - move selection down
+    ; S/Down = move down
     cmp edi, 0x1F
-    je .move_down
+    je .down
     cmp edi, 0x50
-    je .move_down
+    je .down
 
-    ; Enter (0x1C) - activate selection
+    ; Enter = activate
     cmp edi, 0x1C
     je .activate
 
     jmp .not_handled
 
-.move_up:
+.up:
     mov eax, [sidebar_selected]
     test eax, eax
     jz .not_handled
     dec eax
-
     ; Skip headers
-.skip_header_up:
+.skip_up:
     test eax, eax
-    jz .set_selection
+    jz .set
     mov r12d, eax
-    call sidebar_get_loc_addr
-    movzx ecx, byte [rax + SB_LOC_TYPE_OFF]
-    cmp ecx, SB_LOC_HEADER
-    jne .set_selection
+    call sidebar_get_item
+    movzx ecx, byte [rax + SB_ITEM_TYPE]
+    cmp ecx, SB_ITEM_HEADER
+    jne .set
     dec eax
-    jmp .skip_header_up
+    jmp .skip_up
 
-.move_down:
+.down:
     mov eax, [sidebar_selected]
     inc eax
-    cmp eax, [sidebar_loc_count]
+    cmp eax, [sidebar_item_count]
     jge .not_handled
-
     ; Skip headers
-.skip_header_down:
-    cmp eax, [sidebar_loc_count]
+.skip_down:
+    cmp eax, [sidebar_item_count]
     jge .not_handled
     mov r12d, eax
-    call sidebar_get_loc_addr
-    movzx ecx, byte [rax + SB_LOC_TYPE_OFF]
-    cmp ecx, SB_LOC_HEADER
-    jne .set_selection
+    call sidebar_get_item
+    movzx ecx, byte [rax + SB_ITEM_TYPE]
+    cmp ecx, SB_ITEM_HEADER
+    jne .set
     inc eax
-    jmp .skip_header_down
+    jmp .skip_down
 
-.set_selection:
+.set:
     mov [sidebar_selected], eax
     jmp .handled
 
 .activate:
-    ; Call callback with current selection
-    mov rcx, [sidebar_on_select]
-    test rcx, rcx
-    jz .handled
-
-    mov eax, [sidebar_selected]
-    mov r12d, eax
-    call sidebar_get_loc_addr
-
-    mov edi, [sidebar_selected]
-    lea rsi, [rax + SB_LOC_PATH_OFF]
-    call rcx
-    jmp .handled
+    mov r12d, [sidebar_selected]
+    call sidebar_get_item
+    movzx edi, byte [rax + SB_ITEM_LOC]
+    call vfs_goto_loc
 
 .handled:
     mov eax, 1

@@ -52,14 +52,9 @@ fa_on_new_confirm:
     jz .new_done                    ; Creation failed
 
 .new_refresh:
-    ; Refresh file list
-    call fa_load_directory
-
-    ; Update file list widget
-    mov rdi, [fa_file_list]
-    mov rsi, fa_entries
-    mov edx, [fa_entry_count]
-    call file_list_set_entries
+    ; Refresh VFS and notify listeners
+    call vfs_reload
+    call vfs_notify_change
 
 .new_done:
     call fa_close_dialog
@@ -88,14 +83,9 @@ fa_on_delete_confirm:
     test eax, eax
     jz .delete_done                 ; Deletion failed
 
-    ; Refresh file list
-    call fa_load_directory
-
-    ; Update file list widget
-    mov rdi, [fa_file_list]
-    mov rsi, fa_entries
-    mov edx, [fa_entry_count]
-    call file_list_set_entries
+    ; Refresh VFS and notify listeners
+    call vfs_reload
+    call vfs_notify_change
 
 .delete_done:
     call fa_close_dialog
@@ -135,14 +125,9 @@ fa_on_rename_confirm:
     test eax, eax
     jz .rename_done                 ; Rename failed
 
-    ; Refresh file list
-    call fa_load_directory
-
-    ; Update file list widget
-    mov rdi, [fa_file_list]
-    mov rsi, fa_entries
-    mov edx, [fa_entry_count]
-    call file_list_set_entries
+    ; Refresh VFS and notify listeners
+    call vfs_reload
+    call vfs_notify_change
 
 .rename_done:
     call fa_close_dialog

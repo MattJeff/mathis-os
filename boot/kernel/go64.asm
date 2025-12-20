@@ -927,3 +927,6 @@ gui_term_btn:       dq 0            ; Terminal button pointer
 
 ; FS EVENTS (SOLID Phase 7)
 %include "fs/events/fs_events.asm"
+
+; VFS - Shared Virtual Filesystem (SOLID Phase 8)
+%include "fs/vfs/vfs.asm"

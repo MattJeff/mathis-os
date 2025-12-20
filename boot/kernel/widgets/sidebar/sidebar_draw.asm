@@ -15,12 +15,10 @@ sidebar_draw:
     push rsi
     push rdi
     push r8
-    push r9
     push r12
     push r13
     push r14
 
-    ; Check visibility
     cmp byte [sidebar_visible], 0
     je .done
 
@@ -42,34 +40,32 @@ sidebar_draw:
     mov r8d, SIDEBAR_BORDER
     call fill_rect
 
-    ; Draw locations
-    mov r12d, 0                     ; Index
-    mov r13d, [sidebar_loc_count]
+    ; Draw items
+    xor r12d, r12d                  ; Index
+    mov r13d, [sidebar_item_count]
     mov r14d, [sidebar_y]
-    add r14d, SIDEBAR_PADDING       ; Y position
+    add r14d, 8                     ; Top padding
 
 .draw_loop:
     cmp r12d, r13d
     jge .done
 
-    ; Get location entry address
-    call sidebar_get_loc_addr       ; r12 = index, returns rax = addr
+    ; Get item address
+    call sidebar_get_item           ; r12 = index, returns rax
 
-    ; Get location type
-    movzx ebx, byte [rax + SB_LOC_TYPE_OFF]
-
-    ; Check if header
-    cmp ebx, SB_LOC_HEADER
+    ; Get item type
+    movzx ebx, byte [rax + SB_ITEM_TYPE]
+    cmp ebx, SB_ITEM_HEADER
     je .draw_header
 
-    ; Draw normal item
-    call .draw_item
-    jmp .next_item
+    ; Draw location item
+    call sidebar_draw_location
+    jmp .next
 
 .draw_header:
-    call .draw_section_header
+    call sidebar_draw_header
 
-.next_item:
+.next:
     add r14d, SIDEBAR_ITEM_H
     inc r12d
     jmp .draw_loop
@@ -78,7 +74,6 @@ sidebar_draw:
     pop r14
     pop r13
     pop r12
-    pop r9
     pop r8
     pop rdi
     pop rsi
@@ -88,172 +83,142 @@ sidebar_draw:
     pop rax
     ret
 
-; ────────────────────────────────────────────────────────────────────────────
-; .draw_section_header - Draw a section header (gray text, no bg)
-; Input: RAX = location addr, R14 = y position
-; ────────────────────────────────────────────────────────────────────────────
-.draw_section_header:
-    push rax
-    push rdi
-    push rsi
+; ════════════════════════════════════════════════════════════════════════════
+; SIDEBAR_DRAW_HEADER - Draw section header
+; Input: RAX = item addr, R14 = y
+; ════════════════════════════════════════════════════════════════════════════
+sidebar_draw_header:
     push rdx
+    push rcx
 
-    ; Draw text
     mov edi, [sidebar_x]
-    add edi, SIDEBAR_PADDING
+    add edi, 4
     mov esi, r14d
-    add esi, 4                      ; Center text vertically
-    lea rdx, [rax + SB_LOC_NAME_OFF]
-    mov r8d, SIDEBAR_TEXT_DIM
-    call draw_text
+    add esi, 5
+    mov rdx, [rax + SB_ITEM_NAME]
+    mov ecx, SIDEBAR_TEXT_DIM
+    call video_text
 
+    pop rcx
     pop rdx
-    pop rsi
-    pop rdi
-    pop rax
     ret
 
-; ────────────────────────────────────────────────────────────────────────────
-; .draw_item - Draw a normal location item
-; Input: RAX = location addr, R12 = index, R14 = y position
-; ────────────────────────────────────────────────────────────────────────────
-.draw_item:
-    push rax
+; ════════════════════════════════════════════════════════════════════════════
+; SIDEBAR_DRAW_LOCATION - Draw location item
+; Input: RAX = item addr, R12 = index, R14 = y
+; ════════════════════════════════════════════════════════════════════════════
+sidebar_draw_location:
     push rbx
-    push rdi
-    push rsi
     push rdx
     push rcx
     push r8
 
-    mov rbx, rax                    ; Save location addr
+    mov rbx, rax
 
     ; Check if selected
     cmp r12d, [sidebar_selected]
     jne .check_hover
 
-    ; Draw selection background
+    ; Draw selection bg
     mov edi, [sidebar_x]
-    add edi, 4
+    add edi, 2
     mov esi, r14d
     mov edx, [sidebar_w]
-    sub edx, 8
+    sub edx, 4
     mov ecx, SIDEBAR_ITEM_H
     mov r8d, SIDEBAR_SELECTED
     call fill_rect
-    jmp .draw_text
+    jmp .draw_content
 
 .check_hover:
-    ; Check if hovered
     cmp r12d, [sidebar_hover]
-    jne .draw_text
+    jne .draw_content
 
-    ; Draw hover background
+    ; Draw hover bg
     mov edi, [sidebar_x]
-    add edi, 4
+    add edi, 2
     mov esi, r14d
     mov edx, [sidebar_w]
-    sub edx, 8
+    sub edx, 4
     mov ecx, SIDEBAR_ITEM_H
     mov r8d, SIDEBAR_HOVER
     call fill_rect
 
-.draw_text:
-    ; Draw location name
+.draw_content:
+    ; Draw icon
     mov edi, [sidebar_x]
-    add edi, SIDEBAR_PADDING
-    add edi, 20                     ; Space for icon
+    add edi, 4
     mov esi, r14d
-    add esi, 5                      ; Center text
-    lea rdx, [rbx + SB_LOC_NAME_OFF]
-    mov r8d, SIDEBAR_TEXT
-    call draw_text
-
-    ; Draw icon (simple folder/disk shape)
-    mov edi, [sidebar_x]
-    add edi, SIDEBAR_PADDING
-    mov esi, r14d
-    add esi, 4
-    movzx eax, byte [rbx + SB_LOC_TYPE_OFF]
+    add esi, 6
+    movzx eax, byte [rbx + SB_ITEM_LOC]
     call sidebar_draw_icon
+
+    ; Draw text
+    mov edi, [sidebar_x]
+    add edi, 20                     ; After icon
+    mov esi, r14d
+    add esi, 5
+    mov rdx, [rbx + SB_ITEM_NAME]
+    mov ecx, SIDEBAR_TEXT
+    call video_text
 
     pop r8
     pop rcx
     pop rdx
-    pop rsi
-    pop rdi
     pop rbx
-    pop rax
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; SIDEBAR_DRAW_ICON - Draw location icon
-; Input: EDI = x, ESI = y, EAX = location type
+; Input: EDI = x, ESI = y, EAX = VFS location type
 ; ════════════════════════════════════════════════════════════════════════════
 sidebar_draw_icon:
-    push rdi
-    push rsi
     push rdx
     push rcx
     push r8
 
-    ; Choose color based on type
-    cmp eax, SB_LOC_DESKTOP
-    je .icon_desktop
-    cmp eax, SB_LOC_ROOT
-    je .icon_root
-    cmp eax, SB_LOC_DOWNLOADS
-    je .icon_downloads
-    cmp eax, SB_LOC_DOCUMENTS
-    je .icon_documents
-    jmp .icon_folder
+    ; Choose color
+    cmp eax, VFS_LOC_ROOT
+    je .root
+    cmp eax, VFS_LOC_DESKTOP
+    je .desktop
+    cmp eax, VFS_LOC_DOWNLOADS
+    je .downloads
+    cmp eax, VFS_LOC_DOCUMENTS
+    je .documents
+    mov r8d, 0x00FFCC00             ; Default yellow
+    jmp .draw
 
-.icon_desktop:
-    mov r8d, 0x0055AAFF             ; Light blue
-    jmp .draw_icon_rect
-
-.icon_root:
+.root:
     mov r8d, 0x00888888             ; Gray
-    jmp .draw_icon_rect
-
-.icon_downloads:
+    jmp .draw
+.desktop:
+    mov r8d, 0x0055AAFF             ; Blue
+    jmp .draw
+.downloads:
     mov r8d, 0x0000CC66             ; Green
-    jmp .draw_icon_rect
-
-.icon_documents:
+    jmp .draw
+.documents:
     mov r8d, 0x00FFAA00             ; Orange
-    jmp .draw_icon_rect
 
-.icon_folder:
-    mov r8d, 0x00FFCC00             ; Yellow
-
-.draw_icon_rect:
-    ; Draw simple folder icon (12x12)
-    mov edx, 12
-    mov ecx, 12
+.draw:
+    mov edx, SIDEBAR_ICON_SIZE
+    mov ecx, SIDEBAR_ICON_SIZE
     call fill_rect
 
     pop r8
     pop rcx
     pop rdx
-    pop rsi
-    pop rdi
     ret
 
 ; ════════════════════════════════════════════════════════════════════════════
-; SIDEBAR_GET_LOC_ADDR - Get address of location entry
-; Input:  R12 = index
-; Output: RAX = address of location entry
+; SIDEBAR_GET_ITEM - Get item address by index
+; Input: R12 = index
+; Output: RAX = item address
 ; ════════════════════════════════════════════════════════════════════════════
-sidebar_get_loc_addr:
-    push rbx
-
-    ; Each location is 32 bytes
-    ; Locations are: sb_loc_0_type, sb_loc_1_type, etc.
-    lea rax, [sb_loc_0_type]
+sidebar_get_item:
+    lea rax, [sb_item_0]
     mov ebx, r12d
-    imul ebx, SB_LOC_SIZE
+    imul ebx, SB_ITEM_SIZE
     add rax, rbx
-
-    pop rbx
     ret
