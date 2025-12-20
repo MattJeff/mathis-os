@@ -56,6 +56,7 @@ main_loop:
 .do_desktop_draw:
     call desktop_simple_draw
     mov byte [desktop_needs_redraw], 0
+    call cursor_invalidate          ; Background changed, invalidate cursor cache
     jmp .draw_cursor
 
 .mode_shell:
