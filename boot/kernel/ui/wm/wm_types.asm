@@ -18,9 +18,9 @@ WM_TYPE_FILES       equ 1
 WM_TYPE_TERMINAL    equ 2
 WM_TYPE_SETTINGS    equ 3
 
-; Default window sizes
-WM_DEF_W            equ 400
-WM_DEF_H            equ 300
+; Default window sizes (Finder-style, large)
+WM_DEF_W            equ 700
+WM_DEF_H            equ 500
 WM_TITLE_H          equ 24
-WM_MIN_W            equ 200
-WM_MIN_H            equ 150
+WM_MIN_W            equ 400
+WM_MIN_H            equ 300

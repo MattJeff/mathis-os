@@ -5,11 +5,11 @@
 [BITS 64]
 
 ; Layout constants
-WMF_SIDEBAR_W       equ 90          ; Sidebar width
-WMF_TOOLBAR_H       equ 28          ; Toolbar height
-WMF_ROW_H           equ 20          ; File row height
-WMF_PADDING         equ 4
-WMF_MAX_VISIBLE     equ 10
+WMF_SIDEBAR_W       equ 120         ; Sidebar width (larger)
+WMF_TOOLBAR_H       equ 32          ; Toolbar height
+WMF_ROW_H           equ 22          ; File row height
+WMF_PADDING         equ 6
+WMF_MAX_VISIBLE     equ 20          ; More visible rows
 
 ; Colors
 WMF_COL_SIDEBAR     equ 0x002D2D3A  ; Dark sidebar
@@ -114,7 +114,7 @@ wmf_draw_sidebar:
 
     mov r12d, [wmf_win_x]
     mov ebx, [wmf_win_y]
-    add ebx, 8                  ; Start Y
+    add ebx, 12                 ; Start Y
 
     ; Get current location
     mov eax, [vfs_current_loc]
@@ -122,34 +122,34 @@ wmf_draw_sidebar:
 
     ; ROOT
     mov edi, r12d
-    add edi, 8
+    add edi, 10
     mov esi, ebx
     mov edx, VFS_LOC_ROOT
     lea rcx, [.str_root]
     call wmf_draw_sidebar_item
-    add ebx, 24
+    add ebx, 28
 
     ; DESKTOP
     mov edi, r12d
-    add edi, 8
+    add edi, 10
     mov esi, ebx
     mov edx, VFS_LOC_DESKTOP
     lea rcx, [.str_desktop]
     call wmf_draw_sidebar_item
-    add ebx, 24
+    add ebx, 28
 
     ; DOCUMENTS
     mov edi, r12d
-    add edi, 8
+    add edi, 10
     mov esi, ebx
     mov edx, VFS_LOC_DOCUMENTS
     lea rcx, [.str_documents]
     call wmf_draw_sidebar_item
-    add ebx, 24
+    add ebx, 28
 
     ; DOWNLOADS
     mov edi, r12d
-    add edi, 8
+    add edi, 10
     mov esi, ebx
     mov edx, VFS_LOC_DOWNLOADS
     lea rcx, [.str_downloads]
@@ -186,29 +186,29 @@ wmf_draw_sidebar_item:
 
     ; Draw selection background
     mov edi, r12d
-    sub edi, 4
+    sub edi, 6
     mov esi, r13d
-    sub esi, 2
-    mov edx, WMF_SIDEBAR_W - 8
-    mov ecx, 20
+    sub esi, 3
+    mov edx, WMF_SIDEBAR_W - 12
+    mov ecx, 24
     mov r8d, WMF_COL_SEL
     call fill_rect
 
 .not_selected:
-    ; Draw folder icon
+    ; Draw folder icon (larger)
     mov edi, r12d
     mov esi, r13d
     add esi, 2
-    mov edx, 12
-    mov ecx, 10
+    mov edx, 14
+    mov ecx, 12
     mov r8d, WMF_COL_FOLDER
     call fill_rect
 
     ; Draw name
     mov edi, r12d
-    add edi, 18
+    add edi, 20
     mov esi, r13d
-    add esi, 3
+    add esi, 4
     mov rdx, rbx
     mov ecx, WMF_COL_TEXT
     call video_text
@@ -233,47 +233,47 @@ wmf_draw_toolbar:
 
     ; --- Back button < ---
     mov edi, r12d
-    add edi, 8
+    add edi, 10
     mov esi, r13d
-    add esi, 4
-    mov edx, 24
-    mov ecx, 20
+    add esi, 5
+    mov edx, 28
+    mov ecx, 22
     mov r8d, WMF_COL_BTN
     call fill_rect
 
     ; Draw <
     mov edi, r12d
-    add edi, 16
+    add edi, 19
     mov esi, r13d
-    add esi, 7
+    add esi, 9
     lea rdx, [.str_back]
     mov ecx, WMF_COL_TEXT
     call video_text
 
     ; --- Forward button > ---
     mov edi, r12d
-    add edi, 36
+    add edi, 42
     mov esi, r13d
-    add esi, 4
-    mov edx, 24
-    mov ecx, 20
+    add esi, 5
+    mov edx, 28
+    mov ecx, 22
     mov r8d, WMF_COL_BTN
     call fill_rect
 
     ; Draw >
     mov edi, r12d
-    add edi, 44
+    add edi, 51
     mov esi, r13d
-    add esi, 7
+    add esi, 9
     lea rdx, [.str_fwd]
     mov ecx, WMF_COL_TEXT
     call video_text
 
     ; --- Path ---
     mov edi, r12d
-    add edi, 70
+    add edi, 80
     mov esi, r13d
-    add esi, 9
+    add esi, 10
     call vfs_get_path           ; RAX = path string
     mov rdx, rax
     mov ecx, WMF_COL_TEXT
@@ -282,23 +282,23 @@ wmf_draw_toolbar:
     ; --- NEW button ---
     mov eax, [wmf_win_w]
     sub eax, WMF_SIDEBAR_W
-    sub eax, 50                 ; Right margin
+    sub eax, 60                 ; Right margin
 
     mov edi, r12d
     add edi, eax
     mov esi, r13d
-    add esi, 4
-    mov edx, 40
-    mov ecx, 20
+    add esi, 5
+    mov edx, 50
+    mov ecx, 22
     mov r8d, WMF_COL_BTN
     call fill_rect
 
     ; Draw NEW text
     mov edi, r12d
     add edi, eax
-    add edi, 8
+    add edi, 12
     mov esi, r13d
-    add esi, 7
+    add esi, 9
     lea rdx, [.str_new]
     mov ecx, WMF_COL_TEXT
     call video_text
@@ -310,7 +310,7 @@ wmf_draw_toolbar:
 
 .str_back:  db "<", 0
 .str_fwd:   db ">", 0
-.str_new:   db "NEW", 0
+.str_new:   db "+ NEW", 0
 
 ; ============================================================================
 ; WMF_DRAW_FILES - Draw file list in content area
@@ -447,12 +447,12 @@ wmf_on_click:
     ; Sidebar click - determine which item
     mov eax, r13d
     sub eax, [wmf_win_y]
-    sub eax, 8                  ; First item y offset
+    sub eax, 12                 ; First item y offset
     cmp eax, 0
     jl .not_handled
 
     xor edx, edx
-    mov ecx, 24                 ; Item height
+    mov ecx, 28                 ; Item height
     div ecx                     ; eax = item index
 
     cmp eax, 0
@@ -495,25 +495,25 @@ wmf_on_click:
     sub eax, [wmf_win_x]
     sub eax, WMF_SIDEBAR_W
 
-    ; Back button (8-32)
-    cmp eax, 8
+    ; Back button (10-38)
+    cmp eax, 10
     jl .not_handled
-    cmp eax, 32
+    cmp eax, 38
     jle .click_back
 
-    ; Forward button (36-60)
-    cmp eax, 36
+    ; Forward button (42-70)
+    cmp eax, 42
     jl .not_handled
-    cmp eax, 60
+    cmp eax, 70
     jle .click_fwd
 
     ; NEW button (right side)
     mov ecx, [wmf_win_w]
     sub ecx, WMF_SIDEBAR_W
-    sub ecx, 50
+    sub ecx, 60
     cmp eax, ecx
     jl .not_handled
-    add ecx, 40
+    add ecx, 50
     cmp eax, ecx
     jg .not_handled
     jmp .click_new
