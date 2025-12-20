@@ -72,7 +72,9 @@ wm_on_click:
     cmp r12d, eax
     jge .start_drag                 ; Past close button
 
-    ; Close button clicked!
+    ; Close button clicked! (but not during grace period)
+    cmp byte [wm_close_grace], 0
+    jne .start_drag             ; Still in grace period, treat as drag
     mov edi, r14d
     call wm_close_window
     jmp .handled
@@ -224,9 +226,13 @@ wm_on_key:
     imul eax, WM_ENT_SIZE
     lea rbx, [wm_windows + rax]
 
-    ; ESC closes window
+    ; ESC closes window (but not during grace period)
     cmp r12d, 0x01
-    je .close_focused
+    jne .not_esc
+    cmp byte [wm_close_grace], 0
+    jne .not_handled              ; Still in grace period, ignore ESC
+    jmp .close_focused
+.not_esc:
 
     ; Check window type
     mov eax, [rbx + WM_ENT_TYPE]

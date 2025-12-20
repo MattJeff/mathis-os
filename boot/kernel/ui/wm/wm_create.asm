@@ -64,6 +64,7 @@ wm_create_window:
     mov [wm_focused_idx], r12d
     inc dword [wm_window_count]
     mov byte [wm_dirty], 1
+    mov byte [wm_close_grace], 10   ; 10 frames grace before ESC can close
 
     mov eax, r12d
     jmp .done

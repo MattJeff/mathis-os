@@ -16,9 +16,19 @@ WM_COL_FOCUSED      equ 0x00007ACC
 ; WM_DRAW_ALL - Draw all visible windows (only if dirty)
 ; ============================================================================
 wm_draw_all:
-    ; Skip if not dirty
+    ; Decrement close grace counter
+    cmp byte [wm_close_grace], 0
+    je .no_grace
+    dec byte [wm_close_grace]
+.no_grace:
+
+    ; Always redraw if windows exist (desktop redraws background each frame)
+    ; Skip only if no windows AND not dirty
+    cmp dword [wm_window_count], 0
+    jne .do_draw
     cmp byte [wm_dirty], 0
     je .skip
+.do_draw:
 
     push rbx
     push r12

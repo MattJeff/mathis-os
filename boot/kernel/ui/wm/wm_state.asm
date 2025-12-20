@@ -35,3 +35,4 @@ wm_drag_off_x:      dd 0
 wm_drag_off_y:      dd 0
 wm_initialized:     db 0
 wm_dirty:           db 1
+wm_close_grace:     db 0            ; Grace frames before ESC can close (prevents accidental close)
