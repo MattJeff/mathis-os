@@ -56,26 +56,33 @@ wmclk_draw_content:
 ; ============================================================================
 wmclk_draw_mode_btn:
     push rbx
+    push r12
+    push r13
 
-    ; Button at bottom center
-    mov edi, [clock_content_x]
-    add edi, [clock_content_w]
-    shr edi, 1
-    sub edi, 30                     ; Center 60px button
-    add edi, [clock_content_x]
-    shr edi, 1
+    ; Button at bottom center: x = content_x + (content_w - 60) / 2
+    mov eax, [clock_content_w]
+    sub eax, 60                     ; Button width
+    shr eax, 1                      ; Center offset
+    add eax, [clock_content_x]
+    mov r12d, eax                   ; Save button x
 
-    mov esi, [clock_content_y]
-    add esi, [clock_content_h]
-    sub esi, 30
+    mov eax, [clock_content_y]
+    add eax, [clock_content_h]
+    sub eax, 30
+    mov r13d, eax                   ; Save button y
 
+    ; Draw button background
+    mov edi, r12d
+    mov esi, r13d
     mov edx, 60
     mov ecx, 20
     mov r8d, 0x00404040
     call fill_rect
 
     ; Button text
+    mov edi, r12d
     add edi, 8
+    mov esi, r13d
     add esi, 4
     cmp byte [clock_mode], CLOCK_MODE_ANALOG
     je .analog_text
@@ -87,6 +94,8 @@ wmclk_draw_mode_btn:
     mov ecx, CLOCK_FG
     call video_text
 
+    pop r13
+    pop r12
     pop rbx
     ret
 

@@ -64,7 +64,14 @@ wmc_open:
     je .done
 
     mov [calc_win_idx], eax
+
+    ; Register close callback
+    mov edi, eax
+    lea rsi, [wmc_close]
+    call wm_set_close_cb
+
     mov byte [wm_dirty], 1
+    mov eax, [calc_win_idx]
     jmp .done
 
 .already_open:
