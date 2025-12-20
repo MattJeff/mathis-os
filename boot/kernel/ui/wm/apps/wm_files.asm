@@ -24,6 +24,9 @@
 ; Include modules in dependency order
 %include "ui/wm/apps/files/files_const.asm"
 %include "ui/wm/apps/files/files_state.asm"
+%include "ui/wm/apps/files/files_dialog.asm"
+%include "ui/wm/apps/files/files_dialog_key.asm"
+%include "ui/wm/apps/files/files_dialog_draw.asm"
 %include "ui/wm/apps/files/files_history.asm"
 %include "ui/wm/apps/files/files_actions.asm"
 %include "ui/wm/apps/files/files_draw_sidebar.asm"
