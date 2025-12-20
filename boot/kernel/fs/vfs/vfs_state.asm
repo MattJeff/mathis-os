@@ -30,8 +30,8 @@ vfs_dirent_buf:     times (64 * VFS_MAX_ENTRIES) db 0
 ; ════════════════════════════════════════════════════════════════════════════
 vfs_path_root:      db "/", 0
 vfs_path_desktop:   db "/desktop", 0
-vfs_path_downloads: db "/downloads", 0
-vfs_path_documents: db "/documents", 0
+vfs_path_downloads: db "/download", 0
+vfs_path_documents: db "/docs", 0
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; LOCATION NAMES (for display)

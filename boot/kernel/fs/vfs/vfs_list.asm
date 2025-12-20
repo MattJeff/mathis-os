@@ -159,8 +159,8 @@ vfs_reload:
 
 ; Mock strings
 .str_desktop:   db "desktop/", 0
-.str_downloads: db "downloads/", 0
-.str_documents: db "documents/", 0
+.str_downloads: db "download/", 0
+.str_documents: db "docs/", 0
 .str_readme:    db "README.TXT", 0
 .str_terminal:  db "Terminal", 0
 .str_files:     db "Files", 0

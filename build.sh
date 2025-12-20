@@ -237,17 +237,17 @@ struct.pack_into('<H', entries, 128+20, 0)  # High cluster
 struct.pack_into('<H', entries, 128+26, 6)  # Low cluster (cluster 6)
 struct.pack_into('<I', entries, 128+28, 0)  # Size 0 for dir
 
-# Entry 6: DOWNLOADS folder
+# Entry 6: DOWNLOAD folder (8 chars max for FAT32)
 entries[160:168] = b'DOWNLOAD'
-entries[168:171] = b'S  '
+entries[168:171] = b'   '
 entries[160+11] = 0x10  # Directory attribute
 struct.pack_into('<H', entries, 160+20, 0)  # High cluster
 struct.pack_into('<H', entries, 160+26, 7)  # Low cluster (cluster 7)
 struct.pack_into('<I', entries, 160+28, 0)  # Size 0 for dir
 
-# Entry 7: DOCUMENTS folder
-entries[192:200] = b'DOCUMENT'
-entries[200:203] = b'S  '
+# Entry 7: DOCS folder (8 chars max for FAT32)
+entries[192:200] = b'DOCS    '
+entries[200:203] = b'   '
 entries[192+11] = 0x10  # Directory attribute
 struct.pack_into('<H', entries, 192+20, 0)  # High cluster
 struct.pack_into('<H', entries, 192+26, 8)  # Low cluster (cluster 8)

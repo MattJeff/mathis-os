@@ -76,10 +76,10 @@ vfs_goto:
 
 .str_desktop1:   db "desktop/", 0
 .str_desktop2:   db "/desktop", 0
-.str_downloads1: db "downloads/", 0
-.str_downloads2: db "/downloads", 0
-.str_documents1: db "documents/", 0
-.str_documents2: db "/documents", 0
+.str_downloads1: db "download/", 0
+.str_downloads2: db "/download", 0
+.str_documents1: db "docs/", 0
+.str_documents2: db "/docs", 0
 
 .is_desktop:
     mov dword [vfs_current_loc], VFS_LOC_DESKTOP
