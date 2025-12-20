@@ -47,8 +47,15 @@ main_loop:
     call desktop_simple_input
     ; Clear mouse_clicked flag if set
     mov byte [mouse_clicked], 0
-    ; Draw simple desktop
+    ; Only redraw if dirty (check both desktop and wm flags)
+    cmp byte [desktop_needs_redraw], 1
+    je .do_desktop_draw
+    cmp byte [wm_dirty], 1
+    je .do_desktop_draw
+    jmp .draw_cursor
+.do_desktop_draw:
     call desktop_simple_draw
+    mov byte [desktop_needs_redraw], 0
     jmp .draw_cursor
 
 .mode_shell:

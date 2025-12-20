@@ -123,6 +123,7 @@ desktop_handle_dicon_click:
     mov rdi, [rbx + DICON_ENT_NAME]
     call desktop_open_folder
 .handled:
+    mov byte [desktop_needs_redraw], 1
     mov eax, 1
     jmp .done
 .not_handled:

@@ -25,10 +25,12 @@ desktop_dlg_on_key:
 
 .select_up:
     mov byte [desktop_dlg_select], 0
+    mov byte [desktop_needs_redraw], 1
     ret
 
 .select_down:
     mov byte [desktop_dlg_select], 1
+    mov byte [desktop_needs_redraw], 1
     ret
 
 .backspace:
@@ -39,6 +41,7 @@ desktop_dlg_on_key:
     mov [desktop_dlg_cursor], eax
     lea rdi, [desktop_dlg_input]
     mov byte [rdi + rax], 0
+    mov byte [desktop_needs_redraw], 1
     ret
 
 .add_char:
@@ -54,6 +57,7 @@ desktop_dlg_on_key:
     mov ecx, [desktop_dlg_cursor]
     mov [rdi + rcx], al
     inc dword [desktop_dlg_cursor]
+    mov byte [desktop_needs_redraw], 1
 
 .done:
     ret

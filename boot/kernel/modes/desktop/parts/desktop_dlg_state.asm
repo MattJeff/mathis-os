@@ -28,6 +28,7 @@ desktop_dlg_open_new:
     mov ecx, 32
     xor eax, eax
     rep stosb
+    mov byte [desktop_needs_redraw], 1
     ret
 
 ; ============================================================================
@@ -35,5 +36,6 @@ desktop_dlg_open_new:
 ; ============================================================================
 desktop_dlg_close:
     mov byte [desktop_dlg_mode], DESKTOP_DLG_NONE
+    mov byte [desktop_needs_redraw], 1
     ret
 

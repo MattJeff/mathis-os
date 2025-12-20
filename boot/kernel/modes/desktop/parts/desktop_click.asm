@@ -27,6 +27,7 @@ desktop_handle_click:
     jg .check_files
     ; Clicked Terminal - switch to shell mode
     mov byte [mode_flag], 1
+    mov byte [desktop_needs_redraw], 1
     jmp .done
 
 .check_files:
@@ -41,6 +42,7 @@ desktop_handle_click:
     jg .check_start
     ; Clicked Files - open Files window
     call desktop_open_files
+    mov byte [desktop_needs_redraw], 1
     jmp .done
 
 .check_start:
@@ -59,6 +61,7 @@ desktop_handle_click:
     jg .done
     ; Clicked Start - toggle menu (TODO)
     xor byte [desktop_menu_open], 1
+    mov byte [desktop_needs_redraw], 1
 
 .done:
     pop rdx

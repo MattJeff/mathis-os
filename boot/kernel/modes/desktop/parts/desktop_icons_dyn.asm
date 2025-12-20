@@ -45,10 +45,12 @@ dicon_check_refresh:
     cmp al, 2                   ; MODE_DESKTOP
     jne .done
     mov byte [dicon_dirty], 1   ; Force refresh on mode entry
+    mov byte [desktop_needs_redraw], 1
 .check_dirty:
     cmp byte [dicon_dirty], 0
     je .done
     call dicon_refresh
+    mov byte [desktop_needs_redraw], 1
 .done:
     pop rax
     ret
