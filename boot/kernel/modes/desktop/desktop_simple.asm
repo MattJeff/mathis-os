@@ -19,5 +19,6 @@
 %include "modes/desktop/parts/desktop_taskbar.asm"
 %include "modes/desktop/parts/desktop_icons.asm"
 %include "modes/desktop/parts/desktop_icons_dyn.asm"
+%include "modes/desktop/parts/desktop_icons_drag.asm"
 %include "modes/desktop/parts/desktop_click.asm"
 %include "modes/desktop/parts/desktop_manager.asm"

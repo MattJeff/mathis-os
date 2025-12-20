@@ -56,7 +56,7 @@ dicon_check_refresh:
     ret
 
 ; ============================================================================
-; DICON_REFRESH - Refresh icons from /DESKTOP directly via fs_readdir
+; DICON_REFRESH - Refresh icons from /DESKTOP, preserve positions
 ; ============================================================================
 dicon_refresh:
     push rax
@@ -67,83 +67,115 @@ dicon_refresh:
     push rdi
     push r12
     push r13
+    push r14
 
-    ; Read /DESKTOP directly (bypass VFS which may use mock data)
+    ; Save old count
+    mov r14d, [dicon_count]
+
+    ; Read /DESKTOP directly
     lea rdi, [dicon_desktop_path]
     lea rsi, [dicon_dirent_buf]
     mov edx, DICON_MAX
     call fs_readdir
 
-    ; Check result
     cmp eax, -1
     je .no_entries
     test eax, eax
     jz .no_entries
 
-    mov r12d, eax               ; Count
-    lea rbx, [dicon_dirent_buf] ; Source entries (FS_DIRENT format)
-    mov [dicon_count], r12d
-    jmp .have_entries
+    mov r12d, eax               ; New count
+    lea rbx, [dicon_dirent_buf]
+    jmp .process
 
 .no_entries:
     mov dword [dicon_count], 0
     jmp .done
 
-.have_entries:
-    ; Convert FS_DIRENT entries to desktop icons
-    xor r13d, r13d              ; Index
+.process:
+    xor r13d, r13d              ; New entry index
 
 .loop:
     cmp r13d, r12d
-    jge .done
+    jge .finalize
 
-    ; Dest icon
+    ; Source FS_DIRENT entry
+    mov eax, r13d
+    imul eax, 64
+    lea rsi, [rbx + rax]
+
+    ; Check if this name exists in old entries
+    push r13
+    mov rdi, rsi                ; Name pointer
+    mov esi, r14d               ; Old count
+    call dicon_find_by_name
+    pop r13
+    cmp eax, -1
+    jne .keep_pos               ; Found, keep old position
+
+    ; New icon - find free position
+    push rbx
+    push r12
+    push r13
+    call dicon_find_free_pos    ; Returns edi=x, esi=y
+    mov eax, edi
+    mov edx, esi
+    pop r13
+    pop r12
+    pop rbx
+    jmp .set_entry
+
+.keep_pos:
+    ; Get position from existing entry
+    push rax
+    imul eax, DICON_ENT_SIZE
+    lea rcx, [dicon_entries + rax]
+    mov eax, [rcx + DICON_ENT_X]
+    mov edx, [rcx + DICON_ENT_Y]
+    add rsp, 8                  ; Pop saved rax without restoring
+
+.set_entry:
+    ; Dest icon entry
+    push rax
+    push rdx
     mov eax, r13d
     imul eax, DICON_ENT_SIZE
     lea rdi, [dicon_entries + rax]
+    pop rdx
+    pop rax
 
-    ; Source FS_DIRENT entry (64 bytes each)
+    ; Set position
+    mov [rdi + DICON_ENT_X], eax
+    mov [rdi + DICON_ENT_Y], edx
+
+    ; Source dirent
     mov eax, r13d
-    imul eax, 64                ; FS_DIRENT_SIZE
+    imul eax, 64
     lea rsi, [rbx + rax]
 
-    ; Calculate grid position
-    mov eax, r13d
-    xor edx, edx
-    mov ecx, DICON_PER_ROW
-    div ecx                     ; EAX = row, EDX = col
-
-    ; X = DICON_START_X + col * DICON_SPACING_X
-    imul edx, DICON_SPACING_X
-    add edx, DICON_START_X
-    mov [rdi + DICON_ENT_X], edx
-
-    ; Y = DICON_START_Y + row * DICON_SPACING_Y
-    imul eax, DICON_SPACING_Y
-    add eax, DICON_START_Y
-    mov [rdi + DICON_ENT_Y], eax
-
-    ; Copy type (folder or file) - FS_DIRENT_FLAGS at offset 36
-    mov eax, [rsi + 36]         ; FS_DIRENT_FLAGS
-    test eax, 1                 ; FS_ENTRY_DIR
+    ; Type from FS_DIRENT_FLAGS
+    mov eax, [rsi + 36]
+    test eax, 1
     jz .is_file
-    mov dword [rdi + DICON_ENT_TYPE], 1     ; Folder
+    mov dword [rdi + DICON_ENT_TYPE], 1
     jmp .set_name
 .is_file:
-    mov dword [rdi + DICON_ENT_TYPE], 0     ; File
+    mov dword [rdi + DICON_ENT_TYPE], 0
 
 .set_name:
-    ; Name pointer (point to FS_DIRENT name at offset 0)
-    lea rax, [rsi]              ; FS_DIRENT_NAME at offset 0
+    lea rax, [rsi]
     mov [rdi + DICON_ENT_NAME], rax
-    mov dword [rdi + DICON_ENT_FLAGS], 1    ; Visible
+    mov dword [rdi + DICON_ENT_FLAGS], 1
 
     inc r13d
     jmp .loop
 
+.finalize:
+    mov [dicon_count], r12d
+
 .done:
     mov byte [dicon_dirty], 0
 
+    pop r14
     pop r13
     pop r12
     pop rdi
@@ -152,6 +184,89 @@ dicon_refresh:
     pop rcx
     pop rbx
     pop rax
+    ret
+
+; ============================================================================
+; DICON_FIND_BY_NAME - Find icon index by name
+; Input: RDI = name, ESI = count to search
+; Output: EAX = index or -1
+; ============================================================================
+dicon_find_by_name:
+    push rbx
+    push rcx
+    push r12
+
+    mov r12, rdi                ; Name to find
+    xor ecx, ecx
+
+.search:
+    cmp ecx, esi
+    jge .not_found
+
+    mov eax, ecx
+    imul eax, DICON_ENT_SIZE
+    lea rbx, [dicon_entries + rax]
+    mov rdi, [rbx + DICON_ENT_NAME]
+    test rdi, rdi
+    jz .next
+
+    ; Compare names (simple byte compare up to 11 chars)
+    push rcx
+    push rsi
+    mov rsi, r12
+    call dicon_strcmp
+    pop rsi
+    pop rcx
+    test eax, eax
+    jz .found
+
+.next:
+    inc ecx
+    jmp .search
+
+.not_found:
+    mov eax, -1
+    jmp .done
+
+.found:
+    mov eax, ecx
+
+.done:
+    pop r12
+    pop rcx
+    pop rbx
+    ret
+
+; ============================================================================
+; DICON_STRCMP - Compare two strings
+; Input: RDI = str1, RSI = str2
+; Output: EAX = 0 if equal
+; ============================================================================
+dicon_strcmp:
+    push rcx
+    mov ecx, 12                 ; Max FAT name length
+
+.cmp_loop:
+    mov al, [rdi]
+    mov ah, [rsi]
+    cmp al, ah
+    jne .not_equal
+    test al, al
+    jz .equal
+    inc rdi
+    inc rsi
+    dec ecx
+    jnz .cmp_loop
+
+.equal:
+    xor eax, eax
+    jmp .done
+
+.not_equal:
+    mov eax, 1
+
+.done:
+    pop rcx
     ret
 
 ; Data for dicon_refresh
