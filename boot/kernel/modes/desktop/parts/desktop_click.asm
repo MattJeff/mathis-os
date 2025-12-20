@@ -39,8 +39,8 @@ desktop_handle_click:
     jl .check_start
     cmp ebx, 168                    ; 120 + 48
     jg .check_start
-    ; Clicked Files - switch to files mode
-    mov byte [mode_flag], 4
+    ; Clicked Files - open Files window
+    call desktop_open_files
     jmp .done
 
 .check_start:

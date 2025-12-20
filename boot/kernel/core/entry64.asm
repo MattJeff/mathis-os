@@ -214,7 +214,8 @@ long_mode_entry:
     call create_process
 
     ; Enable scheduler tracking
-    call scheduler_enable
+    ; DEBUG: Disabled for window manager testing
+    ; call scheduler_enable
 
     ; Enable interrupts
     sti

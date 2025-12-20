@@ -930,3 +930,6 @@ gui_term_btn:       dq 0            ; Terminal button pointer
 
 ; VFS - Shared Virtual Filesystem (SOLID Phase 8)
 %include "fs/vfs/vfs.asm"
+
+; WINDOW MANAGER - Floating windows on desktop (SOLID Phase 9)
+%include "ui/wm/wm.asm"

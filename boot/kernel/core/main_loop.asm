@@ -43,12 +43,10 @@ main_loop:
 .mode_desktop:
     ; Initialize simple desktop
     call desktop_simple_init
-    ; Check for mouse click
-    cmp byte [mouse_clicked], 1
-    jne .desktop_no_click
-    mov byte [mouse_clicked], 0
+    ; Always handle input (desktop_simple_input has its own click detection)
     call desktop_simple_input
-.desktop_no_click:
+    ; Clear mouse_clicked flag if set
+    mov byte [mouse_clicked], 0
     ; Draw simple desktop
     call desktop_simple_draw
     jmp .draw_cursor

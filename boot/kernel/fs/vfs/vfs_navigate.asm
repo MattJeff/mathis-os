@@ -82,6 +82,8 @@ vfs_goto:
 ; Input: EDI = location ID (VFS_LOC_*)
 ; ════════════════════════════════════════════════════════════════════════════
 vfs_goto_loc:
+    push rdi
+
     cmp edi, VFS_LOC_DESKTOP
     je .desktop
     cmp edi, VFS_LOC_DOWNLOADS
@@ -90,19 +92,23 @@ vfs_goto_loc:
     je .documents
     ; Default: root
     lea rdi, [vfs_path_root]
-    jmp vfs_goto
+    jmp .do_goto
 
 .desktop:
     lea rdi, [vfs_path_desktop]
-    jmp vfs_goto
+    jmp .do_goto
 
 .downloads:
     lea rdi, [vfs_path_downloads]
-    jmp vfs_goto
+    jmp .do_goto
 
 .documents:
     lea rdi, [vfs_path_documents]
-    jmp vfs_goto
+
+.do_goto:
+    call vfs_goto
+    pop rdi
+    ret
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; VFS_STR_EQUAL - Compare two strings

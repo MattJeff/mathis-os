@@ -111,22 +111,37 @@ files_on_mouse_click:
     cmp eax, FA_STATE_EDITOR
     je .check_editor
 
-    ; List state - check Back button and file list
+    ; List state - check Back button, sidebar, and file list
 .check_list:
     ; Check Back button (in header area, left side)
     ; Back button: x=10-70, y=2-22
     cmp r12d, 10
-    jl .check_file_list
+    jl .check_sidebar
     cmp r12d, 70
-    jg .check_file_list
+    jg .check_sidebar
     cmp r13d, 2
-    jl .check_file_list
+    jl .check_sidebar
     cmp r13d, 22
-    jg .check_file_list
+    jg .check_sidebar
     ; Back button clicked - return to desktop
     mov byte [mode_flag], 2
     mov byte [files_needs_redraw], 1      ; Redraw on return
     mov byte [files_input_registered], 0  ; Re-register on next entry
+    jmp .done
+
+.check_sidebar:
+    ; Check sidebar click (x < SIDEBAR_WIDTH, y > 24)
+    cmp r12d, SIDEBAR_WIDTH
+    jge .check_file_list
+    cmp r13d, 24
+    jl .check_file_list
+    ; Click in sidebar - forward to sidebar handler
+    mov edi, r12d
+    mov esi, r13d
+    call sidebar_on_click
+    test eax, eax
+    jz .check_file_list             ; Not handled, try file list
+    mov byte [files_needs_redraw], 1
     jmp .done
 
 .check_file_list:
