@@ -100,7 +100,20 @@
       "Bash(chmod:*)",
       "Bash(./build-iso.sh:*)",
       "Bash(xorriso:*)",
-      "Bash(timeout 15 qemu-system-x86_64:*)"
+      "Bash(timeout 15 qemu-system-x86_64:*)",
+      "Bash(git -C /Users/mathishiguinen/Desktop/Higuinen/mathis-os add PLAN_MEMORY_100.md)",
+      "Bash(timeout 2 qemu-system-x86_64:*)",
+      "Bash(/tmp/core_entry.o /tmp/tables.o /tmp/heap_mod.o )",
+      "Bash(/tmp/pmm_mod.o /tmp/state_mod.o /tmp/keyboard_mod.o /tmp/mouse_mod.o )",
+      "Bash(/tmp/ata_mod.o /tmp/video_mod.o /tmp/font_mod.o /tmp/text_mod.o )",
+      "Bash(./build_modular.sh:*)",
+      "Bash(bash:*)",
+      "Bash(for f in /Users/mathishiguinen/Desktop/Higuinen/mathis-os/boot/kernel/ui/wm/apps/*.asm)",
+      "Bash(for:*)",
+      "Bash(timeout 20 qemu-system-x86_64:*)",
+      "Bash(timeout 25 qemu-system-x86_64:*)",
+      "Bash(git -C /Users/mathishiguinen/Desktop/Higuinen/mathis-os add boot/kernel/apps/files/files_dialog_mod.asm boot/kernel/ui/wm/apps/files/files_const.asm boot/kernel/ui/wm/apps/files/files_draw_sidebar.asm boot/kernel/ui/wm/apps/files/files_draw_list.asm boot/mathis.img)",
+      "Bash(git -C /Users/mathishiguinen/Desktop/Higuinen/mathis-os add boot/kernel/ui/wm/apps/files/files_state.asm boot/kernel/ui/wm/apps/files/files_draw_list.asm boot/mathis.img)"
     ],
     "deny": [],
     "ask": []

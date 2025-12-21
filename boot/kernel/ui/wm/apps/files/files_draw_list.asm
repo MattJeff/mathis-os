@@ -111,7 +111,7 @@ wmf_draw_files:
     call video_text
 
 .draw_label:
-    ; Draw name below icon (centered-ish)
+    ; Draw name below icon
     mov edi, [wmf_icon_x]
     mov esi, [wmf_icon_y]
     add esi, WMF_ICON_SIZE + 6

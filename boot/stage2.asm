@@ -208,6 +208,9 @@ start:
     mov byte [vesa_mode], 0
 
 .video_done:
+    ; Detect physical memory map (E820)
+    call e820_detect
+
     ; Enable A20
     in al, 0x92
     or al, 2
@@ -239,6 +242,9 @@ print_string:
     jmp print_string
 .done:
     ret
+
+; Include E820 memory detection
+%include "e820_detect.asm"
 
 ; Variables
 boot_drive:     db 0

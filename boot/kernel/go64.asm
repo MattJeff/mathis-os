@@ -102,6 +102,39 @@ acpi_init:
 %include "mm/heap.asm"
 
 ; ════════════════════════════════════════════════════════════════════════════
+; E820 MEMORY MAP DETECTION
+; ════════════════════════════════════════════════════════════════════════════
+%include "mm/e820.asm"
+
+; ════════════════════════════════════════════════════════════════════════════
+; PMM - PHYSICAL MEMORY MANAGER
+; ════════════════════════════════════════════════════════════════════════════
+%include "mm/pmm_const.asm"
+%include "mm/pmm_bitmap.asm"
+%include "mm/pmm_init.asm"
+%include "mm/pmm_alloc.asm"
+%include "mm/pmm_free.asm"
+
+; ════════════════════════════════════════════════════════════════════════════
+; VMM - VIRTUAL MEMORY MANAGER
+; ════════════════════════════════════════════════════════════════════════════
+%include "mm/vmm_const.asm"
+%include "mm/vmm.asm"
+%include "mm/vmm_helpers.asm"
+
+; ════════════════════════════════════════════════════════════════════════════
+; SLAB - SLAB ALLOCATOR
+; ════════════════════════════════════════════════════════════════════════════
+%include "mm/slab_const.asm"
+%include "mm/slab.asm"
+%include "mm/slab_create.asm"
+
+; ════════════════════════════════════════════════════════════════════════════
+; MEMORY PROTECTION
+; ════════════════════════════════════════════════════════════════════════════
+%include "mm/protection.asm"
+
+; ════════════════════════════════════════════════════════════════════════════
 ; INCLUDE ATA64 DRIVER (64-bit disk I/O)
 ; ════════════════════════════════════════════════════════════════════════════
 %include "fs/ata64.asm"
@@ -242,201 +275,8 @@ sin_table:
     db -32,-32,-32,-31,-30,-28,-26,-24
     db -21,-18,-15,-12, -9, -6, -3,  0
 
-; 8x8 Bitmap Font (ASCII 32-127)
-align 8
-font8x8:
-    ; Space (32)
-    db 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-    ; ! (33)
-    db 0x18, 0x18, 0x18, 0x18, 0x18, 0x00, 0x18, 0x00
-    ; " (34)
-    db 0x6C, 0x6C, 0x24, 0x00, 0x00, 0x00, 0x00, 0x00
-    ; # (35)
-    db 0x6C, 0xFE, 0x6C, 0x6C, 0xFE, 0x6C, 0x00, 0x00
-    ; $ (36)
-    db 0x18, 0x7E, 0xC0, 0x7C, 0x06, 0xFC, 0x18, 0x00
-    ; % (37)
-    db 0xC6, 0xCC, 0x18, 0x30, 0x66, 0xC6, 0x00, 0x00
-    ; & (38)
-    db 0x38, 0x6C, 0x38, 0x76, 0xDC, 0xCC, 0x76, 0x00
-    ; ' (39)
-    db 0x18, 0x18, 0x30, 0x00, 0x00, 0x00, 0x00, 0x00
-    ; ( (40)
-    db 0x0C, 0x18, 0x30, 0x30, 0x30, 0x18, 0x0C, 0x00
-    ; ) (41)
-    db 0x30, 0x18, 0x0C, 0x0C, 0x0C, 0x18, 0x30, 0x00
-    ; * (42)
-    db 0x00, 0x66, 0x3C, 0xFF, 0x3C, 0x66, 0x00, 0x00
-    ; + (43)
-    db 0x00, 0x18, 0x18, 0x7E, 0x18, 0x18, 0x00, 0x00
-    ; , (44)
-    db 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x18, 0x30
-    ; - (45)
-    db 0x00, 0x00, 0x00, 0x7E, 0x00, 0x00, 0x00, 0x00
-    ; . (46)
-    db 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x18, 0x00
-    ; / (47)
-    db 0x06, 0x0C, 0x18, 0x30, 0x60, 0xC0, 0x00, 0x00
-    ; 0 (48)
-    db 0x7C, 0xCE, 0xDE, 0xF6, 0xE6, 0xC6, 0x7C, 0x00
-    ; 1 (49)
-    db 0x18, 0x38, 0x18, 0x18, 0x18, 0x18, 0x7E, 0x00
-    ; 2 (50)
-    db 0x7C, 0xC6, 0x0E, 0x3C, 0x78, 0xE0, 0xFE, 0x00
-    ; 3 (51)
-    db 0x7C, 0xC6, 0x06, 0x3C, 0x06, 0xC6, 0x7C, 0x00
-    ; 4 (52)
-    db 0x1C, 0x3C, 0x6C, 0xCC, 0xFE, 0x0C, 0x0C, 0x00
-    ; 5 (53)
-    db 0xFE, 0xC0, 0xFC, 0x06, 0x06, 0xC6, 0x7C, 0x00
-    ; 6 (54)
-    db 0x7C, 0xC0, 0xFC, 0xC6, 0xC6, 0xC6, 0x7C, 0x00
-    ; 7 (55)
-    db 0xFE, 0x06, 0x0C, 0x18, 0x30, 0x30, 0x30, 0x00
-    ; 8 (56)
-    db 0x7C, 0xC6, 0xC6, 0x7C, 0xC6, 0xC6, 0x7C, 0x00
-    ; 9 (57)
-    db 0x7C, 0xC6, 0xC6, 0x7E, 0x06, 0x06, 0x7C, 0x00
-    ; : (58)
-    db 0x00, 0x18, 0x18, 0x00, 0x00, 0x18, 0x18, 0x00
-    ; ; (59)
-    db 0x00, 0x18, 0x18, 0x00, 0x00, 0x18, 0x18, 0x30
-    ; < (60)
-    db 0x0C, 0x18, 0x30, 0x60, 0x30, 0x18, 0x0C, 0x00
-    ; = (61)
-    db 0x00, 0x00, 0x7E, 0x00, 0x7E, 0x00, 0x00, 0x00
-    ; > (62)
-    db 0x30, 0x18, 0x0C, 0x06, 0x0C, 0x18, 0x30, 0x00
-    ; ? (63)
-    db 0x7C, 0xC6, 0x0C, 0x18, 0x18, 0x00, 0x18, 0x00
-    ; @ (64)
-    db 0x7C, 0xC6, 0xDE, 0xDE, 0xDE, 0xC0, 0x7C, 0x00
-    ; A (65)
-    db 0x38, 0x6C, 0xC6, 0xC6, 0xFE, 0xC6, 0xC6, 0x00
-    ; B (66)
-    db 0xFC, 0xC6, 0xC6, 0xFC, 0xC6, 0xC6, 0xFC, 0x00
-    ; C (67)
-    db 0x7C, 0xC6, 0xC0, 0xC0, 0xC0, 0xC6, 0x7C, 0x00
-    ; D (68)
-    db 0xF8, 0xCC, 0xC6, 0xC6, 0xC6, 0xCC, 0xF8, 0x00
-    ; E (69)
-    db 0xFE, 0xC0, 0xC0, 0xF8, 0xC0, 0xC0, 0xFE, 0x00
-    ; F (70)
-    db 0xFE, 0xC0, 0xC0, 0xF8, 0xC0, 0xC0, 0xC0, 0x00
-    ; G (71)
-    db 0x7C, 0xC6, 0xC0, 0xCE, 0xC6, 0xC6, 0x7C, 0x00
-    ; H (72)
-    db 0xC6, 0xC6, 0xC6, 0xFE, 0xC6, 0xC6, 0xC6, 0x00
-    ; I (73)
-    db 0x7E, 0x18, 0x18, 0x18, 0x18, 0x18, 0x7E, 0x00
-    ; J (74)
-    db 0x1E, 0x06, 0x06, 0x06, 0xC6, 0xC6, 0x7C, 0x00
-    ; K (75)
-    db 0xC6, 0xCC, 0xD8, 0xF0, 0xD8, 0xCC, 0xC6, 0x00
-    ; L (76)
-    db 0xC0, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0, 0xFE, 0x00
-    ; M (77)
-    db 0xC6, 0xEE, 0xFE, 0xD6, 0xC6, 0xC6, 0xC6, 0x00
-    ; N (78)
-    db 0xC6, 0xE6, 0xF6, 0xDE, 0xCE, 0xC6, 0xC6, 0x00
-    ; O (79)
-    db 0x7C, 0xC6, 0xC6, 0xC6, 0xC6, 0xC6, 0x7C, 0x00
-    ; P (80)
-    db 0xFC, 0xC6, 0xC6, 0xFC, 0xC0, 0xC0, 0xC0, 0x00
-    ; Q (81)
-    db 0x7C, 0xC6, 0xC6, 0xC6, 0xD6, 0xDE, 0x7C, 0x06
-    ; R (82)
-    db 0xFC, 0xC6, 0xC6, 0xFC, 0xD8, 0xCC, 0xC6, 0x00
-    ; S (83)
-    db 0x7C, 0xC6, 0xC0, 0x7C, 0x06, 0xC6, 0x7C, 0x00
-    ; T (84)
-    db 0xFE, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x00
-    ; U (85)
-    db 0xC6, 0xC6, 0xC6, 0xC6, 0xC6, 0xC6, 0x7C, 0x00
-    ; V (86)
-    db 0xC6, 0xC6, 0xC6, 0xC6, 0x6C, 0x38, 0x10, 0x00
-    ; W (87)
-    db 0xC6, 0xC6, 0xC6, 0xD6, 0xFE, 0xEE, 0xC6, 0x00
-    ; X (88)
-    db 0xC6, 0xC6, 0x6C, 0x38, 0x6C, 0xC6, 0xC6, 0x00
-    ; Y (89)
-    db 0xC6, 0xC6, 0x6C, 0x38, 0x18, 0x18, 0x18, 0x00
-    ; Z (90)
-    db 0xFE, 0x06, 0x0C, 0x18, 0x30, 0x60, 0xFE, 0x00
-    ; [ (91)
-    db 0x3C, 0x30, 0x30, 0x30, 0x30, 0x30, 0x3C, 0x00
-    ; \ (92)
-    db 0xC0, 0x60, 0x30, 0x18, 0x0C, 0x06, 0x00, 0x00
-    ; ] (93)
-    db 0x3C, 0x0C, 0x0C, 0x0C, 0x0C, 0x0C, 0x3C, 0x00
-    ; ^ (94)
-    db 0x10, 0x38, 0x6C, 0xC6, 0x00, 0x00, 0x00, 0x00
-    ; _ (95)
-    db 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFE
-    ; ` (96)
-    db 0x18, 0x18, 0x0C, 0x00, 0x00, 0x00, 0x00, 0x00
-    ; a (97)
-    db 0x00, 0x00, 0x7C, 0x06, 0x7E, 0xC6, 0x7E, 0x00
-    ; b (98)
-    db 0xC0, 0xC0, 0xFC, 0xC6, 0xC6, 0xC6, 0xFC, 0x00
-    ; c (99)
-    db 0x00, 0x00, 0x7C, 0xC6, 0xC0, 0xC6, 0x7C, 0x00
-    ; d (100)
-    db 0x06, 0x06, 0x7E, 0xC6, 0xC6, 0xC6, 0x7E, 0x00
-    ; e (101)
-    db 0x00, 0x00, 0x7C, 0xC6, 0xFE, 0xC0, 0x7C, 0x00
-    ; f (102)
-    db 0x1C, 0x36, 0x30, 0x78, 0x30, 0x30, 0x30, 0x00
-    ; g (103)
-    db 0x00, 0x00, 0x7E, 0xC6, 0xC6, 0x7E, 0x06, 0x7C
-    ; h (104)
-    db 0xC0, 0xC0, 0xFC, 0xC6, 0xC6, 0xC6, 0xC6, 0x00
-    ; i (105)
-    db 0x18, 0x00, 0x38, 0x18, 0x18, 0x18, 0x3C, 0x00
-    ; j (106)
-    db 0x06, 0x00, 0x0E, 0x06, 0x06, 0x06, 0xC6, 0x7C
-    ; k (107)
-    db 0xC0, 0xC0, 0xCC, 0xD8, 0xF0, 0xD8, 0xCC, 0x00
-    ; l (108)
-    db 0x38, 0x18, 0x18, 0x18, 0x18, 0x18, 0x3C, 0x00
-    ; m (109)
-    db 0x00, 0x00, 0xEC, 0xFE, 0xD6, 0xC6, 0xC6, 0x00
-    ; n (110)
-    db 0x00, 0x00, 0xFC, 0xC6, 0xC6, 0xC6, 0xC6, 0x00
-    ; o (111)
-    db 0x00, 0x00, 0x7C, 0xC6, 0xC6, 0xC6, 0x7C, 0x00
-    ; p (112)
-    db 0x00, 0x00, 0xFC, 0xC6, 0xC6, 0xFC, 0xC0, 0xC0
-    ; q (113)
-    db 0x00, 0x00, 0x7E, 0xC6, 0xC6, 0x7E, 0x06, 0x06
-    ; r (114)
-    db 0x00, 0x00, 0xDC, 0xE6, 0xC0, 0xC0, 0xC0, 0x00
-    ; s (115)
-    db 0x00, 0x00, 0x7E, 0xC0, 0x7C, 0x06, 0xFC, 0x00
-    ; t (116)
-    db 0x30, 0x30, 0x7C, 0x30, 0x30, 0x36, 0x1C, 0x00
-    ; u (117)
-    db 0x00, 0x00, 0xC6, 0xC6, 0xC6, 0xC6, 0x7E, 0x00
-    ; v (118)
-    db 0x00, 0x00, 0xC6, 0xC6, 0xC6, 0x6C, 0x38, 0x00
-    ; w (119)
-    db 0x00, 0x00, 0xC6, 0xC6, 0xD6, 0xFE, 0x6C, 0x00
-    ; x (120)
-    db 0x00, 0x00, 0xC6, 0x6C, 0x38, 0x6C, 0xC6, 0x00
-    ; y (121)
-    db 0x00, 0x00, 0xC6, 0xC6, 0xC6, 0x7E, 0x06, 0x7C
-    ; z (122)
-    db 0x00, 0x00, 0xFE, 0x0C, 0x38, 0x60, 0xFE, 0x00
-    ; { (123)
-    db 0x0E, 0x18, 0x18, 0x70, 0x18, 0x18, 0x0E, 0x00
-    ; | (124)
-    db 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x00
-    ; } (125)
-    db 0x70, 0x18, 0x18, 0x0E, 0x18, 0x18, 0x70, 0x00
-    ; ~ (126)
-    db 0x76, 0xDC, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-    ; DEL (127) - empty
-    db 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+; 8x8 Bitmap Font - Extracted to ui/font8x8_data.asm
+%include "ui/font8x8_data.asm"
 
 ; IDT
 align 16
@@ -526,41 +366,8 @@ tss64_end:
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; STUBS FOR DEPRECATED 3D/SYSCALL MODULES
-; These are referenced by core/main_loop.asm and core/isr.asm
 ; ════════════════════════════════════════════════════════════════════════════
-
-; Syscall constants (referenced by sys/ring3.asm)
-SYS_GETPID      equ 11
-SYS_SLEEP       equ 17
-SYS_YIELD       equ 18
-SYS_PUTPIXEL    equ 40
-
-; 3D camera variables (referenced by main_loop.asm)
-camera_x: dd 0
-camera_y: dd 0
-camera_z: dd 0
-
-; 3D functions
-ui3d_init:
-    ret
-
-ui3d_main:
-    ret
-
-; Syscall handler (referenced by core/isr.asm)
-syscall_handler:
-    xor eax, eax        ; Return 0 (syscalls disabled)
-    ret
-
-; Key handlers for deprecated modes (referenced by input/dispatcher.asm)
-handle_shell_keys:
-    ret
-
-handle_3d_keys:
-    ret
-
-handle_gui_keys:
-    ret
+%include "deprecated/stubs.asm"
 
 ; ════════════════════════════════════════════════════════════════════════════
 ; UI MODULES - MINIMAL SET FOR FILES_MODE
@@ -596,296 +403,13 @@ handle_gui_keys:
 ; %include "handlers/3d_keys.asm"    ; DEPRECATED
 
 ; ════════════════════════════════════════════════════════════════════════════
-; MODES - FILES_MODE ONLY
+; MODES
 ; ════════════════════════════════════════════════════════════════════════════
-; %include "modes/graphics.asm"      ; DEPRECATED (mode_flag=0)
-; %include "modes/shell.asm"         ; DEPRECATED (mode_flag=1)
-%include "modes/files/files_main.asm"  ; CORE: Files mode (mode_flag=4)
-%include "modes/desktop/desktop_simple.asm" ; Simple desktop (mode_flag=2)
-; %include "modes/desktop/desktop_app.asm" ; OLD: Complex widget system (disabled)
-
-; STUBS for deprecated modes (called by main_loop)
-graphics_mode:
-    ret
-
-shell_mode:
-    push rbx
-
-    ; Draw black background
-    mov rdi, [screen_fb]
-    mov eax, [screen_width]
-    imul eax, [screen_height]
-    mov ecx, eax
-    xor eax, eax                    ; Black
-.shell_clear:
-    mov dword [rdi], eax
-    add rdi, 4
-    dec ecx
-    jnz .shell_clear
-
-    ; Draw "Terminal - Press ESC to return" text
-    mov edi, 20
-    mov esi, 20
-    lea rdx, [shell_str_title]
-    mov ecx, 0x0000FF00             ; Green
-    call video_text
-
-    ; Draw prompt
-    mov edi, 20
-    mov esi, 50
-    lea rdx, [shell_str_prompt]
-    mov ecx, 0x0000FF00
-    call video_text
-
-    ; Check for ESC key
-    cmp byte [key_pressed], 0x01    ; ESC scancode
-    jne .shell_no_esc
-    mov byte [key_pressed], 0
-    mov byte [gui_needs_redraw], 1
-    mov byte [mode_flag], 2         ; Back to desktop
-
-.shell_no_esc:
-    pop rbx
-    jmp main_loop
-
-shell_str_title:    db "MATHIS OS Terminal - Press ESC to return", 0
-shell_str_prompt:   db "> _", 0
-
-; gui_mode - Desktop with Files + Terminal icons
-gui_mode:
-    push rbx
-
-    ; Check if full redraw needed (first time)
-    cmp byte [gui_needs_redraw], 1
-    je .do_full_redraw
-
-    ; Check if mouse moved
-    movzx eax, word [mouse_x]
-    cmp ax, [gui_last_mouse_x]
-    jne .mouse_moved
-    movzx eax, word [mouse_y]
-    cmp ax, [gui_last_mouse_y]
-    jne .mouse_moved
-
-    ; No change, just handle clicks
-    call gui_handle_click
-    jmp .skip_redraw
-
-.mouse_moved:
-    ; Erase old cursor (draw background color)
-    movzx edi, word [gui_last_mouse_x]
-    movzx esi, word [gui_last_mouse_y]
-    mov edx, 12
-    mov ecx, 12
-    mov r8d, 0x00205080         ; Desktop bg color
-    call fill_rect
-
-    ; Save new mouse position
-    mov ax, [mouse_x]
-    mov [gui_last_mouse_x], ax
-    mov ax, [mouse_y]
-    mov [gui_last_mouse_y], ax
-
-    ; Redraw icons if cursor was over them
-    call gui_redraw_icons_if_needed
-
-    ; Draw cursor at new position
-    call gui_draw_cursor
-
-    ; Handle clicks
-    call gui_handle_click
-    jmp .skip_redraw
-
-.do_full_redraw:
-    mov byte [gui_needs_redraw], 0
-
-    ; Draw desktop background (teal/blue)
-    mov rdi, [screen_fb]
-    mov eax, [screen_width]
-    mov ebx, [screen_height]
-    sub ebx, TASKBAR_H
-    imul eax, ebx
-    mov ecx, eax
-    mov eax, 0x00205080         ; BGRA teal
-.desktop_bg:
-    mov dword [rdi], eax
-    add rdi, 4
-    dec ecx
-    jnz .desktop_bg
-
-    ; Draw taskbar
-    mov rdi, [screen_fb]
-    mov eax, [screen_height]
-    sub eax, TASKBAR_H
-    imul eax, [screen_pitch]
-    add rdi, rax
-    mov eax, [screen_width]
-    imul eax, TASKBAR_H
-    mov ecx, eax
-    mov eax, 0x00303030         ; Dark gray
-.taskbar_bg:
-    mov dword [rdi], eax
-    add rdi, 4
-    dec ecx
-    jnz .taskbar_bg
-
-    ; Draw all icons
-    call gui_draw_all_icons
-
-    ; Handle mouse click
-    call gui_handle_click
-
-    ; Draw cursor
-    call gui_draw_cursor
-
-    ; Save initial mouse pos
-    mov ax, [mouse_x]
-    mov [gui_last_mouse_x], ax
-    mov ax, [mouse_y]
-    mov [gui_last_mouse_y], ax
-
-.skip_redraw:
-    pop rbx
-    jmp main_loop
-
-; Redraw icons if old cursor position overlapped them
-gui_redraw_icons_if_needed:
-    movzx eax, word [gui_last_mouse_x]
-    movzx ebx, word [gui_last_mouse_y]
-
-    ; Check Files icon area (35-90, 45-90)
-    cmp eax, 90
-    jg .check_terminal
-    cmp eax, 35
-    jl .check_terminal
-    cmp ebx, 90
-    jg .check_terminal
-    cmp ebx, 45
-    jl .check_terminal
-    call gui_draw_files_icon
-    ret
-
-.check_terminal:
-    ; Check Terminal icon area (35-100, 105-150)
-    cmp eax, 100
-    jg .no_redraw
-    cmp eax, 35
-    jl .no_redraw
-    cmp ebx, 150
-    jg .no_redraw
-    cmp ebx, 105
-    jl .no_redraw
-    call gui_draw_terminal_icon
-
-.no_redraw:
-    ret
-
-; Draw all icons
-gui_draw_all_icons:
-    call gui_draw_files_icon
-    call gui_draw_terminal_icon
-    ret
-
-; Draw Files icon and label
-gui_draw_files_icon:
-    mov edi, 50
-    mov esi, 50
-    mov edx, 0x00FFFF00         ; Yellow
-    call draw_icon_folder
-    mov edi, 45
-    mov esi, 70
-    lea rdx, [gui_str_files]
-    mov ecx, 0x00FFFFFF
-    call video_text
-    ret
-
-; Draw Terminal icon and label
-gui_draw_terminal_icon:
-    mov edi, 50
-    mov esi, 110
-    mov edx, 0x00008080         ; Cyan
-    call draw_icon_terminal
-    mov edi, 38
-    mov esi, 130
-    lea rdx, [gui_str_terminal]
-    mov ecx, 0x00FFFFFF
-    call video_text
-    ret
-
-; Handle clicks on desktop
-gui_handle_click:
-    ; Check if left button pressed
-    test byte [mouse_buttons], 1
-    jz .no_click
-
-    ; Debounce
-    cmp byte [gui_click_handled], 1
-    je .no_click
-    mov byte [gui_click_handled], 1
-
-    ; Get mouse position
-    movzx eax, word [mouse_x]
-    movzx ebx, word [mouse_y]
-
-    ; Check Files icon (40-80, 50-85)
-    cmp eax, 40
-    jl .check_terminal
-    cmp eax, 80
-    jg .check_terminal
-    cmp ebx, 50
-    jl .check_terminal
-    cmp ebx, 85
-    jg .check_terminal
-    mov byte [gui_needs_redraw], 1  ; Force redraw on return
-    mov byte [mode_flag], 4         ; Files mode
-    jmp .done
-
-.check_terminal:
-    ; Check Terminal icon (40-80, 110-145)
-    cmp eax, 40
-    jl .no_click
-    cmp eax, 80
-    jg .no_click
-    cmp ebx, 110
-    jl .no_click
-    cmp ebx, 145
-    jg .no_click
-    mov byte [gui_needs_redraw], 1  ; Force redraw on return
-    mov byte [mode_flag], 1         ; Terminal mode
-    jmp .done
-
-.no_click:
-    test byte [mouse_buttons], 1
-    jnz .done
-    mov byte [gui_click_handled], 0
-.done:
-    ret
-
-; Draw bigger mouse cursor (10x10 white square)
-gui_draw_cursor:
-    push rbx
-    movzx edi, word [mouse_x]
-    movzx esi, word [mouse_y]
-    mov edx, 10
-    mov ecx, 10
-    mov r8d, 0x00FFFFFF         ; White
-    call fill_rect
-    pop rbx
-    ret
-
-; GUI strings
-gui_str_files:      db "Files", 0
-gui_str_terminal:   db "Terminal", 0
-gui_click_handled:  db 0
-gui_needs_redraw:   db 1            ; Force first redraw
-gui_last_mouse_x:   dw 0
-gui_last_mouse_y:   dw 0
-
-; Widget-based desktop state (Phase 4)
-gui_widgets_init:   db 0            ; 1 = widgets initialized
-gui_root_widget:    dq 0            ; Root container pointer
-gui_files_btn:      dq 0            ; Files button pointer
-gui_term_btn:       dq 0            ; Terminal button pointer
+%include "modes/graphics.asm"           ; mode_flag=0
+%include "modes/shell.asm"              ; mode_flag=1
+%include "modes/desktop/desktop_simple.asm" ; mode_flag=2
+%include "modes/files/files_main.asm"   ; mode_flag=4
+%include "modes/gui/gui_mode.asm"       ; mode_flag=2 (legacy desktop)
 
 ; SYSTEM (ISRs, setup)
 %include "sys/timer.asm"

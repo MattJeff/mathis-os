@@ -80,7 +80,7 @@ bsod_draw:
     push rsi
 
     ; Fill screen with blue
-    mov edi, [screen_fb]
+    mov rdi, [screen_fb]            ; 64-bit load
     mov ecx, [screen_width]
     imul ecx, [screen_height]
     mov eax, BSOD_BG
@@ -298,12 +298,13 @@ bsod_char:
     add rbx, rax
 
     ; Calculate screen position
+    xor rax, rax
     mov eax, esi
     imul eax, [screen_pitch]
     mov r9d, edi
     shl r9d, 2              ; x * 4 (32bpp)
     add eax, r9d
-    add eax, [screen_fb]
+    add rax, [screen_fb]            ; 64-bit add
     mov rdi, rax
 
     ; Draw 8 rows

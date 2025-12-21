@@ -120,3 +120,31 @@ video_text:
     pop rsi
     pop rdi
     ret
+
+; ════════════════════════════════════════════════════════════════════════════
+; VIDEO_TEXT_2X - Draw double-size text (16x16) at x,y coordinates
+; Input: edi = x, esi = y, rdx = string ptr, ecx = color
+; ════════════════════════════════════════════════════════════════════════════
+video_text_2x:
+    push rdi
+    push rsi
+    push r8
+
+    ; Calculate screen position: y * pitch + x * 4
+    mov eax, esi
+    imul eax, [screen_pitch]
+    mov r8d, edi
+    shl r8d, 2
+    add eax, r8d
+    mov rdi, [screen_fb]
+    add rdi, rax                    ; rdi = screen position
+
+    mov rsi, rdx                    ; rsi = string
+    mov r8d, ecx                    ; r8d = color
+
+    call draw_text
+
+    pop r8
+    pop rsi
+    pop rdi
+    ret

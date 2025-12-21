@@ -132,10 +132,10 @@ wm_draw_window:
     mov edi, r12d
     add edi, 60                 ; After 3 buttons (10 + 12*3 + 8*2 = ~60)
     mov esi, r13d
-    add esi, 6
+    add esi, 3
     mov rdx, [rbx + WM_ENT_TITLE]
     mov ecx, WM_COL_TITLE_FG
-    call video_text
+    call video_text             ; Uses global font_scale
 .no_title:
 
     ; Draw save icon for editor windows (right side of title bar)

@@ -99,8 +99,9 @@ long_mode_entry:
     mov rsp, 0x90000
 
     ; Initialize screen from stage2 video info at 0x500
+    xor rax, rax
     mov eax, [VIDEO_INFO_FB]
-    mov [screen_fb], eax
+    mov [screen_fb], rax            ; Store as 64-bit (zero-extended)
     mov eax, [VIDEO_INFO_W]
     mov [screen_width], eax
     mov eax, [VIDEO_INFO_PITCH]
@@ -179,6 +180,12 @@ long_mode_entry:
 
     ; Initialize heap allocator
     call heap_init
+
+    ; Initialize memory management subsystem
+    call pmm_init                         ; Physical memory manager
+    call vmm_init                         ; Virtual memory manager
+    call slab_init                        ; Slab allocator
+    call protection_init                  ; Memory protection
 
     ; Initialize service registry (SOLID Phase 2+3+4)
     call registry_init
