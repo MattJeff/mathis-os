@@ -1,10 +1,10 @@
 ; ============================================================================
-; FILES_DRAW_LIST.ASM - File list drawing
+; FILES_DRAW_LIST.ASM - Finder-style icon grid
 ; ============================================================================
 
 [BITS 64]
 
-; WMF_DRAW_FILES - Draw file list in content area
+; WMF_DRAW_FILES - Draw files as icon grid (Finder style)
 wmf_draw_files:
     push rbx
     push r12
@@ -12,12 +12,19 @@ wmf_draw_files:
     push r14
     push r15
 
+    ; Content area start
     mov r12d, [wmf_win_x]
-    add r12d, WMF_SIDEBAR_W + WMF_PADDING
+    add r12d, WMF_SIDEBAR_W + 20          ; Left margin
     mov r13d, [wmf_win_y]
-    add r13d, WMF_TOOLBAR_H + WMF_PADDING
-    mov r14d, [wmf_win_w]
-    sub r14d, WMF_SIDEBAR_W + WMF_PADDING * 2
+    add r13d, WMF_TOOLBAR_H + 20          ; Top margin
+
+    ; Calculate columns that fit
+    mov eax, [wmf_win_w]
+    sub eax, WMF_SIDEBAR_W + 40           ; Available width
+    xor edx, edx
+    mov ecx, WMF_ICON_SPACING
+    div ecx
+    mov [wmf_cols], eax                   ; Columns that fit
 
     call vfs_get_entries
     mov [wmf_vfs_ptr], rax
@@ -28,58 +35,86 @@ wmf_draw_files:
     mov eax, [wmf_loop_idx]
     cmp eax, [wmf_entry_count]
     jge .done
-    mov ecx, eax
-    sub ecx, [wmf_scroll_pos]
-    cmp ecx, WMF_MAX_VISIBLE
-    jge .done
-    cmp ecx, 0
-    jl .next
 
-    imul ecx, WMF_ROW_H
-    add ecx, r13d
-    mov [wmf_cur_y], ecx
+    ; Calculate grid position
+    xor edx, edx
+    mov ecx, [wmf_cols]
+    test ecx, ecx
+    jz .done
+    div ecx                               ; eax=row, edx=col
 
+    ; X = base + col * spacing
+    imul edx, WMF_ICON_SPACING
+    add edx, r12d
+    mov [wmf_icon_x], edx
+
+    ; Y = base + row * (icon_size + label_h + spacing)
+    imul eax, WMF_ICON_SIZE + WMF_ICON_LABEL_H + 16
+    add eax, r13d
+    mov [wmf_icon_y], eax
+
+    ; Get entry pointer
     mov eax, [wmf_loop_idx]
     imul eax, VFS_ENTRY_SIZE
     mov rbx, [wmf_vfs_ptr]
     add rbx, rax
 
-    ; Selection highlight
+    ; Selection highlight (blue rounded rect behind icon)
     mov eax, [wmf_loop_idx]
     cmp eax, [wmf_selected]
     jne .no_sel
-    mov edi, r12d
-    mov esi, [wmf_cur_y]
-    mov edx, r14d
-    mov ecx, WMF_ROW_H
-    mov r8d, WMF_COL_SEL
+    mov edi, [wmf_icon_x]
+    sub edi, 4
+    mov esi, [wmf_icon_y]
+    sub esi, 4
+    mov edx, WMF_ICON_SIZE + 8
+    mov ecx, WMF_ICON_SIZE + WMF_ICON_LABEL_H + 8
+    mov r8d, WMF_COL_SEL_BLUE
     call fill_rect
-
 .no_sel:
-    ; Icon (folder=14x12, file=12x14)
-    mov edi, r12d
-    add edi, 4
-    mov esi, [wmf_cur_y]
-    add esi, 3
+
+    ; Draw icon (large folder or file icon)
+    mov edi, [wmf_icon_x]
+    mov esi, [wmf_icon_y]
     mov eax, [rbx + VFS_E_FLAGS]
     test eax, VFS_FLAG_DIR
     jz .file_icon
-    mov edx, 14
-    mov ecx, 12
+
+    ; Folder icon (64x52 blue rectangle)
+    mov edx, WMF_ICON_SIZE
+    mov ecx, WMF_ICON_SIZE - 12
     mov r8d, WMF_COL_FOLDER
     jmp .draw_icon
+
 .file_icon:
-    mov edx, 12
-    mov ecx, 14
+    ; File icon (52x64 white/gray rectangle)
+    add edi, 6
+    mov edx, WMF_ICON_SIZE - 12
+    mov ecx, WMF_ICON_SIZE
     mov r8d, WMF_COL_FILE
+
 .draw_icon:
     call fill_rect
 
-    ; Name
-    mov edi, r12d
-    add edi, 24
-    mov esi, [wmf_cur_y]
-    add esi, 4
+    ; Draw file extension on file icons
+    mov eax, [rbx + VFS_E_FLAGS]
+    test eax, VFS_FLAG_DIR
+    jnz .draw_label
+
+    ; "TXT" label on file
+    mov edi, [wmf_icon_x]
+    add edi, 18
+    mov esi, [wmf_icon_y]
+    add esi, 28
+    lea rdx, [wmf_str_txt]
+    mov ecx, WMF_COL_TEXT_DIM
+    call video_text
+
+.draw_label:
+    ; Draw name below icon (centered-ish)
+    mov edi, [wmf_icon_x]
+    mov esi, [wmf_icon_y]
+    add esi, WMF_ICON_SIZE + 6
     lea rdx, [rbx + VFS_E_NAME]
     mov ecx, WMF_COL_TEXT
     call video_text
@@ -95,3 +130,10 @@ wmf_draw_files:
     pop r12
     pop rbx
     ret
+
+wmf_str_txt: db "TXT", 0
+
+section .bss
+wmf_cols:    resd 1
+wmf_icon_x:  resd 1
+wmf_icon_y:  resd 1
