@@ -35,12 +35,12 @@
 ### 1.3 Mémoire
 | Feature | Status | Priorité | Notes |
 |---------|--------|----------|-------|
-| Physical memory map | 🔶 | 🟡 | E820 map |
+| Physical memory map | ✅ | - | E820 + PMM bitmap |
 | kmalloc/kfree | ✅ | - | Allocateur basique |
-| Memory pools | ❌ | 🟡 | Slab allocator |
-| Virtual memory | ❌ | 🔴 | Paging 4-level |
-| Memory protection | ❌ | 🔴 | User/Kernel séparation |
-| Heap management | 🔶 | 🟡 | Améliorer fragmentation |
+| Memory pools | ✅ | - | Slab allocator (32-2048 bytes) |
+| Virtual memory | ✅ | - | VMM 4-level paging |
+| Memory protection | ✅ | - | User/Kernel séparation |
+| Heap management | ✅ | - | heap.asm |
 
 ### 1.4 Processus
 | Feature | Status | Priorité | Notes |
