@@ -76,6 +76,13 @@ MOUSE_STATUS equ 0x64
 %include "scheduler.asm"
 
 ; ════════════════════════════════════════════════════════════════════════════
+; PRIORITY SCHEDULER EXTENSION
+; ════════════════════════════════════════════════════════════════════════════
+%include "sched/priority_const.asm"
+%include "sched/priority.asm"
+%include "sched/setpriority.asm"
+
+; ════════════════════════════════════════════════════════════════════════════
 ; DEPRECATED MODULES - Moved to deprecated/ for later reintegration
 ; Focus: files_mode only for now
 ; ════════════════════════════════════════════════════════════════════════════
