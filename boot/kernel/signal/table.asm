@@ -9,9 +9,9 @@
 
 section .data
 
-align 16
+align 8
 signal_table:
-    times SIG_TABLE_SIZE db 0
+    dq 0
 
 ; ============================================================================
 ; Restore text section for next includes

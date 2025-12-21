@@ -86,7 +86,7 @@ MOUSE_STATUS equ 0x64
 ; SIGNAL SUBSYSTEM - ALL DISABLED
 ; ════════════════════════════════════════════════════════════════════════════
 %include "signal/const.asm"
-; %include "signal/table.asm"
+%include "signal/table.asm"
 ; %include "signal/init.asm"
 ; %include "signal/entry.asm"
 ; %include "signal/send.asm"
