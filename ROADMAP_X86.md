@@ -45,17 +45,18 @@
 ### 1.4 Processus
 | Feature | Status | Priorité | Notes |
 |---------|--------|----------|-------|
-| Process structure (PCB) | ✅ | - | Basique |
-| Context switch | ✅ | - | Timer-based |
-| Scheduler round-robin | ✅ | - | Préemptif |
-| Priority scheduler | ❌ | 🟡 | Multi-level queue |
-| Process creation | ❌ | 🔴 | fork/exec |
-| Process termination | ❌ | 🔴 | exit/kill |
-| Threads | ❌ | 🟡 | Kernel threads |
+| Process structure (PCB) | ✅ | - | 256 bytes, all registers |
+| Context switch | ✅ | - | Timer-based preemption |
+| Scheduler round-robin | ✅ | - | TIME_SLICE=10 ticks |
+| Priority scheduler | 🔶 | 🟡 | PCB_PRIORITY existe, pas utilisé |
+| Process creation | ✅ | - | sys_fork, sys_exec |
+| Process termination | ✅ | - | sys_exit, sys_kill |
+| Ring 3 user mode | ✅ | - | switch_to_ring3 |
+| Kernel threads | ❌ | 🟡 | À implémenter |
 | User threads | ❌ | 🟢 | pthread-like |
 | IPC (pipes) | ❌ | 🟡 | Inter-process comm |
-| IPC (shared memory) | ❌ | 🟡 | mmap |
-| IPC (signals) | ❌ | 🟡 | SIGTERM, SIGKILL |
+| IPC (shared memory) | 🔶 | 🟡 | mmap basique |
+| IPC (signals) | 🔶 | 🟡 | kill() ok, handlers partiels |
 
 ### 1.5 System Calls
 | Feature | Status | Priorité | Notes |
