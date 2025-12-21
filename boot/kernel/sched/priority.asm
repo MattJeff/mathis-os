@@ -7,6 +7,7 @@
 
 [BITS 64]
 
+section .text
 
 ; ============================================================================
 ; SCHEDULER_SELECT_PRIORITY - Find highest priority READY process

@@ -7,6 +7,7 @@
 [BITS 64]
 
 ; Priority levels (lower number = higher priority)
+; (Constants only - no section needed)
 PRIO_REALTIME   equ 0       ; System critical tasks
 PRIO_HIGH       equ 64      ; Interactive/UI
 PRIO_NORMAL     equ 128     ; Default user processes

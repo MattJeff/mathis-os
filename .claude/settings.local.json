@@ -113,7 +113,13 @@
       "Bash(timeout 20 qemu-system-x86_64:*)",
       "Bash(timeout 25 qemu-system-x86_64:*)",
       "Bash(git -C /Users/mathishiguinen/Desktop/Higuinen/mathis-os add boot/kernel/apps/files/files_dialog_mod.asm boot/kernel/ui/wm/apps/files/files_const.asm boot/kernel/ui/wm/apps/files/files_draw_sidebar.asm boot/kernel/ui/wm/apps/files/files_draw_list.asm boot/mathis.img)",
-      "Bash(git -C /Users/mathishiguinen/Desktop/Higuinen/mathis-os add boot/kernel/ui/wm/apps/files/files_state.asm boot/kernel/ui/wm/apps/files/files_draw_list.asm boot/mathis.img)"
+      "Bash(git -C /Users/mathishiguinen/Desktop/Higuinen/mathis-os add boot/kernel/ui/wm/apps/files/files_state.asm boot/kernel/ui/wm/apps/files/files_draw_list.asm boot/mathis.img)",
+      "Bash(git -C /Users/mathishiguinen/Desktop/Higuinen/mathis-os checkout -- boot/kernel/core/entry64.asm boot/kernel/go64.asm)",
+      "Bash(git -C /Users/mathishiguinen/Desktop/Higuinen/mathis-os stash list)",
+      "Bash(git -C /Users/mathishiguinen/Desktop/Higuinen/mathis-os checkout bd96c1d -- boot/kernel/core/entry64.asm boot/kernel/go64.asm)",
+      "Bash(git -C /Users/mathishiguinen/Desktop/Higuinen/mathis-os add boot/kernel/sched/ boot/kernel/go64.asm boot/mathis.img)",
+      "Bash(git -C /Users/mathishiguinen/Desktop/Higuinen/mathis-os add boot/kernel/go64.asm boot/kernel/core/entry64.asm boot/mathis.img)",
+      "Bash(git -C /Users/mathishiguinen/Desktop/Higuinen/mathis-os add boot/kernel/sched/ boot/kernel/signal/ boot/kernel/go64.asm boot/kernel/core/entry64.asm boot/mathis.img)"
     ],
     "deny": [],
     "ask": []

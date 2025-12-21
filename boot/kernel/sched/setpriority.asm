@@ -7,6 +7,7 @@
 
 [BITS 64]
 
+section .text
 
 ; ============================================================================
 ; SYS_SETPRIORITY - Set priority of current process

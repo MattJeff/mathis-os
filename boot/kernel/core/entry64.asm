@@ -187,6 +187,9 @@ long_mode_entry:
     call slab_init                        ; Slab allocator
     call protection_init                  ; Memory protection
 
+    ; Initialize signal subsystem
+    ; call signal_init                     ; DISABLED - testing
+
     ; Initialize service registry (SOLID Phase 2+3+4)
     call registry_init
     call alloc_svc_init

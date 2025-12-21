@@ -83,6 +83,18 @@ MOUSE_STATUS equ 0x64
 %include "sched/setpriority.asm"
 
 ; ════════════════════════════════════════════════════════════════════════════
+; SIGNAL SUBSYSTEM - ALL DISABLED
+; ════════════════════════════════════════════════════════════════════════════
+%include "signal/const.asm"
+; %include "signal/table.asm"
+; %include "signal/init.asm"
+; %include "signal/entry.asm"
+; %include "signal/send.asm"
+; %include "signal/handler.asm"
+; %include "signal/check.asm"
+; %include "signal/deliver.asm"
+
+; ════════════════════════════════════════════════════════════════════════════
 ; DEPRECATED MODULES - Moved to deprecated/ for later reintegration
 ; Focus: files_mode only for now
 ; ════════════════════════════════════════════════════════════════════════════

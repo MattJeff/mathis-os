@@ -23,6 +23,9 @@ cd kernel
 nasm -f elf64 -w-label-redef-late core.asm -o core.o
 x86_64-elf-ld -T kernel.ld -o kernel.elf core.o
 x86_64-elf-objcopy -O binary --pad-to=0x90000 kernel.elf ../kernel.bin
+# Keep copies for debug
+cp core.o /tmp/core.o
+cp kernel.elf /tmp/kernel.elf
 rm -f core.o kernel.elf
 cd ..
 
