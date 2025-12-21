@@ -1,0 +1,15 @@
+SOLID, modulaire, 1 fichier = 1 tâche, max 100 lignes par fichier.
+Max 50 lignes par fonction.
+Pas de globals.
+Pas de magic numbers.
+Snake_case.
+Commentaires en anglais.
+NE PAS over-engineer.
+NE PAS ajouter de features non demandées.
+
+Pour x86-64 assembly :
+Convention System V : RDI, RSI, RDX, RCX, R8, R9.
+Preserved : R12-R15, RBX, RBP.
+Scratch : RAX, RCX, RDX, RSI, RDI, R8-R11.
+Stack aligné 16 bytes avant call.
+Code avec code, data avec data.

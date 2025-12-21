@@ -119,7 +119,13 @@
       "Bash(git -C /Users/mathishiguinen/Desktop/Higuinen/mathis-os checkout bd96c1d -- boot/kernel/core/entry64.asm boot/kernel/go64.asm)",
       "Bash(git -C /Users/mathishiguinen/Desktop/Higuinen/mathis-os add boot/kernel/sched/ boot/kernel/go64.asm boot/mathis.img)",
       "Bash(git -C /Users/mathishiguinen/Desktop/Higuinen/mathis-os add boot/kernel/go64.asm boot/kernel/core/entry64.asm boot/mathis.img)",
-      "Bash(git -C /Users/mathishiguinen/Desktop/Higuinen/mathis-os add boot/kernel/sched/ boot/kernel/signal/ boot/kernel/go64.asm boot/kernel/core/entry64.asm boot/mathis.img)"
+      "Bash(git -C /Users/mathishiguinen/Desktop/Higuinen/mathis-os add boot/kernel/sched/ boot/kernel/signal/ boot/kernel/go64.asm boot/kernel/core/entry64.asm boot/mathis.img)",
+      "Bash(git -C /Users/mathishiguinen/Desktop/Higuinen/mathis-os checkout:*)",
+      "Bash(do sed -i 's/times [0-9]* db 0/times $size db 0/' boot/kernel/signal/table.asm ./build.sh 2)",
+      "Bash(1 if timeout 4 qemu-system-x86_64 -hda boot/mathis.img -m 128M -d int -no-reboot)",
+      "Bash(then echo \"$size: CRASH\" else echo \"$size: OK\" fi done)",
+      "Bash(1 timeout 5 qemu-system-x86_64 -hda boot/mathis.img -m 128M -d int -no-reboot)",
+      "Bash(git -C /Users/mathishiguinen/Desktop/Higuinen/mathis-os add boot/kernel/signal/table.asm boot/mathis.img)"
     ],
     "deny": [],
     "ask": []

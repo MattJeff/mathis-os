@@ -1,19 +1,14 @@
 ; ============================================================================
-; SIGNAL/TABLE.ASM - Signal table data
+; SIGNAL/TABLE.ASM - Signal table reference
 ; ============================================================================
-; Single responsibility: Define signal table storage
-; Dependencies: SIG_TABLE_SIZE from const.asm
+; Single responsibility: Provide signal_table symbol
+; The actual data is in data_all.asm to avoid forward reference issues
 ; ============================================================================
 
 [BITS 64]
 
-section .data
-
-align 8
-signal_table:
-    times 124 db 0
-
-; ============================================================================
-; Restore text section for next includes
-; ============================================================================
 section .text
+
+; signal_table is defined in data_all.asm as signal_table_data
+; We create an alias here for compatibility
+%define signal_table signal_table_data

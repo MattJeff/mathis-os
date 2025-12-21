@@ -64,6 +64,11 @@ shift_table:
     db 'ZXCVBNM<>?', 0, '*', 0, ' '
     times 70 db 0
 
+; Signal table (moved here to avoid forward reference issues)
+align 8
+signal_table_data:
+    times 256 db 0    ; Can grow without affecting forward references
+
 ; ════════════════════════════════════════════════════════════════════════════
 ; SECTION 3: EMBEDDED BYTECODE
 ; ════════════════════════════════════════════════════════════════════════════
