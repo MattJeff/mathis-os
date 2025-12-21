@@ -11,7 +11,7 @@ section .data
 
 align 8
 signal_table:
-    dq 0
+    times 64 db 0
 
 ; ============================================================================
 ; Restore text section for next includes
