@@ -5,6 +5,8 @@
 ; Uses 32bpp ARGB framebuffer
 ; ============================================================================
 
+[BITS 64]
+
 ; Colors (32bpp ARGB)
 BSOD_BG         equ 0x00000080      ; Dark blue background
 BSOD_TITLE      equ 0x00FFFFFF      ; White

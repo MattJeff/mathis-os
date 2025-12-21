@@ -1,15 +1,20 @@
 ; ════════════════════════════════════════════════════════════════════════════
 ; MATHIS KERNEL - CORE MODULE v4.0 (3D Edition)
 ; ════════════════════════════════════════════════════════════════════════════
-; NOUVELLE ARCHITECTURE:
-;   1. CODE: Tout le code exécutable d'abord
-;   2. DATA: Toutes les données à la fin (data_all.asm)
-;   3. GRAPHICS: VESA framebuffer + 3D engine
+; BOOT MODES:
+;   - Legacy: boot.asm -> stage2.asm -> kernel (video info at 0x500)
+;   - Multiboot: GRUB -> kernel (EAX=magic, EBX=info pointer)
 ;
-; Règle: On peut ajouter du code ou des données sans casser les adresses
+; ARCHITECTURE:
+;   1. CODE: All executable code first
+;   2. DATA: All data at the end (data_all.asm)
+;   3. GRAPHICS: VESA framebuffer + 3D engine
 ; ════════════════════════════════════════════════════════════════════════════
 
-; Framebuffer info (set by stage2 at 0x500)
+; Multiboot bootloader magic (passed in EAX by GRUB)
+MULTIBOOT_BOOTLOADER_MAGIC  equ 0x2BADB002
+
+; Framebuffer info (set by stage2 or multiboot_entry at 0x500)
 FB_ENABLED      equ 0x500
 FB_ADDRESS      equ 0x510
 FB_WIDTH        equ 0x514
@@ -18,6 +23,12 @@ FB_PITCH        equ 0x51C
 FB_BPP          equ 0x520
 
 [BITS 32]
+
+; ════════════════════════════════════════════════════════════════════════════
+; MULTIBOOT HEADER (must be in first 8KB)
+; ════════════════════════════════════════════════════════════════════════════
+%include "boot/multiboot.asm"
+
 section .entry
 
 ; ════════════════════════════════════════════════════════════════════════════
@@ -29,14 +40,34 @@ kernel_entry:
     mov esp, 0x2FFFF
 
     ; ══════════════════════════════════════════════════════════════════
+    ; DETECT BOOT MODE (Multiboot vs Legacy)
+    ; ══════════════════════════════════════════════════════════════════
+    cmp eax, MULTIBOOT_BOOTLOADER_MAGIC
+    jne .legacy_boot
+
+    ; Multiboot: Parse info from GRUB
+    call multiboot_parse_info
+    jmp .boot_continue
+
+.legacy_boot:
+    ; Legacy: Video info already at 0x500 from stage2
+    mov byte [boot_mode], 0
+
+.boot_continue:
+    ; ══════════════════════════════════════════════════════════════════
     ; AUTO-LOAD FILESYSTEM FROM DISK
     ; ══════════════════════════════════════════════════════════════════
-    call fs_load_from_disk          ; Load FS from disk (or init if empty)
+    call fs_load_from_disk
 
     ; ══════════════════════════════════════════════════════════════════
     ; DIRECT BOOT TO 64-BIT GRAPHICS MODE
     ; ══════════════════════════════════════════════════════════════════
     jmp do_go64
+
+; ════════════════════════════════════════════════════════════════════════════
+; MULTIBOOT PARSER (included from boot/multiboot_entry.asm)
+; ════════════════════════════════════════════════════════════════════════════
+%include "boot/multiboot_parse.asm"
 
     ; Old shell code (kept for reference, not executed)
     ; Copy embedded bytecode to 0x20000

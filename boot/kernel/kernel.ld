@@ -19,11 +19,20 @@ KERNEL_SIZE = 0x80000;  /* 512KB */
 SECTIONS
 {
     /* ════════════════════════════════════════════════════════════════════════
-     * ENTRY SECTION (0x10000)
-     * First code to execute - kernel entry point (32-bit)
+     * MULTIBOOT SECTION (0x10000)
+     * Must be within first 8KB of kernel for GRUB compatibility.
+     * Contains the Multiboot header (magic, flags, checksum).
      * ════════════════════════════════════════════════════════════════════════ */
     . = KERNEL_BASE;
 
+    .multiboot : {
+        *(.multiboot)
+    }
+
+    /* ════════════════════════════════════════════════════════════════════════
+     * ENTRY SECTION
+     * First code to execute - kernel entry point (32-bit)
+     * ════════════════════════════════════════════════════════════════════════ */
     .entry : {
         *(.entry)
     }

@@ -484,6 +484,12 @@ TSS_SEL         equ 0x28
 ; ════════════════════════════════════════════════════════════════════════════
 ; TSS (Task State Segment) - Required for Ring 3 → Ring 0 transitions
 ; ════════════════════════════════════════════════════════════════════════════
+; IST1 used for Double Fault handler (separate stack prevents triple fault)
+; ════════════════════════════════════════════════════════════════════════════
+
+; IST1 stack location (4KB below kernel stack)
+IST1_STACK_TOP      equ 0x8F000     ; 4KB stack at 0x8E000-0x8F000
+
 align 16
 tss64:
     dd 0                            ; Reserved
@@ -491,7 +497,7 @@ tss64:
     dq 0                            ; RSP1
     dq 0                            ; RSP2
     dq 0                            ; Reserved
-    dq 0                            ; IST1
+    dq IST1_STACK_TOP               ; IST1 - Double fault stack
     dq 0                            ; IST2
     dq 0                            ; IST3
     dq 0                            ; IST4
@@ -887,11 +893,10 @@ gui_term_btn:       dq 0            ; Terminal button pointer
 %include "sys/ring3.asm"
 %include "drivers/rtc.asm"
 
-; EXCEPTION HANDLERS (BSOD) - NOT YET INTEGRATED (causes triple fault)
-; TODO: Initialize after video is ready, or use simple halt handler
-; %include "sys/exc_data.asm"
-; %include "sys/exc_bsod.asm"
-; %include "sys/exc_handlers.asm"
+; EXCEPTION HANDLERS (BSOD)
+%include "sys/exc_data.asm"
+%include "sys/exc_bsod.asm"
+%include "sys/exc_handlers.asm"
 
 ; SERVICES (SOLID Phase 2+3+4)
 %include "services/registry.asm"

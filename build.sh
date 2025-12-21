@@ -20,7 +20,7 @@ nasm -f bin stage2.asm -o stage2.bin
 # Build kernel (with linker) - ELF64 then objcopy to binary
 echo "[3/5] Building 512KB kernel..."
 cd kernel
-nasm -f elf64 core.asm -o core.o
+nasm -f elf64 -w-label-redef-late core.asm -o core.o
 x86_64-elf-ld -T kernel.ld -o kernel.elf core.o
 x86_64-elf-objcopy -O binary --pad-to=0x90000 kernel.elf ../kernel.bin
 rm -f core.o kernel.elf

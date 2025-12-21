@@ -15,54 +15,145 @@ setup_idt64:
     push rcx
 
     ; ══════════════════════════════════════════════════════════════════
-    ; 1. Fill exceptions 0-31 with default catch-all handler
-    ;    This prevents triple fault if any exception occurs
+    ; 1. Setup CPU exceptions (INT 0x00 - 0x1F) with BSOD handlers
     ; ══════════════════════════════════════════════════════════════════
-    mov rdi, idt64
-    mov rcx, 32
-.fill_exceptions:
-    mov rax, default_exception_handler
-    ; Build IDT entry manually (16 bytes)
-    mov word [rdi], ax              ; Offset 15:0
-    mov word [rdi + 2], 0x08        ; Kernel code selector
-    mov byte [rdi + 4], 0           ; IST = 0
-    mov byte [rdi + 5], 0x8E        ; Present, DPL=0, Interrupt Gate
-    shr rax, 16
-    mov word [rdi + 6], ax          ; Offset 31:16
-    shr rax, 16
-    mov dword [rdi + 8], eax        ; Offset 63:32
-    mov dword [rdi + 12], 0         ; Reserved
-    add rdi, 16
-    loop .fill_exceptions
+    call setup_exception_handlers
 
     ; ══════════════════════════════════════════════════════════════════
     ; 2. Hardware IRQs (0x20-0x2F)
     ; ══════════════════════════════════════════════════════════════════
-    ; IRQ0 (timer) at 0x20
-    mov rdi, idt64 + 0x20 * 16
+    mov rdi, idt64 + 0x20 * 16      ; IRQ0 (timer)
     mov rax, timer_isr64
     call set_idt_entry
 
-    ; IRQ1 (keyboard) at 0x21
-    mov rdi, idt64 + 0x21 * 16
+    mov rdi, idt64 + 0x21 * 16      ; IRQ1 (keyboard)
     mov rax, keyboard_isr64
     call set_idt_entry
 
-    ; IRQ12 (mouse) at 0x2C
-    mov rdi, idt64 + 0x2C * 16
+    mov rdi, idt64 + 0x2C * 16      ; IRQ12 (mouse)
     mov rax, mouse_isr64
     call set_idt_entry
 
-    ; INT 0x80 (syscall) - Ring 3 callable
-    mov rdi, idt64 + 0x80 * 16
+    mov rdi, idt64 + 0x80 * 16      ; INT 0x80 (syscall)
     mov rax, syscall_isr64
-    call set_idt_entry_user         ; DPL=3 so user can call it
+    call set_idt_entry_user
 
     lidt [idt64_ptr]
 
     pop rcx
     pop rdi
     pop rbx
+    pop rax
+    ret
+
+; ════════════════════════════════════════════════════════════════════════════
+; SETUP_EXCEPTION_HANDLERS - Install all CPU exception handlers
+; ════════════════════════════════════════════════════════════════════════════
+setup_exception_handlers:
+    push rax
+    push rdi
+
+    ; Exceptions without error code
+    mov rdi, idt64 + 0x00 * 16
+    mov rax, exc_handler_00         ; #DE Divide Error
+    call set_idt_entry
+
+    mov rdi, idt64 + 0x01 * 16
+    mov rax, exc_handler_01         ; #DB Debug
+    call set_idt_entry
+
+    mov rdi, idt64 + 0x02 * 16
+    mov rax, exc_handler_02         ; NMI
+    call set_idt_entry
+
+    mov rdi, idt64 + 0x03 * 16
+    mov rax, exc_handler_03         ; #BP Breakpoint
+    call set_idt_entry
+
+    mov rdi, idt64 + 0x04 * 16
+    mov rax, exc_handler_04         ; #OF Overflow
+    call set_idt_entry
+
+    mov rdi, idt64 + 0x05 * 16
+    mov rax, exc_handler_05         ; #BR Bound Range
+    call set_idt_entry
+
+    mov rdi, idt64 + 0x06 * 16
+    mov rax, exc_handler_06         ; #UD Invalid Opcode
+    call set_idt_entry
+
+    mov rdi, idt64 + 0x07 * 16
+    mov rax, exc_handler_07         ; #NM No FPU
+    call set_idt_entry
+
+    ; Exception 8: Double Fault - uses IST1 for separate stack
+    mov rdi, idt64 + 0x08 * 16
+    mov rax, exc_handler_08         ; #DF Double Fault
+    mov cl, 1                       ; IST1
+    call set_idt_entry_ist
+
+    mov rdi, idt64 + 0x09 * 16
+    mov rax, exc_handler_09         ; FPU Segment Overrun
+    call set_idt_entry
+
+    ; Exceptions with error code
+    mov rdi, idt64 + 0x0A * 16
+    mov rax, exc_handler_0a         ; #TS Invalid TSS
+    call set_idt_entry
+
+    mov rdi, idt64 + 0x0B * 16
+    mov rax, exc_handler_0b         ; #NP Segment Not Present
+    call set_idt_entry
+
+    mov rdi, idt64 + 0x0C * 16
+    mov rax, exc_handler_0c         ; #SS Stack Fault
+    call set_idt_entry
+
+    mov rdi, idt64 + 0x0D * 16
+    mov rax, exc_handler_0d         ; #GP General Protection
+    call set_idt_entry
+
+    mov rdi, idt64 + 0x0E * 16
+    mov rax, exc_handler_0e         ; #PF Page Fault
+    call set_idt_entry
+
+    ; Remaining exceptions (0x0F - 0x1F)
+    mov rdi, idt64 + 0x0F * 16
+    mov rax, exc_handler_0f
+    call set_idt_entry
+
+    mov rdi, idt64 + 0x10 * 16
+    mov rax, exc_handler_10         ; #MF FPU Error
+    call set_idt_entry
+
+    mov rdi, idt64 + 0x11 * 16
+    mov rax, exc_handler_11         ; #AC Alignment Check
+    call set_idt_entry
+
+    mov rdi, idt64 + 0x12 * 16
+    mov rax, exc_handler_12         ; #MC Machine Check
+    call set_idt_entry
+
+    mov rdi, idt64 + 0x13 * 16
+    mov rax, exc_handler_13         ; #XM SIMD Error
+    call set_idt_entry
+
+    mov rdi, idt64 + 0x14 * 16
+    mov rax, exc_handler_14         ; Virtualization
+    call set_idt_entry
+
+    ; Fill remaining with default handler
+    mov rdi, idt64 + 0x15 * 16
+    mov rax, default_exception_handler
+    mov rcx, 11                     ; 0x15 to 0x1F
+.fill_remaining:
+    push rcx
+    call set_idt_entry
+    add rdi, 16
+    pop rcx
+    loop .fill_remaining
+
+    pop rdi
     pop rax
     ret
 
@@ -101,6 +192,22 @@ set_idt_entry_user:
     mov word [rdi + 2], 0x08        ; Kernel code selector
     mov byte [rdi + 4], 0
     mov byte [rdi + 5], 0xEE        ; Present, DPL=3, Interrupt Gate
+    shr rax, 16
+    mov word [rdi + 6], ax
+    shr rax, 16
+    mov dword [rdi + 8], eax
+    mov dword [rdi + 12], 0
+    ret
+
+; ════════════════════════════════════════════════════════════════════════════
+; SET_IDT_ENTRY_IST - IDT entry with Interrupt Stack Table
+; Input: rdi = IDT entry address, rax = ISR address, cl = IST index (1-7)
+; ════════════════════════════════════════════════════════════════════════════
+set_idt_entry_ist:
+    mov word [rdi], ax
+    mov word [rdi + 2], 0x08        ; Kernel code selector
+    mov byte [rdi + 4], cl          ; IST index (1-7)
+    mov byte [rdi + 5], 0x8E        ; Present, DPL=0, Interrupt Gate
     shr rax, 16
     mov word [rdi + 6], ax
     shr rax, 16

@@ -20,7 +20,7 @@
 | Mode 64-bit | ✅ | - | Long mode activé |
 | GDT | ✅ | - | Global Descriptor Table |
 | IDT | ✅ | - | Interrupt Descriptor Table |
-| Multiboot support | ❌ | 🟢 | Compatible GRUB |
+| Multiboot support | ✅ | - | GRUB boot fonctionnel |
 
 ### 1.2 Interrupts
 | Feature | Status | Priorité | Notes |
@@ -28,9 +28,9 @@
 | IRQ0 Timer | ✅ | - | PIT 100Hz |
 | IRQ1 Keyboard | ✅ | - | PS/2 |
 | IRQ12 Mouse | ✅ | - | PS/2 |
-| Exceptions (div0, etc) | 🔶 | 🟡 | BSOD basique |
-| Double fault handler | ❌ | 🟡 | Éviter triple fault |
-| Page fault handler | ❌ | 🔴 | Pour mémoire virtuelle |
+| Exceptions (div0, etc) | ✅ | - | BSOD avec registres |
+| Double fault handler | ✅ | - | IST1 stack séparée |
+| Page fault handler | ✅ | - | BSOD + CR2 address |
 
 ### 1.3 Mémoire
 | Feature | Status | Priorité | Notes |
