@@ -132,8 +132,3 @@ wmf_draw_files:
     ret
 
 wmf_str_txt: db "TXT", 0
-
-section .bss
-wmf_cols:    resd 1
-wmf_icon_x:  resd 1
-wmf_icon_y:  resd 1

@@ -32,6 +32,11 @@ wmf_loop_idx:       dd 0
 wmf_cur_y:          dd 0
 wmf_temp_loc:       dd 0
 
+; Icon grid layout
+wmf_cols:           dd 0
+wmf_icon_x:         dd 0
+wmf_icon_y:         dd 0
+
 ; Path buffer for new folder
 wmf_new_path:       times 128 db 0
 
