@@ -94,7 +94,7 @@
 |---------|--------|----------|-------|
 | VBE Framebuffer | ✅ | - | Mode graphique |
 | Mode switching | 🔶 | 🟡 | Changer résolution |
-| Double buffering | 🔶 | 🟡 | Éviter flicker |
+| Double buffering | ✅ | - | Plus de flicker |
 | Hardware cursor | ❌ | 🟢 | Curseur GPU |
 | GPU 2D accel | ❌ | 🟢 | Rectangles rapides |
 
